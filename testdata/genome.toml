@@ -1,0 +1,26 @@
+name = 'sim3chr'
+chromsize =[
+  100_000_000,
+  100_000_000,
+  100_000_000,
+]
+
+# formal names
+chromnames = [
+    "chr1",
+    "chr2",
+    "chr3",
+]
+
+gmaps =[
+"testdata/map/chr1.map",
+"testdata/map/chr2.map",
+"testdata/map/chr3.map",
+] 
+
+# The index values must start from 0 and then increment by 1
+[idx]
+chr1 = 0
+chr2 = 1
+chr3 = 2
+
