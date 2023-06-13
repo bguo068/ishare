@@ -35,6 +35,26 @@ impl CovCounter {
         self.counts.as_slice()
     }
 
+    pub fn get_median_count(&self) -> f64 {
+        let mut v = self.counts.clone();
+        v.sort_unstable();
+
+        let b = v[v.len() / 2] as f64;
+        match v.len() % 2 == 0 {
+            true => {
+                let a = v[v.len() / 2 - 1] as f64;
+                (a + b) / 2.0
+            }
+            false => b,
+        }
+    }
+
+    pub fn get_mean_count(&self) -> f64 {
+        let sum = self.counts.iter().sum::<usize>() as f64;
+        let n = self.counts.len() as f64;
+        sum / n
+    }
+
     pub fn into_parquet(&mut self, p: impl AsRef<std::path::Path>) {
         use arrow::array::*;
         use arrow::record_batch::RecordBatch;
