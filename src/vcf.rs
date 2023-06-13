@@ -365,6 +365,11 @@ fn output_rare_allele_records(
         }
     }
 
+    if new_encode == 1 {
+        // no rare variant in this site, skip adding the variants and sites
+        return;
+    }
+
     // Remap alleleic encodings and generate rare variants records
     // all commmon alleles are encoded zeros
     // all rare allele are encoded nonzeros
@@ -380,4 +385,14 @@ fn output_rare_allele_records(
 
     // add sites info
     sites.add_site(pos, ab);
+
+    // if pos == 35702311 {
+    //     println!(
+    //         "pos={pos}, alllee={:?}, ab={:?}, ac={:?}",
+    //         sites.get_site_by_position(pos),
+    //         ab,
+    //         allele_counts,
+    //     );
+    //     std::process::exit(-1);
+    // }
 }
