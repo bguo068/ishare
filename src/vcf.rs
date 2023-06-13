@@ -135,29 +135,29 @@ pub fn read_vcf(
         // ab
         // );
 
-        let raw_gt_slice = record.format(b"GT").integer().unwrap();
+        let fmt = record.format(b"GT");
+        let bcf_fmt = fmt.inner();
+        assert_eq!(bcf_fmt.type_, 1); // uint8_t
+        assert_eq!(bcf_fmt.n, 2);
+        assert_eq!(bcf_fmt.p_len, 2 * nsam);
+
+        let raw_gt_slice = unsafe { std::slice::from_raw_parts(bcf_fmt.p, bcf_fmt.p_len as usize) };
+
         // make a vector allele idx
-        let gt_iter = raw_gt_slice
-            .iter()
-            .map(|x| {
-                assert_eq!((*x).len(), 2);
-                (*x).into_iter()
-            })
-            .flatten()
-            .map(|x| {
-                let mut i = match (*x).into() {
-                    GenotypeAllele::Unphased(i) => i as u8,
-                    GenotypeAllele::Phased(i) => i as u8,
-                    _ => {
-                        panic!("Currently GT should not be missing!")
-                    }
-                };
-                if i != 0 {
-                    // rebase
-                    i += start_allele;
+        let gt_iter = raw_gt_slice.iter().map(|x| {
+            let mut i = match ((*x) as i32).into() {
+                GenotypeAllele::Unphased(i) => i as u8,
+                GenotypeAllele::Phased(i) => i as u8,
+                _ => {
+                    panic!("Currently GT should not be missing!")
                 }
-                i
-            });
+            };
+            if i != 0 {
+                // rebase
+                i += start_allele;
+            }
+            i
+        });
 
         if is_new_pos {
             // read genotype
@@ -289,25 +289,25 @@ pub fn read_vcf_for_genotype_matrix(
             }
         }
 
-        let raw_gt_slice = record.format(b"GT").integer().unwrap();
+        let fmt = record.format(b"GT");
+        let bcf_fmt = fmt.inner();
+        assert_eq!(bcf_fmt.type_, 1); // uint8_t
+        assert!(bcf_fmt.n == 2);
+        assert_eq!(bcf_fmt.p_len, 2 * nsam);
+
+        let raw_gt_slice = unsafe { std::slice::from_raw_parts(bcf_fmt.p, bcf_fmt.p_len as usize) };
+
         // make a vector allele idx
-        let gt_iter = raw_gt_slice
-            .iter()
-            .map(|x| {
-                assert_eq!((*x).len(), 2);
-                (*x).into_iter()
-            })
-            .flatten()
-            .map(|x| {
-                let i = match (*x).into() {
-                    GenotypeAllele::Unphased(i) => i as u8,
-                    GenotypeAllele::Phased(i) => i as u8,
-                    _ => {
-                        panic!("Currently GT should not be missing!")
-                    }
-                };
-                i == 1
-            });
+        let gt_iter = raw_gt_slice.iter().map(|x| {
+            let i = match (*x as i32).into() {
+                GenotypeAllele::Unphased(i) => i as u8,
+                GenotypeAllele::Phased(i) => i as u8,
+                _ => {
+                    panic!("Currently GT should not be missing!")
+                }
+            };
+            i == 1
+        });
         let ac: usize = gt_iter.clone().map(|x| if x { 1 } else { 0 }).sum();
 
         if (ac < ac_thres) || (((nsam * 2) as usize - ac) < ac_thres) {
