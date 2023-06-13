@@ -1,0 +1,126 @@
+name = 'hg38'
+chromsize =[
+ 248956422,
+ 242193529,
+ 198295559,
+ 190214555,
+ 181538259,
+ 170805979,
+ 159345973,
+ 145138636,
+ 138394717,
+ 133797422,
+ 135086622,
+ 133275309,
+ 114364328,
+ 107043718,
+ 101991189,
+ 90338345,
+ 83257441,
+ 80373285,
+ 58617616,
+ 64444167,
+ 46709983,
+ 50818468,
+]
+
+# formal names
+chromnames = [
+    "chr1",
+    "chr2",
+    "chr3",
+    "chr4",
+    "chr5",
+    "chr6",
+    "chr7",
+    "chr8",
+    "chr9",
+    "chr10",
+    "chr11",
+    "chr12",
+    "chr13",
+    "chr14",
+    "chr15",
+    "chr16",
+    "chr17",
+    "chr18",
+    "chr19",
+    "chr20",
+    "chr21",
+    "chr22",
+]
+
+gmaps =[
+"testdata/plink.GRCh38.map/plink.chr1.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr2.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr3.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr4.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr5.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr6.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr7.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr8.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr9.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr10.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr11.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr12.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr13.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr14.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr15.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr16.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr17.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr18.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr19.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr20.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr21.GRCh38.map",
+"testdata/plink.GRCh38.map/plink.chr22.GRCh38.map",
+] 
+
+# The index values must start from 0 and then increment by 1
+[idx]
+chr1 = 0
+chr2 = 1
+chr3 = 2
+chr4 = 3
+chr5 = 4
+chr6 = 5
+chr7 = 6
+chr8 = 7
+chr9 = 8
+chr10 = 9
+chr11 = 10
+chr12 = 11
+chr13 = 12
+chr14 = 13
+chr15 = 14
+chr16 = 15
+chr17 = 16
+chr18 = 17
+chr19 = 18
+chr20 = 19
+chr21 = 20
+chr22 = 21
+# # allow alterative chromosome names map to mapped to the correct index
+# "1" = 0
+# "2" = 1
+# "3" = 2
+# "4" = 3
+# "5" = 4
+# "6" = 5
+# "7" = 6
+# "8" = 7
+# "9" = 8
+# "10" = 9
+# "11" = 10
+# "12" = 11
+# "13" = 12
+# "14" = 13
+# "15" = 14
+# "16" = 15
+# "17" = 16
+# "18" = 17
+# "19" = 18
+# "20" = 19
+# "21" = 20
+# "22" = 21
+
+

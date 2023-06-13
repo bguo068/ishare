@@ -1,0 +1,21 @@
+[package]
+name = "ishare"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+arrow = "41.0.0"
+bitvec = { version = "1.0.1", features = ["serde"] }
+bstr = "1.5.0"
+itertool = "0.1.0"
+itertools = "0.10.5"
+parquet = "41.0.0"
+serde = { version = "1.0.164", features = ["derive"] }
+smallvec = "1.10.0" # used by intervaltree
+toml = "0.7.4"
+rust-htslib = {version= "*",default-features = false}
+rayon = "1.7.0"
+clap = { version = "4.3.3", features = ["derive", "wrap_help"] }
+csv = "1.2.2"
