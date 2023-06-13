@@ -25,6 +25,10 @@ impl IbdSeg {
         }
     }
 
+    pub fn haplotype_pair_int(&self) -> (u32, u32) {
+        (self.i, self.j)
+    }
+
     pub fn haplotype_pair(&self) -> (u32, u8, u32, u8) {
         (
             self.i >> 2,

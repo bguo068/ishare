@@ -25,6 +25,13 @@ impl<'a> IbdSet<'a> {
             inds,
         }
     }
+
+    pub fn add(&mut self, ibdseg: IbdSeg) {
+        self.ibd.push(ibdseg)
+    }
+    pub fn get_gmap(&self) -> &GeneticMap {
+        self.gmap
+    }
     pub fn read_hapibd_dir(&mut self, p: impl AsRef<Path>) {
         for entry in p.as_ref().read_dir().unwrap() {
             if let Ok(entry) = entry {
@@ -232,5 +239,247 @@ impl<'a> IbdSet<'a> {
 
     pub fn iter(&self) -> impl Iterator<Item = &IbdSeg> {
         self.ibd.iter()
+    }
+}
+
+pub struct IbdSetBlockIter<'a> {
+    ibd: &'a [IbdSeg],
+    ignore_hap: bool,
+}
+
+impl<'a> IbdSetBlockIter<'a> {
+    pub fn new(ibd: &'a IbdSet, ignore_hap: bool) -> Self {
+        Self {
+            ibd: ibd.ibd.as_slice(),
+            ignore_hap,
+        }
+    }
+
+    pub fn peak(&self) -> Option<&IbdSeg> {
+        self.ibd.first()
+    }
+}
+
+impl<'a> Iterator for IbdSetBlockIter<'a> {
+    type Item = &'a [IbdSeg];
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.ibd.len() == 0 {
+            None
+        } else {
+            let first = self.peak().unwrap();
+            let e_opt = self.ibd.iter().position(|x| match self.ignore_hap {
+                true => x.individual_pair() != first.individual_pair(),
+                false => x.haplotype_pair_int() != first.haplotype_pair_int(),
+            });
+            let e = match e_opt {
+                Some(end) => end,
+                None => self.ibd.len(),
+            };
+            let (blk, rest) = self.ibd.split_at(e);
+            self.ibd = rest;
+            Some(blk)
+        }
+    }
+}
+
+pub struct IbdSetBlockPairIter<'a> {
+    a: IbdSetBlockIter<'a>,
+    b: IbdSetBlockIter<'a>,
+    ignore_hap: bool,
+}
+
+impl<'a> IbdSetBlockPairIter<'a> {
+    pub fn new(ibd1: &'a IbdSet, ibd2: &'a IbdSet, ignore_hap: bool) -> Self {
+        let a = IbdSetBlockIter::new(ibd1, ignore_hap);
+        let b = IbdSetBlockIter::new(ibd2, ignore_hap);
+        Self { a, b, ignore_hap }
+    }
+}
+
+impl<'a> Iterator for IbdSetBlockPairIter<'a> {
+    type Item = (Option<&'a [IbdSeg]>, Option<&'a [IbdSeg]>);
+    fn next(&mut self) -> Option<Self::Item> {
+        let grp1 = self.a.peak().map(|x| match self.ignore_hap {
+            false => x.haplotype_pair_int(),
+            true => x.individual_pair(),
+        });
+        let grp2 = self.b.peak().map(|x| match self.ignore_hap {
+            false => x.haplotype_pair_int(),
+            true => x.individual_pair(),
+        });
+        match (grp1, grp2) {
+            (Some(p1), Some(p2)) => {
+                if p1 < p2 {
+                    Some((self.a.next(), None))
+                } else if p1 == p2 {
+                    Some((self.a.next(), self.b.next()))
+                } else {
+                    Some((None, self.b.next()))
+                }
+            }
+            (Some(_p1), None) => Some((self.a.next(), None)),
+            (None, Some(_p2)) => Some((None, self.b.next())),
+            _ => None,
+        }
+    }
+}
+
+pub struct IbdSetBlockIterMut<'a> {
+    ibd: &'a mut [IbdSeg],
+    ignore_hap: bool,
+}
+
+impl<'a> IbdSetBlockIterMut<'a> {
+    pub fn new(ibd: &'a mut [IbdSeg], ignore_hap: bool) -> Self {
+        Self { ibd, ignore_hap }
+    }
+
+    pub fn peek(&self) -> Option<&IbdSeg> {
+        self.ibd.first()
+    }
+}
+
+impl<'a> Iterator for IbdSetBlockIterMut<'a> {
+    type Item = &'a mut [IbdSeg];
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.ibd.len() == 0 {
+            None
+        } else {
+            let first = self.peek().unwrap();
+            let e_opt = self.ibd.iter().position(|x| match self.ignore_hap {
+                true => x.individual_pair() != first.individual_pair(),
+                false => x.haplotype_pair_int() != first.haplotype_pair_int(),
+            });
+            let e = match e_opt {
+                Some(end) => end,
+                None => self.ibd.len(),
+            };
+            let (blk, rest) = self.ibd.split_at_mut(e);
+
+            let blk = unsafe { std::mem::transmute(blk) };
+            let rest = unsafe { std::mem::transmute(rest) };
+            self.ibd = rest;
+            Some(blk)
+        }
+    }
+}
+
+pub struct IbdSetBlockPairIterMut<'a> {
+    a: IbdSetBlockIterMut<'a>,
+    b: IbdSetBlockIterMut<'a>,
+    ignore_hap: bool,
+}
+
+impl<'a> IbdSetBlockPairIterMut<'a> {
+    pub fn new(ibd1: &'a mut IbdSet, ibd2: &'a mut IbdSet, ignore_hap: bool) -> Self {
+        let a = IbdSetBlockIterMut::new(&mut ibd1.ibd[..], ignore_hap);
+        let b = IbdSetBlockIterMut::new(&mut ibd2.ibd[..], ignore_hap);
+        Self { a, b, ignore_hap }
+    }
+}
+
+impl<'a> Iterator for IbdSetBlockPairIterMut<'a> {
+    type Item = (Option<&'a mut [IbdSeg]>, Option<&'a mut [IbdSeg]>);
+    fn next(&mut self) -> Option<Self::Item> {
+        let grp1 = self.a.peek().map(|x| match self.ignore_hap {
+            false => x.haplotype_pair_int(),
+            true => x.individual_pair(),
+        });
+        let grp2 = self.b.peek().map(|x| match self.ignore_hap {
+            false => x.haplotype_pair_int(),
+            true => x.individual_pair(),
+        });
+        match (grp1, grp2) {
+            (Some(p1), Some(p2)) => {
+                if p1 < p2 {
+                    Some((self.a.next(), None))
+                } else if p1 == p2 {
+                    Some((self.a.next(), self.b.next()))
+                } else {
+                    Some((None, self.b.next()))
+                }
+            }
+            (Some(_p1), None) => Some((self.a.next(), None)),
+            (None, Some(_p2)) => Some((None, self.b.next())),
+            _ => None,
+        }
+    }
+}
+
+#[test]
+fn test_ibdset_iter() {
+    let mut ginfo = GenomeInfo::new();
+    ginfo.chromnames = vec!["chr1".to_owned(), "chr2".to_owned()];
+    ginfo.chromsize = vec![100_000_000, 100_000_000];
+    ginfo.gwstarts = vec![0, 100_000_000];
+    ginfo
+        .idx
+        .extend(vec![("chr1".to_owned(), 0), ("chr2".to_owned(), 1)]);
+
+    let gmap = GeneticMap::from_iter(vec![(0, 0.0), (200_000_000, 200.0)].into_iter());
+    let inds = Individuals::from_iter(vec!["a", "b", "c", "d"].into_iter());
+
+    let mut ibd1 = IbdSet::new(&gmap, &ginfo, &inds);
+    let mut ibd2 = IbdSet::new(&gmap, &ginfo, &inds);
+    ibd1.add(IbdSeg::new(0, 0, 1, 0, 10, 100, 0));
+    ibd1.add(IbdSeg::new(0, 0, 1, 0, 90, 110, 0));
+    ibd1.add(IbdSeg::new(0, 0, 1, 1, 90, 110, 0));
+    ibd1.add(IbdSeg::new(0, 0, 2, 0, 10, 100, 0));
+    ibd1.add(IbdSeg::new(0, 0, 2, 0, 90, 110, 0));
+    ibd1.add(IbdSeg::new(0, 0, 2, 1, 90, 110, 0));
+
+    ibd2.add(IbdSeg::new(0, 0, 2, 0, 20, 100, 0));
+    ibd2.add(IbdSeg::new(0, 0, 2, 0, 80, 110, 0));
+    ibd2.add(IbdSeg::new(0, 0, 2, 1, 90, 130, 0));
+    ibd2.add(IbdSeg::new(0, 0, 3, 0, 10, 100, 0));
+    ibd2.add(IbdSeg::new(0, 0, 3, 0, 90, 110, 0));
+    ibd2.add(IbdSeg::new(0, 0, 3, 1, 90, 110, 0));
+
+    ibd1.sort_by_samples();
+    ibd2.sort_by_samples();
+
+    for (a, b) in IbdSetBlockPairIter::new(&ibd1, &ibd2, true) {
+        match (a, b) {
+            (Some(a), Some(b)) => {
+                assert_eq!(a[0].individual_pair(), b[0].individual_pair());
+            }
+            _ => {}
+        }
+    }
+    ibd1.sort_by_haplotypes();
+    ibd2.sort_by_haplotypes();
+
+    for (a, b) in IbdSetBlockPairIter::new(&ibd1, &ibd2, false) {
+        match (a, b) {
+            (Some(a), Some(b)) => {
+                assert_eq!(a[0].haplotype_pair(), b[0].haplotype_pair());
+            }
+            _ => {}
+        }
+    }
+
+    ibd1.sort_by_samples();
+    ibd2.sort_by_samples();
+
+    for (a, b) in IbdSetBlockPairIterMut::new(&mut ibd1, &mut ibd2, true) {
+        match (a, b) {
+            (Some(a), Some(b)) => {
+                a[0].e += 1;
+                assert_eq!(a[0].individual_pair(), b[0].individual_pair());
+            }
+            _ => {}
+        }
+    }
+    ibd1.sort_by_haplotypes();
+    ibd2.sort_by_haplotypes();
+
+    for (a, b) in IbdSetBlockPairIterMut::new(&mut ibd1, &mut ibd2, false) {
+        match (a, b) {
+            (Some(a), Some(b)) => {
+                a[0].e += 1;
+                assert_eq!(a[0].haplotype_pair(), b[0].haplotype_pair());
+            }
+            _ => {}
+        }
     }
 }

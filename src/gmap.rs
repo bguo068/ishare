@@ -4,6 +4,11 @@ use csv;
 use std::path::Path;
 
 impl GeneticMap {
+    pub fn from_iter(it: impl Iterator<Item = (u32, f32)>) -> Self {
+        let v = it.collect();
+        Self(v)
+    }
+
     pub fn from_genome_info(ginfo: &GenomeInfo) -> Self {
         let mut gw_chr_start_bp = 0u32;
         let mut gw_chr_start_cm = 0.0f32;
