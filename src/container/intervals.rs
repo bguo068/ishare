@@ -32,6 +32,12 @@ impl<'a, T: PartialOrd<T> + Copy + Default + Debug> Intervals<T> {
         self.0.push(r);
     }
 
+    pub fn extend_from_iter(&mut self, t: impl Iterator<Item = (T, T)>) {
+        for e in t {
+            self.push(e.0..e.1);
+        }
+    }
+
     pub fn from_tuples(t: &[(T, T)]) -> Self {
         let mut intervals = Intervals::new();
         for e in t {
