@@ -58,5 +58,7 @@ cmd = f"""
     rm -f hap-ibd.jar
     bcftools concat bcf/chr1.bcf bcf/chr2.bcf bcf/chr3.bcf -Ob -o bcf/all.bcf
     bcftools index -f bcf/all.bcf
+    bcftools view -r chr1:1-10000000 -m2 -M2 bcf/all.bcf -Ob -o bcf/small.bcf 
+    bcftools index -f bcf/small.bcf
 
 """

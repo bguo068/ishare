@@ -5,9 +5,9 @@ use crate::vcf::*;
 fn compare_table_matrix_enc() {
     use bstr::ByteSlice;
 
-    let genome_info = "genome.toml";
+    let genome_info = "testdata/genome.toml";
     let ginfo = GenomeInfo::from_toml_file(genome_info);
-    let vcf_path = "testdata/test.bcf";
+    let vcf_path = "testdata/bcf/small.bcf";
 
     let max_maf = 0.001f64;
     let (sit, _ind, rec) = read_vcf(&ginfo, vcf_path, max_maf, None);
