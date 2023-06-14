@@ -1,4 +1,4 @@
-use crate::io::{FromParquet, IntoParquet};
+use crate::io::{FromArrowArray, FromParquet, IntoArrowArray, IntoParquet};
 use arrow::array::*;
 use arrow::record_batch::RecordBatch;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
@@ -11,17 +11,27 @@ use std::sync::Arc;
 use std::{collections::HashMap, fmt::Debug};
 
 #[derive(Debug, Clone)]
-pub struct ResultMatrix {
+pub struct ResultMatrix<T>
+where
+    T: Copy + Default + Sized + PartialEq,
+    Vec<T>: IntoArrowArray,
+    [T]: FromArrowArray,
+{
     row_genomes: Vec<u32>,
     row_genomes_map: HashMap<u32, u32>,
     col_genomes: Vec<u32>,
     col_genomes_map: HashMap<u32, u32>,
     // parquet is very slow when using f32 type but very fast using integer
     // the value in the matrix is  (jaccard value) * 1e6 as u32
-    data: Vec<u32>,
+    data: Vec<T>,
 }
 
-impl ResultMatrix {
+impl<T> ResultMatrix<T>
+where
+    T: Copy + Default + Sized + PartialEq,
+    Vec<T>: IntoArrowArray,
+    [T]: FromArrowArray,
+{
     pub fn new_from_shape(nrow: u32, ncol: u32) -> Self {
         let row_genomes: Vec<u32> = (0..nrow).collect();
         let col_genomes: Vec<u32> = (0..ncol).collect();
@@ -56,7 +66,7 @@ impl ResultMatrix {
         // allocation and initiation
         let n = row_genomes.len() * col_genomes.len();
         let mut data = Vec::new();
-        data.resize(n, 0);
+        data.resize(n, T::default());
 
         Self {
             row_genomes,
@@ -71,23 +81,23 @@ impl ResultMatrix {
         (self.row_genomes.len(), self.col_genomes.len())
     }
 
-    pub fn set_at(&mut self, row_idx: u32, col_idx: u32, v: u32) {
+    pub fn set_at(&mut self, row_idx: u32, col_idx: u32, v: T) {
         let idx = (row_idx as usize) * self.col_genomes.len() + (col_idx as usize);
         self.data[idx] = v;
     }
-    pub fn set_at_genomes(&mut self, row_genome: u32, col_genome: u32, v: u32) {
+    pub fn set_at_genomes(&mut self, row_genome: u32, col_genome: u32, v: T) {
         let row_idx = self.row_genomes_map[&row_genome];
         let col_idx = self.col_genomes_map[&col_genome];
         let idx = (row_idx as usize) * self.col_genomes.len() + (col_idx as usize);
         self.data[idx] = v;
     }
 
-    pub fn get_at(&self, row_idx: u32, col_idx: u32) -> u32 {
+    pub fn get_at(&self, row_idx: u32, col_idx: u32) -> T {
         let idx = (row_idx as usize) * self.col_genomes.len() + (col_idx as usize);
         self.data[idx]
     }
 
-    pub fn get_at_genomes(&mut self, row_genome: u32, col_genome: u32) -> u32 {
+    pub fn get_at_genomes(&mut self, row_genome: u32, col_genome: u32) -> T {
         let row_idx = self.row_genomes_map[&row_genome];
         let col_idx = self.col_genomes_map[&col_genome];
         let idx = (row_idx as usize) * self.col_genomes.len() + (col_idx as usize);
@@ -128,13 +138,18 @@ impl ResultMatrix {
     }
 }
 
-impl IntoParquet for ResultMatrix {
+impl<T> IntoParquet for ResultMatrix<T>
+where
+    T: Copy + Default + Sized + PartialEq,
+    Vec<T>: IntoArrowArray,
+    [T]: FromArrowArray,
+{
     fn into_parquet(&mut self, p: impl AsRef<Path>) {
         use std::mem::take;
         // build array from genotype matrix
-        let mat = Arc::new(UInt32Array::from(take(&mut self.data))) as ArrayRef;
-        let row = Arc::new(UInt32Array::from(take(&mut self.row_genomes))) as ArrayRef;
-        let col = Arc::new(UInt32Array::from(take(&mut self.col_genomes))) as ArrayRef;
+        let mat = take(&mut self.data).into_array_array();
+        let row = take(&mut self.row_genomes).into_array_array();
+        let col = take(&mut self.col_genomes).into_array_array();
 
         let write_array = |fieldname, arr, p: &Path| {
             let batch =
@@ -161,11 +176,16 @@ impl IntoParquet for ResultMatrix {
     }
 }
 
-impl FromParquet for ResultMatrix {
+impl<T> FromParquet for ResultMatrix<T>
+where
+    T: Copy + Default + Sized + PartialEq,
+    Vec<T>: IntoArrowArray,
+    [T]: FromArrowArray,
+{
     fn from_parquet(p: impl AsRef<Path>) -> Self {
         let mut row_genomes = Vec::<u32>::new();
         let mut col_genomes = Vec::<u32>::new();
-        let mut data = Vec::<u32>::new();
+        let mut data = Vec::<T>::new();
 
         let file = File::open(&p).unwrap();
         let builder = ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
@@ -173,13 +193,9 @@ impl FromParquet for ResultMatrix {
         let mut reader = builder.build().unwrap();
         for record_batch in &mut reader {
             let record_batch = record_batch.unwrap();
-            record_batch
-                .column(0)
-                .as_any()
-                .downcast_ref::<UInt32Array>()
-                .unwrap()
-                .into_iter()
-                .for_each(|x| data.push(x.unwrap()));
+            let arr = record_batch.column(0).as_ref();
+            let slice: &[T] = FromArrowArray::from_array_array(arr);
+            data.extend_from_slice(slice);
         }
 
         let file = File::open(p.as_ref().with_extension("row")).unwrap();
