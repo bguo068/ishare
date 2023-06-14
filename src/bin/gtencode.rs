@@ -4,7 +4,7 @@ use ishare::{
     genotype::{common::GenotypeMatrix, rare::GenotypeRecords},
     indiv::Individuals,
     io::IntoParquet,
-    share::mat::ResultMatrix,
+    share::mat::NamedMatrix,
     site::Sites,
     vcf::{read_vcf, read_vcf_for_genotype_matrix},
 };
@@ -639,7 +639,7 @@ fn main() {
             // use this as an indicator to fill the the low part of the matrix when updating the full jaccard matrix
             let identifical = row_genomes == col_genomes;
 
-            let mut resmat = ResultMatrix::new(row_genomes, col_genomes);
+            let mut resmat = NamedMatrix::new(row_genomes, col_genomes);
 
             for (g1, g2, total, shared) in res {
                 let jaccard = ((shared as f32) / (total as f32) * 1e6) as u32;
@@ -652,9 +652,9 @@ fn main() {
                 }
 
                 // update the matrix
-                resmat.set_at_genomes(g1, g2, jaccard);
+                resmat.set_by_names(g1, g2, jaccard);
                 if identifical {
-                    resmat.set_at_genomes(g2, g1, jaccard);
+                    resmat.set_by_names(g2, g1, jaccard);
                 }
             }
 

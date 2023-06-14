@@ -11,134 +11,134 @@ use std::sync::Arc;
 use std::{collections::HashMap, fmt::Debug};
 
 #[derive(Debug, Clone)]
-pub struct ResultMatrix<T>
+pub struct NamedMatrix<T>
 where
     T: Copy + Default + Sized + PartialEq,
     Vec<T>: IntoArrowArray,
     [T]: FromArrowArray,
 {
-    row_genomes: Vec<u32>,
-    row_genomes_map: HashMap<u32, u32>,
-    col_genomes: Vec<u32>,
-    col_genomes_map: HashMap<u32, u32>,
+    row_names: Vec<u32>,
+    row_names_map: HashMap<u32, u32>,
+    col_names: Vec<u32>,
+    col_names_map: HashMap<u32, u32>,
     // parquet is very slow when using f32 type but very fast using integer
     // the value in the matrix is  (jaccard value) * 1e6 as u32
     data: Vec<T>,
 }
 
-impl<T> ResultMatrix<T>
+impl<T> NamedMatrix<T>
 where
     T: Copy + Default + Sized + PartialEq,
     Vec<T>: IntoArrowArray,
     [T]: FromArrowArray,
 {
     pub fn new_from_shape(nrow: u32, ncol: u32) -> Self {
-        let row_genomes: Vec<u32> = (0..nrow).collect();
-        let col_genomes: Vec<u32> = (0..ncol).collect();
-        Self::new(row_genomes, col_genomes)
+        let row_names: Vec<u32> = (0..nrow).collect();
+        let col_names: Vec<u32> = (0..ncol).collect();
+        Self::new(row_names, col_names)
     }
-    pub fn new(mut row_genomes: Vec<u32>, mut col_genomes: Vec<u32>) -> Self {
-        row_genomes.sort();
-        col_genomes.sort();
+    pub fn new(mut row_names: Vec<u32>, mut col_names: Vec<u32>) -> Self {
+        row_names.sort();
+        col_names.sort();
 
         // check they are unique
-        assert!(row_genomes
+        assert!(row_names
             .iter()
-            .zip(row_genomes.iter().skip(1))
+            .zip(row_names.iter().skip(1))
             .all(|(a, b)| *a < *b));
-        assert!(col_genomes
+        assert!(col_names
             .iter()
-            .zip(col_genomes.iter().skip(1))
+            .zip(col_names.iter().skip(1))
             .all(|(a, b)| *a < *b));
 
         // build hash map
-        let row_genomes_map: HashMap<_, _> = row_genomes
+        let row_names_map: HashMap<_, _> = row_names
             .iter()
             .enumerate()
             .map(|(i, id)| (*id, i as u32))
             .collect();
-        let col_genomes_map: HashMap<_, _> = col_genomes
+        let col_names_map: HashMap<_, _> = col_names
             .iter()
             .enumerate()
             .map(|(i, id)| (*id, i as u32))
             .collect();
 
         // allocation and initiation
-        let n = row_genomes.len() * col_genomes.len();
+        let n = row_names.len() * col_names.len();
         let mut data = Vec::new();
         data.resize(n, T::default());
 
         Self {
-            row_genomes,
-            row_genomes_map,
-            col_genomes,
-            col_genomes_map,
+            row_names,
+            row_names_map,
+            col_names,
+            col_names_map,
             data,
         }
     }
 
     pub fn shape(&self) -> (usize, usize) {
-        (self.row_genomes.len(), self.col_genomes.len())
+        (self.row_names.len(), self.col_names.len())
     }
 
-    pub fn set_at(&mut self, row_idx: u32, col_idx: u32, v: T) {
-        let idx = (row_idx as usize) * self.col_genomes.len() + (col_idx as usize);
+    pub fn set_by_positions(&mut self, row_idx: u32, col_idx: u32, v: T) {
+        let idx = (row_idx as usize) * self.col_names.len() + (col_idx as usize);
         self.data[idx] = v;
     }
-    pub fn set_at_genomes(&mut self, row_genome: u32, col_genome: u32, v: T) {
-        let row_idx = self.row_genomes_map[&row_genome];
-        let col_idx = self.col_genomes_map[&col_genome];
-        let idx = (row_idx as usize) * self.col_genomes.len() + (col_idx as usize);
+    pub fn set_by_names(&mut self, row_genome: u32, col_genome: u32, v: T) {
+        let row_idx = self.row_names_map[&row_genome];
+        let col_idx = self.col_names_map[&col_genome];
+        let idx = (row_idx as usize) * self.col_names.len() + (col_idx as usize);
         self.data[idx] = v;
     }
 
-    pub fn get_at(&self, row_idx: u32, col_idx: u32) -> T {
-        let idx = (row_idx as usize) * self.col_genomes.len() + (col_idx as usize);
+    pub fn get_by_positions(&self, row_idx: u32, col_idx: u32) -> T {
+        let idx = (row_idx as usize) * self.col_names.len() + (col_idx as usize);
         self.data[idx]
     }
 
-    pub fn get_at_genomes(&mut self, row_genome: u32, col_genome: u32) -> T {
-        let row_idx = self.row_genomes_map[&row_genome];
-        let col_idx = self.col_genomes_map[&col_genome];
-        let idx = (row_idx as usize) * self.col_genomes.len() + (col_idx as usize);
+    pub fn get_by_names(&mut self, row_genome: u32, col_genome: u32) -> T {
+        let row_idx = self.row_names_map[&row_genome];
+        let col_idx = self.col_names_map[&col_genome];
+        let idx = (row_idx as usize) * self.col_names.len() + (col_idx as usize);
         self.data[idx]
     }
 
-    pub fn contains_matrix_by_genomes(&self, other: &Self) -> bool {
+    pub fn contains_matrix_by_names(&self, other: &Self) -> bool {
         let row_is_subset = other
-            .row_genomes
+            .row_names
             .iter()
-            .all(|x| self.row_genomes_map.contains_key(x));
+            .all(|x| self.row_names_map.contains_key(x));
         let col_is_subset = other
-            .col_genomes
+            .col_names
             .iter()
-            .all(|x| self.col_genomes_map.contains_key(x));
+            .all(|x| self.col_names_map.contains_key(x));
         row_is_subset && col_is_subset
     }
 
     pub fn update_from(&mut self, other: &Self) {
-        assert!(self.contains_matrix_by_genomes(other));
+        assert!(self.contains_matrix_by_names(other));
         let (nrow, ncol) = other.shape();
         for i in 0..nrow {
             for j in 0..ncol {
-                let v = other.get_at(i as u32, j as u32);
+                let v = other.get_by_positions(i as u32, j as u32);
 
-                let row_idx = self.row_genomes_map[&other.row_genomes[i]];
-                let col_idx = self.col_genomes_map[&other.col_genomes[j]];
+                let row_idx = self.row_names_map[&other.row_names[i]];
+                let col_idx = self.col_names_map[&other.col_names[j]];
 
-                self.set_at(row_idx, col_idx, v);
+                self.set_by_positions(row_idx, col_idx, v);
             }
         }
     }
 
     pub fn is_equal(&self, other: &Self) -> bool {
-        (self.row_genomes == other.row_genomes)
-            && (self.col_genomes == other.col_genomes)
+        (self.row_names == other.row_names)
+            && (self.col_names == other.col_names)
             && (self.data == other.data)
     }
 }
 
-impl<T> IntoParquet for ResultMatrix<T>
+impl<T> IntoParquet for NamedMatrix<T>
 where
     T: Copy + Default + Sized + PartialEq,
     Vec<T>: IntoArrowArray,
@@ -148,8 +148,8 @@ where
         use std::mem::take;
         // build array from genotype matrix
         let mat = take(&mut self.data).into_array_array();
-        let row = take(&mut self.row_genomes).into_array_array();
-        let col = take(&mut self.col_genomes).into_array_array();
+        let row = take(&mut self.row_names).into_array_array();
+        let col = take(&mut self.col_names).into_array_array();
 
         let write_array = |fieldname, arr, p: &Path| {
             let batch =
@@ -176,7 +176,7 @@ where
     }
 }
 
-impl<T> FromParquet for ResultMatrix<T>
+impl<T> FromParquet for NamedMatrix<T>
 where
     T: Copy + Default + Sized + PartialEq,
     Vec<T>: IntoArrowArray,
@@ -204,13 +204,7 @@ where
         let mut reader = builder.build().unwrap();
         for record_batch in &mut reader {
             let record_batch = record_batch.unwrap();
-            record_batch
-                .column(0)
-                .as_any()
-                .downcast_ref::<UInt32Array>()
-                .unwrap()
-                .into_iter()
-                .for_each(|x| row_genomes.push(x.unwrap()));
+            row_genomes.extend_from_slice(FromArrowArray::from_array_array(record_batch.column(0)));
         }
 
         let file = File::open(p.as_ref().with_extension("col")).unwrap();
@@ -219,13 +213,7 @@ where
         let mut reader = builder.build().unwrap();
         for record_batch in &mut reader {
             let record_batch = record_batch.unwrap();
-            record_batch
-                .column(0)
-                .as_any()
-                .downcast_ref::<UInt32Array>()
-                .unwrap()
-                .into_iter()
-                .for_each(|x| col_genomes.push(x.unwrap()));
+            col_genomes.extend_from_slice(FromArrowArray::from_array_array(record_batch.column(0)));
         }
 
         let mut matrix = Self::new(row_genomes, col_genomes);

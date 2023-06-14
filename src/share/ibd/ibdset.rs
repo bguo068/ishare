@@ -4,7 +4,7 @@ use crate::genome::GenomeInfo;
 use crate::genotype::common::GenotypeMatrix;
 use crate::gmap::GeneticMap;
 use crate::indiv::{Individuals, PloidyConverter};
-use crate::share::mat::ResultMatrix;
+use crate::share::mat::NamedMatrix;
 use crate::site::Sites;
 use itertools::Itertools;
 use rust_htslib::bgzf;
@@ -243,17 +243,17 @@ impl<'a> IbdSet<'a> {
         self.ibd.iter()
     }
 
-    pub fn get_gw_total_ibd_matrix(&mut self, ignore_hap: bool) -> ResultMatrix<f32> {
+    pub fn get_gw_total_ibd_matrix(&mut self, ignore_hap: bool) -> NamedMatrix<f32> {
         let gmap = self.gmap;
         let mut mat;
         if ignore_hap {
             self.sort_by_samples();
             let nind = self.inds.v().len() as u32;
-            mat = ResultMatrix::new_from_shape(nind, nind);
+            mat = NamedMatrix::new_from_shape(nind, nind);
         } else {
             self.sort_by_haplotypes();
             let nhap = self.inds.v().len() as u32 * 2;
-            mat = ResultMatrix::new_from_shape(nhap, nhap);
+            mat = NamedMatrix::new_from_shape(nhap, nhap);
         }
 
         let blockiter = IbdSetBlockIter::new(&self, ignore_hap);
@@ -270,7 +270,7 @@ impl<'a> IbdSet<'a> {
                     let len = gmap.get_cm_len(r.start, r.end);
                     tot += len;
                 }
-                mat.set_at(ind1, ind2, tot);
+                mat.set_by_positions(ind1, ind2, tot);
             } else {
                 let (ind1, hap1, ind2, hap2) = blk[0].haplotype_pair();
                 assert!((hap1 == 1) || (hap1 == 2));
@@ -284,7 +284,7 @@ impl<'a> IbdSet<'a> {
                     let len = gmap.get_cm_len(r.s, r.e);
                     tot += len;
                 }
-                mat.set_at(hid1, hid2, tot);
+                mat.set_by_positions(hid1, hid2, tot);
             }
         }
 
