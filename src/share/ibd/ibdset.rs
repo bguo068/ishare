@@ -11,6 +11,11 @@ use rust_htslib::bgzf;
 use std::collections::HashMap;
 use std::path::Path;
 
+/// A struct representing a set of IBD segments with references to meta information
+/// - GeneticMap
+/// - GenomeInfo
+/// - Individual info
+///
 pub struct IbdSet<'a> {
     ibd: Vec<IbdSeg>,
     gmap: &'a GeneticMap,
@@ -19,6 +24,7 @@ pub struct IbdSet<'a> {
 }
 
 impl<'a> IbdSet<'a> {
+    /// Create an empty IBD set with meta infomation
     pub fn new(gmap: &'a GeneticMap, ginfo: &'a GenomeInfo, inds: &'a Individuals) -> Self {
         Self {
             ibd: vec![],
@@ -28,12 +34,18 @@ impl<'a> IbdSet<'a> {
         }
     }
 
+    /// Add a segment into the set
     pub fn add(&mut self, ibdseg: IbdSeg) {
         self.ibd.push(ibdseg)
     }
+
+    /// return a reference of genetic map
     pub fn get_gmap(&self) -> &GeneticMap {
         self.gmap
     }
+
+    /// read all `*.ibd.gz` file (in hap-IBD format) into the IBD set
+    /// by globing the folder and calling [IbdSet::read_hapibd_file]
     pub fn read_hapibd_dir(&mut self, p: impl AsRef<Path>) {
         for entry in p.as_ref().read_dir().unwrap() {
             if let Ok(entry) = entry {
@@ -50,6 +62,19 @@ impl<'a> IbdSet<'a> {
             }
         }
     }
+
+    /// read IBD segment from a file in `hap-ibd` format:
+    /// - columns are delimited by `\t`
+    /// - the first 7 columns are used
+    ///     - individual 1
+    ///     - hapl
+    ///     - individual 2
+    ///     - hap2
+    ///     - chromsome
+    ///     - start
+    ///     - end
+    /// - individual/chromomes are converted to index according to meta information
+    /// - position are converted from 1-based to 0-based.
     pub fn read_hapibd_file(&mut self, p: impl AsRef<Path>) {
         use csv::ReaderBuilder;
         use csv::StringRecord;
@@ -86,14 +111,19 @@ impl<'a> IbdSet<'a> {
         }
     }
 
+    /// Sort IBD segment by individual pair indicies and then by coordinates
     pub fn sort_by_samples(&mut self) {
         self.ibd.sort_by_key(|s| (s.individual_pair(), s.coords()));
     }
 
+    /// Sort IBD segment by haplotype pair indicies and then by coordinates
     pub fn sort_by_haplotypes(&mut self) {
         self.ibd.sort_by_key(|s| (s.haplotype_pair(), s.coords()));
     }
 
+    /// Check IbdSet 1 and 2 sharing the same individuals (also in the same order)
+    /// This is to make sure individual indices between the two sets are
+    /// comparatible.
     pub fn has_same_individuals(&self, other: &Self) -> bool {
         &self.inds.v() == &other.inds.v()
     }
