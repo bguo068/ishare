@@ -31,3 +31,5 @@ testdata/ibd1
 testdata/ibd2
 testdata/map
 testdata/vcf_filt
+testdata/samples.txt
+tmp*
