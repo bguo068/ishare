@@ -60,5 +60,5 @@ cmd = f"""
     bcftools index -f bcf/all.bcf
     bcftools view -r chr1:1-10000000 -m2 -M2 bcf/all.bcf -Ob -o bcf/small.bcf 
     bcftools index -f bcf/small.bcf
-
+    bcftools query -l bcf/all.bcf > samples.txt
 """
