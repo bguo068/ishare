@@ -147,9 +147,9 @@ where
     fn into_parquet(&mut self, p: impl AsRef<Path>) {
         use std::mem::take;
         // build array from genotype matrix
-        let mat = take(&mut self.data).into_array_array();
-        let row = take(&mut self.row_names).into_array_array();
-        let col = take(&mut self.col_names).into_array_array();
+        let mat = take(&mut self.data).into_arrow_array();
+        let row = take(&mut self.row_names).into_arrow_array();
+        let col = take(&mut self.col_names).into_arrow_array();
 
         let write_array = |fieldname, arr, p: &Path| {
             let batch =

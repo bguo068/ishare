@@ -11,16 +11,16 @@ pub trait FromParquet {
 }
 
 pub trait IntoArrowArray {
-    fn into_array_array(self) -> ArrayRef;
+    fn into_arrow_array(self) -> ArrayRef;
 }
 
 impl IntoArrowArray for Vec<u32> {
-    fn into_array_array(self) -> ArrayRef {
+    fn into_arrow_array(self) -> ArrayRef {
         Arc::new(UInt32Array::from(self)) as ArrayRef
     }
 }
 impl IntoArrowArray for Vec<f32> {
-    fn into_array_array(self) -> ArrayRef {
+    fn into_arrow_array(self) -> ArrayRef {
         Arc::new(Float32Array::from(self)) as ArrayRef
     }
 }
