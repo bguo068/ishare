@@ -144,6 +144,7 @@ impl<'a> XirsBuilder<'a> {
         // for hap pairs that share at least one IBD segment
         for blk in IbdSetBlockIter::new(&self.ibd, false) {
             let col = Self::blk_2_x(blk);
+            let cm_col = self.cm[col];
 
             let mut non_ibd_start = 0usize;
             let mut non_ibd_end: usize;
@@ -155,18 +156,18 @@ impl<'a> XirsBuilder<'a> {
                 // non-ibd region
                 non_ibd_end = start;
                 for row in non_ibd_start..non_ibd_end {
-                    sum[row] += 0.0 - self.cm[col];
+                    sum[row] += 0.0 - cm_col;
                 }
                 // ibd region
                 for row in start..end {
-                    sum[row] += 1.0 - self.cm[col];
+                    sum[row] += 1.0 - cm_col;
                 }
                 non_ibd_start = end;
                 start = end;
             }
             // trailing non-ibd region
             for row in non_ibd_start..p.len() {
-                sum[row] += 0.0 - self.cm[col];
+                sum[row] += 0.0 - cm_col;
             }
         }
         // for hap pair that does not share IBD segments
@@ -174,14 +175,30 @@ impl<'a> XirsBuilder<'a> {
         let it_shared = IbdSetBlockIter::new(&self.ibd, false).map(Self::blk_2_x);
         use itertools::EitherOrBoth::*;
         let merged = itertools::merge_join_by(it_all, it_shared, |a, b| a.cmp(b));
+
+        /*
         merged.for_each(|x| match x {
             Left(col) => {
+                let cm_col = self.cm[col];
                 for row in 0..p.len() {
-                    sum[row] += 0.0 - self.cm[col];
+                    sum[row] += 0.0 - cm_col;
                 }
             }
             _ => {}
         });
+        */
+        // NOTE: by first calculating cm_sum for pairs not sharing IBD can dramtically
+        // improve calulating speed
+        let cm_sum_not_share_ibd: f64 = merged
+            .map(|x| match x {
+                Left(col) => Some(0.0 - self.cm[col]),
+                _ => None,
+            })
+            .flatten()
+            .sum();
+        for row in 0..p.len() {
+            sum[row] += cm_sum_not_share_ibd;
+        }
 
         self.rm.extend(sum.into_iter().map(|x| x / n as f64));
     }
@@ -196,6 +213,7 @@ impl<'a> XirsBuilder<'a> {
         // for hap pairs that share at least one IBD segment
         for blk in IbdSetBlockIter::new(&self.ibd, false) {
             let col = Self::blk_2_x(blk);
+            let cm_col = self.cm[col];
 
             let mut non_ibd_start = 0usize;
             let mut non_ibd_end: usize;
@@ -207,33 +225,55 @@ impl<'a> XirsBuilder<'a> {
                 // non-ibd region
                 non_ibd_end = start;
                 for row in non_ibd_start..non_ibd_end {
-                    sum[row] += (0.0 - self.cm[col] - self.rm[row]) / pqsqrt[row];
+                    sum[row] += (0.0 - cm_col - self.rm[row]) / pqsqrt[row];
                 }
                 // ibd region
                 for row in start..end {
-                    sum[row] += (1.0 - self.cm[col] - self.rm[row]) / pqsqrt[row];
+                    sum[row] += (1.0 - cm_col - self.rm[row]) / pqsqrt[row];
                 }
                 non_ibd_start = end;
                 start = end;
             }
             // trailing non-ibd region
             for row in non_ibd_start..p.len() {
-                sum[row] += (0.0 - self.cm[col] - self.rm[row]) / pqsqrt[row];
+                sum[row] += (0.0 - cm_col - self.rm[row]) / pqsqrt[row];
             }
         }
-        // for hap pair that does not share IBD segments
+        // // for hap pair that does not share IBD segments
         let it_all = (0..n).into_iter();
         let it_shared = IbdSetBlockIter::new(&self.ibd, false).map(Self::blk_2_x);
         use itertools::EitherOrBoth::*;
         let merged = itertools::merge_join_by(it_all, it_shared, |a, b| a.cmp(b));
-        merged.for_each(|x| match x {
-            Left(col) => {
-                for row in 0..p.len() {
-                    sum[row] += (0.0 - self.cm[col] - self.rm[row]) / pqsqrt[row];
+        // merged.for_each(|x| match x {
+        //     Left(col) => {
+        //         let cm_col = self.cm[col];
+        //         for row in 0..p.len() {
+        //             sum[row] += (0.0 - cm_col - self.rm[row]) / pqsqrt[row];
+        //         }
+        //     }
+        //     _ => {}
+        // });        let col_sum_not_share_ibd: f64 = merged
+        // NOTE: by first calculating cm_sum for pairs not sharing IBD can dramtically
+        // improve calulating speed
+        let mut n_not_share_ibd = 0;
+        let cm_sum_not_share_ibd: f64 = merged
+            .map(|x| match x {
+                Left(col) => {
+                    n_not_share_ibd += 1;
+                    Some(0.0 - self.cm[col])
                 }
-            }
-            _ => {}
-        });
+                _ => None,
+            })
+            .flatten()
+            .sum();
+        for row in 0..p.len() {
+            sum[row] += (cm_sum_not_share_ibd + self.rm[row] * n_not_share_ibd as f64) / pqsqrt[row]
+        }
+        // final scaling
+        for row in 0..p.len() {
+            sum[row] /= (n as f64).sqrt();
+        }
+
         self.rs = sum;
     }
 
