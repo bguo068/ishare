@@ -43,6 +43,14 @@ impl<'a> IbdSet<'a> {
     pub fn get_gmap(&self) -> &GeneticMap {
         self.gmap
     }
+    /// return a reference of GenomeInfo
+    pub fn get_ginfo(&self) -> &GenomeInfo {
+        self.ginfo
+    }
+    /// return a reference of Individuals
+    pub fn get_inds(&self) -> &Individuals {
+        self.inds
+    }
 
     /// read all `*.ibd.gz` file (in hap-IBD format) into the IBD set
     /// by globing the folder and calling [IbdSet::read_hapibd_file]
@@ -285,6 +293,9 @@ impl<'a> IbdSet<'a> {
 
     pub fn iter(&self) -> impl Iterator<Item = &IbdSeg> {
         self.ibd.iter()
+    }
+    pub fn as_slice(&self) -> &[IbdSeg] {
+        self.ibd.as_slice()
     }
 
     pub fn get_gw_total_ibd_matrix(&self, ignore_hap: bool) -> NamedMatrix<f32> {

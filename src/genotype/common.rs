@@ -188,4 +188,14 @@ impl GenotypeMatrix {
 
         gm
     }
+
+    pub fn get_afreq(&self) -> Vec<f64> {
+        let mut afreq = Vec::<f64>::with_capacity(self.nrows());
+        for r in 0..self.nrows() {
+            let ac = self.get_row(r).iter().map(|x| *x as usize).sum::<usize>() as f64;
+            let n = self.ncols() as f64;
+            afreq.push(ac / n);
+        }
+        afreq
+    }
 }

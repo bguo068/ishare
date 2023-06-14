@@ -24,6 +24,11 @@ impl IntoArrowArray for Vec<f32> {
         Arc::new(Float32Array::from(self)) as ArrayRef
     }
 }
+impl IntoArrowArray for Vec<f64> {
+    fn into_arrow_array(self) -> ArrayRef {
+        Arc::new(Float64Array::from(self)) as ArrayRef
+    }
+}
 
 pub trait FromArrowArray {
     fn from_array_array<'a>(arr: &'a dyn Array) -> &Self;
@@ -39,6 +44,16 @@ impl FromArrowArray for [f32] {
         let x = arr
             .as_any()
             .downcast_ref::<Float32Array>()
+            .unwrap()
+            .values();
+        x
+    }
+}
+impl FromArrowArray for [f64] {
+    fn from_array_array<'a>(arr: &'a dyn Array) -> &Self {
+        let x = arr
+            .as_any()
+            .downcast_ref::<Float64Array>()
             .unwrap()
             .values();
         x

@@ -1,4 +1,8 @@
 use crate::genome::GenomeInfo;
+use crate::gmap::GeneticMap;
+use crate::io::IntoParquet;
+use crate::share::ibd::ibdset::IbdSet;
+use crate::stat::xirs::*;
 use crate::vcf::*;
 
 #[test]
@@ -38,4 +42,37 @@ fn compare_table_matrix_enc() {
 
         assert!(gm2.has_allele(pos, gid, allele, &sit2));
     }
+}
+
+#[test]
+fn calc_xirs() {
+    let ginfo = GenomeInfo::from_toml_file("testdata/genome.toml");
+    let gmap = GeneticMap::from_genome_info(&ginfo);
+
+    let vcf_fns = [
+        "testdata/vcf_filt/chr1.vcf.gz",
+        "testdata/vcf_filt/chr2.vcf.gz",
+        "testdata/vcf_filt/chr3.vcf.gz",
+    ];
+    let (mut sites, inds, mut mat) = read_vcf_for_genotype_matrix(&ginfo, vcf_fns[0], 0.01, None);
+    for vcf_fn in &vcf_fns[1..] {
+        let (sites2, inds2, mat2) = read_vcf_for_genotype_matrix(&ginfo, vcf_fn, 0.01, None);
+        assert!(inds.v() == inds2.v());
+        sites.merge(sites2);
+        mat.merge(mat2);
+    }
+
+    println!("mat size: nrow={}, ncol={}", mat.nrows(), mat.ncols());
+    // return;
+
+    let mut ibd = IbdSet::new(&gmap, &ginfo, &inds);
+    ibd.read_hapibd_dir("testdata/ibd1");
+    ibd.sort_by_haplotypes();
+
+    let afreq = mat.get_afreq();
+    let gw_pos = sites.get_gw_pos_slice().to_owned();
+
+    let mut xirs = XirsBuilder::new(afreq, gw_pos, &ibd).finish();
+
+    xirs.into_parquet("tmp.xirs.pq");
 }
