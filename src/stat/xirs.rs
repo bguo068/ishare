@@ -1,6 +1,5 @@
 use crate::io::*;
-use crate::share::ibd::ibdset::*;
-use rayon::prelude::*;
+use crate::share::ibd::{ibdseg::IbdSeg, ibdset::*};
 
 use statrs::distribution::{ChiSquared, ContinuousCDF};
 /// Calcuate Xirs stats for each SNP
@@ -91,106 +90,151 @@ impl<'a> XirsBuilder<'a> {
         self.site_pos.len() as u32
     }
 
-    /// array idx to upper matrix idx
-    fn pair_id_to_ind_ids(&self, pair_id: usize) -> (u32, u32) {
-        let j = ((2.0 * pair_id as f64 + 0.25).sqrt() + 0.5) as usize;
-        // j here need to be wide enough to avoid overflow during multiplification
-        let i = pair_id - j * (j - 1) / 2;
-        (i as u32, j as u32)
+    // /// array idx to upper matrix idx
+    // fn x2ij(x: usize) -> (u32, u32) {
+    //     let i = ((2.0 * x as f64 + 0.25).sqrt() + 0.5) as usize;
+    //     // j here need to be wide enough to avoid overflow during multiplification
+    //     let j = x - i * (i - 1) / 2;
+    //     (i as u32, j as u32)
+    // }
+    fn ij2x(i: u32, j: u32) -> usize {
+        let j = j as usize;
+        let i = i as usize;
+        (i - 1) * i / 2 + j
     }
 
-    // test if a pair of haplotype `pair_id` share IBD at `pos`
-    pub fn ibd_at(&self, pos: u32, pair_id: usize) -> bool {
-        let ibd = self.ibd.as_slice();
-        let (i, j) = self.pair_id_to_ind_ids(pair_id);
+    fn seg_2_x(seg: &IbdSeg) -> usize {
+        let (id1, hap1, id2, hap2) = seg.haplotype_pair();
+        let hap_i = (id1 << 1) + (hap1 as u32);
+        let hap_j = (id2 << 1) + (hap2 as u32);
+        let col = Self::ij2x(hap_i, hap_j);
+        col
+    }
 
-        let s = ibd.partition_point(|seg| (seg.i, seg.j) < (i, j));
-        let e = s + ibd[s..].partition_point(|seg| (seg.i, seg.j) <= (i, j));
-
-        if s == e {
-            false
-        } else {
-            let ibd = &ibd[s..e];
-            let idx = ibd.partition_point(|seg| seg.e <= pos);
-            match ibd.get(idx) {
-                Some(seg) if pos >= seg.s => true,
-                _ => false,
-            }
-        }
+    fn blk_2_x(blk: &[IbdSeg]) -> usize {
+        let seg = &blk[0];
+        Self::seg_2_x(seg)
     }
 
     fn calculate_cm(&mut self) {
-        let m = self.get_total_num_sites();
+        let p = self.site_pos.as_slice();
+        let m = self.get_total_num_sites() as usize;
         let n = self.get_total_num_pairs();
-        self.cm.clear();
-        let mut res = (0..n)
-            .into_par_iter()
-            .map(|j| {
-                let mut cnt = 0usize;
-                let mut sum = 0usize;
-                for i in 0..m {
-                    cnt += 1;
-                    if self.ibd_at(i, j) {
-                        sum += 1;
-                    }
-                    println!("{i}, {j}");
-                }
-                (j, sum as f64 / cnt as f64)
-            })
-            .collect::<Vec<_>>();
-        res.sort_by_key(|x| x.0);
-        self.cm.extend(res.into_iter().map(|x| x.1));
+
+        let mut sum = vec![0f64; n];
+
+        for seg in self.ibd.iter() {
+            let start = p.partition_point(|x| *x < seg.s);
+            let end = start + p[start..].partition_point(|x| *x < seg.e);
+            let col = Self::seg_2_x(seg);
+            for _row in start..end {
+                sum[col] += 1.0;
+            }
+        }
+
+        self.cm.extend(sum.into_iter().map(|x| x / m as f64));
     }
 
     fn calculate_rm(&mut self) {
-        let m = self.get_total_num_sites();
+        let p = self.site_pos.as_slice();
+        let m = self.get_total_num_sites() as usize;
         let n = self.get_total_num_pairs();
-        if self.cm.len() != self.get_total_num_pairs() {
-            self.calculate_cm();
-        }
-        self.rm.clear();
 
-        let mut res = (0..m)
-            .into_par_iter()
-            .map(|i| {
-                let mut cnt = 0usize;
-                let mut sum = 0.0f64;
-                for j in 0..n {
-                    sum += self.ibd_at(i, j) as usize as f64 - self.cm[j];
-                    cnt += 1;
+        let mut sum = vec![0f64; m];
+        // for hap pairs that share at least one IBD segment
+        for blk in IbdSetBlockIter::new(&self.ibd, false) {
+            let col = Self::blk_2_x(blk);
+
+            let mut non_ibd_start = 0usize;
+            let mut non_ibd_end: usize;
+            let mut start = 0usize;
+            let mut end: usize;
+            for seg in blk {
+                start = start + p[start..].partition_point(|x| *x < seg.s);
+                end = start + p[start..].partition_point(|x| *x < seg.e);
+                // non-ibd region
+                non_ibd_end = start;
+                for row in non_ibd_start..non_ibd_end {
+                    sum[row] += 0.0 - self.cm[col];
                 }
-                (i, sum / cnt as f64)
-            })
-            .collect::<Vec<_>>();
-        res.sort_by_key(|x| x.0);
-        self.rm.extend(res.into_iter().map(|x| x.1));
+                // ibd region
+                for row in start..end {
+                    sum[row] += 1.0 - self.cm[col];
+                }
+                non_ibd_start = end;
+                start = end;
+            }
+            // trailing non-ibd region
+            for row in non_ibd_start..p.len() {
+                sum[row] += 0.0 - self.cm[col];
+            }
+        }
+        // for hap pair that does not share IBD segments
+        let it_all = (0..n).into_iter();
+        let it_shared = IbdSetBlockIter::new(&self.ibd, false).map(Self::blk_2_x);
+        use itertools::EitherOrBoth::*;
+        let merged = itertools::merge_join_by(it_all, it_shared, |a, b| a.cmp(b));
+        merged.for_each(|x| match x {
+            Left(col) => {
+                for row in 0..p.len() {
+                    sum[row] += 0.0 - self.cm[col];
+                }
+            }
+            _ => {}
+        });
+
+        self.rm.extend(sum.into_iter().map(|x| x / n as f64));
     }
 
     fn calculate_rs(&mut self) {
-        let m = self.get_total_num_sites();
+        let p = self.site_pos.as_slice();
+        let m = self.get_total_num_sites() as usize;
         let n = self.get_total_num_pairs();
-        if self.cm.len() != self.get_total_num_pairs() {
-            self.calculate_cm();
-        }
-        if self.rm.len() != self.get_total_num_sites() as usize {
-            self.calculate_rm();
-        }
+        let pqsqrt: Vec<f64> = self.afrq.iter().map(|p| (*p * (1.0 - *p)).sqrt()).collect();
 
-        self.rs.clear();
+        let mut sum = vec![0f64; m];
+        // for hap pairs that share at least one IBD segment
+        for blk in IbdSetBlockIter::new(&self.ibd, false) {
+            let col = Self::blk_2_x(blk);
 
-        let mut res = (0..m)
-            .into_par_iter()
-            .map(|i| {
-                let mut sum = 0.0f64;
-                for j in 0..n {
-                    sum += self.ibd_at(i, j) as usize as f64 - self.cm[j] - self.rm[i as usize];
+            let mut non_ibd_start = 0usize;
+            let mut non_ibd_end: usize;
+            let mut start = 0usize;
+            let mut end: usize;
+            for seg in blk {
+                start = start + p[start..].partition_point(|x| *x < seg.s);
+                end = start + p[start..].partition_point(|x| *x < seg.e);
+                // non-ibd region
+                non_ibd_end = start;
+                for row in non_ibd_start..non_ibd_end {
+                    sum[row] += (0.0 - self.cm[col] - self.rm[row]) / pqsqrt[row];
                 }
-                let p = self.afrq[i as usize];
-                (i, sum / (p * (1.0 - p)).sqrt())
-            })
-            .collect::<Vec<_>>();
-        res.sort_by_key(|x| x.0);
-        self.rs.extend(res.into_iter().map(|(_idx, x)| x));
+                // ibd region
+                for row in start..end {
+                    sum[row] += (1.0 - self.cm[col] - self.rm[row]) / pqsqrt[row];
+                }
+                non_ibd_start = end;
+                start = end;
+            }
+            // trailing non-ibd region
+            for row in non_ibd_start..p.len() {
+                sum[row] += (0.0 - self.cm[col] - self.rm[row]) / pqsqrt[row];
+            }
+        }
+        // for hap pair that does not share IBD segments
+        let it_all = (0..n).into_iter();
+        let it_shared = IbdSetBlockIter::new(&self.ibd, false).map(Self::blk_2_x);
+        use itertools::EitherOrBoth::*;
+        let merged = itertools::merge_join_by(it_all, it_shared, |a, b| a.cmp(b));
+        merged.for_each(|x| match x {
+            Left(col) => {
+                for row in 0..p.len() {
+                    sum[row] += (0.0 - self.cm[col] - self.rm[row]) / pqsqrt[row];
+                }
+            }
+            _ => {}
+        });
+        self.rs = sum;
     }
 
     fn calculate_raw(&mut self) {
