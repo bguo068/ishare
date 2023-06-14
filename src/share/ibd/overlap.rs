@@ -96,7 +96,7 @@ impl<'a> IbdOverlapAnalyzer<'a> {
                         }
                         // update the summary vectors
                         counters[which] += 1;
-                        ratio_sums[which] = intersect / cm;
+                        ratio_sums[which] += intersect / cm;
                     }
                 }
                 (None, Some(_blk2)) => {
