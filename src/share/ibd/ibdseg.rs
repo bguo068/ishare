@@ -15,8 +15,8 @@ impl IbdSeg {
     /// Create a new IBD segment:
     /// - `i`: index of individual 1
     /// - `j`: index of individual 2
-    /// - `m`: indicating which happlotype of individual 1
-    /// - `n`: indicating which happlotype of individual 2
+    /// - `m`: indicating which happlotype of individual 1 (can be 0 and 1)
+    /// - `n`: indicating which happlotype of individual 2 (can be 0 and 1)
     /// - `s`: start position in base pair of the IBD segment (0-based)
     /// - `e`: end position in base pair of the IBD segment (0-based)
     /// - `pos_shift`: is an offset value that will be added `s` and `e`.
@@ -33,13 +33,13 @@ impl IbdSeg {
     /// Note 2:
     ///
     /// The pair of haplotype indices can be 4 combination for original IBD segments
+    /// - (0, 0)
+    /// - (0, 1)
+    /// - (1, 0)
     /// - (1, 1)
-    /// - (1, 2)
-    /// - (2, 1)
-    /// - (2, 2)
     ///
     /// For segment from merging, there is only one possibility:
-    /// - (0, 0)
+    /// - (2, 2)
     ///
     pub fn new(i: u32, m: u8, j: u32, n: u8, s: u32, e: u32, pos_shift: u32) -> Self {
         IbdSeg {
@@ -50,10 +50,10 @@ impl IbdSeg {
         }
     }
 
-    /// Normalize the IBD segment record by swapping (`i` and `j`) if `i` > `j`.
+    /// Normalize the IBD segment record by swapping (`i` and `j`) if `i` < `j`.
     /// This is useful to uniquely identify haplotype/individual pairs.
     pub fn normalized(&mut self) {
-        if self.i > self.j {
+        if self.i < self.j {
             std::mem::swap(&mut self.i, &mut self.j);
         }
     }
@@ -90,7 +90,7 @@ impl IbdSeg {
 
     /// check if IBD segment is resulting from merging of more one original segments
     pub fn is_from_merge(&self) -> bool {
-        ((self.i & 0x3) == 0) && ((self.j & 0x3) == 0)
+        ((self.i & 0x3) == 2) && ((self.j & 0x3) == 2)
     }
     /// check validity of IBD segments
     /// - the combinaton of hap1 and hap2 values are valid
@@ -99,6 +99,6 @@ impl IbdSeg {
         let m = self.i & 0x3;
         let n = self.j & 0x3;
 
-        (m <= 2) && (n <= 2) && ((m == 0) == (n == 0)) && (self.s < self.e)
+        (m <= 2) && (n <= 2) && ((m == 2) == (n == 2)) && (self.s < self.e)
     }
 }

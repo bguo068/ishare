@@ -101,9 +101,19 @@ impl<'a> IbdSet<'a> {
 
         while reader.read_record(&mut record).unwrap() {
             let i = ind_map[&record[0]] as u32;
-            let m: u8 = record[1].parse::<u8>().unwrap();
+            let m: u8 = match record[1].parse::<u8>().unwrap() {
+                1 => 0,
+                2 => 1,
+                0 => 2,
+                _ => panic!(),
+            };
             let j = ind_map[&record[2]] as u32;
-            let n: u8 = record[3].parse::<u8>().unwrap();
+            let n: u8 = match record[3].parse::<u8>().unwrap() {
+                1 => 0,
+                2 => 1,
+                0 => 2,
+                _ => panic!(),
+            };
             let chr = &record[4];
             let s = record[5].parse::<u32>().unwrap() - 1;
             let e = record[6].parse::<u32>().unwrap() - 1;
