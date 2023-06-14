@@ -4,19 +4,19 @@ use crate::container::intervaltree::IntervalTree;
 use std::io::BufWriter;
 
 pub struct IbdOverlapAnalyzer<'a> {
-    ibd1: &'a mut IbdSet<'a>,
-    ibd2: &'a mut IbdSet<'a>,
+    ibd1: &'a IbdSet<'a>,
+    ibd2: &'a IbdSet<'a>,
     ignore_hap: bool,
 }
 
 impl<'a> IbdOverlapAnalyzer<'a> {
-    pub fn new(ibd1: &'a mut IbdSet<'a>, ibd2: &'a mut IbdSet<'a>, ignore_hap: bool) -> Self {
+    pub fn new(ibd1: &'a IbdSet<'a>, ibd2: &'a IbdSet<'a>, ignore_hap: bool) -> Self {
         if ignore_hap {
-            ibd1.sort_by_samples();
-            ibd2.sort_by_samples();
+            assert!(ibd1.is_sorted_by_samples());
+            assert!(ibd2.is_sorted_by_samples());
         } else {
-            ibd1.sort_by_haplotypes();
-            ibd2.sort_by_haplotypes();
+            assert!(ibd1.is_sorted_by_haplotypes());
+            assert!(ibd2.is_sorted_by_haplotypes());
         }
         assert!(ibd1.has_same_individuals(ibd2));
         Self {

@@ -116,9 +116,23 @@ impl<'a> IbdSet<'a> {
         self.ibd.sort_by_key(|s| (s.individual_pair(), s.coords()));
     }
 
+    pub fn is_sorted_by_samples(&self) -> bool {
+        self.ibd
+            .iter()
+            .zip(self.ibd.iter().skip(1))
+            .all(|(x, y)| (x.individual_pair(), x.coords()) <= (y.individual_pair(), y.coords()))
+    }
+
     /// Sort IBD segment by haplotype pair indicies and then by coordinates
     pub fn sort_by_haplotypes(&mut self) {
         self.ibd.sort_by_key(|s| (s.haplotype_pair(), s.coords()));
+    }
+
+    pub fn is_sorted_by_haplotypes(&self) -> bool {
+        self.ibd
+            .iter()
+            .zip(self.ibd.iter().skip(1))
+            .all(|(x, y)| (x.haplotype_pair(), x.coords()) <= (y.haplotype_pair(), y.coords()))
     }
 
     /// Check IbdSet 1 and 2 sharing the same individuals (also in the same order)
@@ -273,15 +287,15 @@ impl<'a> IbdSet<'a> {
         self.ibd.iter()
     }
 
-    pub fn get_gw_total_ibd_matrix(&mut self, ignore_hap: bool) -> NamedMatrix<f32> {
+    pub fn get_gw_total_ibd_matrix(&self, ignore_hap: bool) -> NamedMatrix<f32> {
         let gmap = self.gmap;
         let mut mat;
         if ignore_hap {
-            self.sort_by_samples();
+            assert!(self.is_sorted_by_samples());
             let nind = self.inds.v().len() as u32;
             mat = NamedMatrix::new_from_shape(nind, nind);
         } else {
-            self.sort_by_haplotypes();
+            assert!(self.is_sorted_by_haplotypes());
             let nhap = self.inds.v().len() as u32 * 2;
             mat = NamedMatrix::new_from_shape(nhap, nhap);
         }
