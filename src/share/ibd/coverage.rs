@@ -35,6 +35,9 @@ impl CovCounter {
         self.counts.as_slice()
     }
 
+    pub fn get_intervals(&self) -> impl IntoIterator<Item = Range<u32>> + '_ {
+        self.tree.iter_sorted().map(|x| x.range.start..x.range.end)
+    }
     pub fn get_median_count(&self) -> f64 {
         let mut v = self.counts.clone();
         v.sort_unstable();
