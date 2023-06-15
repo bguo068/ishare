@@ -1,5 +1,6 @@
 use super::ibdseg::IbdSeg;
 use crate::container::intervals::Intervals;
+use crate::container::intervaltree::IntervalTree;
 use crate::genome::GenomeInfo;
 use crate::genotype::common::GenotypeMatrix;
 use crate::gmap::GeneticMap;
@@ -354,6 +355,51 @@ impl<'a> IbdSet<'a> {
         }
 
         mat
+    }
+
+    /// Remove regions from each IBD segment
+    ///
+    /// if an IBD segment is contained with a region, the whole IBD segment
+    /// will be removed; if the segment is not touch by any regions,
+    /// the segment will be intact; if the segment is partly overlapped by any
+    /// regions, the parts of segments outside those regions will be kept.
+    ///
+    /// The resulting IBD segment can be further filtered:
+    /// when min_cm is not None, the result short IBD segment will NOT be
+    /// added to the output ibdset.
+    ///
+    pub fn remove_regions(
+        &self,
+        regions: &Intervals<u32>,
+        res_ibd: &mut IbdSet,
+        min_cm: Option<f32>,
+    ) {
+        // get complement of regions
+        let mut regions = regions.clone();
+        let genome_size = self.get_ginfo().get_total_len_bp();
+        regions.complement(0, genome_size);
+        // generate ibdseg that intersect the complement regions
+        let tree = IntervalTree::from_iter(regions.iter().map(|x| (x.to_owned(), ())));
+        let gmap = self.gmap;
+        for seg in self.iter() {
+            for element in tree.query(seg.e..seg.i) {
+                let mut seg = seg.clone();
+                if seg.s < element.range.start {
+                    seg.s = element.range.start;
+                }
+                if seg.e > element.range.end {
+                    seg.e = element.range.end;
+                }
+                match min_cm {
+                    // if provided a threshold and segment is too short,
+                    // the segment will be no added to output
+                    Some(min_cm) if seg.get_seg_len_cm(gmap) < min_cm => {}
+                    _ => {
+                        res_ibd.add(seg);
+                    }
+                }
+            }
+        }
     }
 }
 
