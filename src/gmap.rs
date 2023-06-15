@@ -1,7 +1,10 @@
 pub struct GeneticMap(Vec<(u32, f32)>);
 use crate::genome::GenomeInfo;
 use csv;
-use std::path::Path;
+use std::{
+    io::{BufWriter, Write},
+    path::Path,
+};
 
 impl GeneticMap {
     pub fn from_iter(it: impl Iterator<Item = (u32, f32)>) -> Self {
@@ -134,5 +137,36 @@ impl GeneticMap {
             *bp += gw_chr_start_bp;
             *cm += gw_chr_start_cm;
         });
+    }
+
+    pub fn to_plink_map_files(&self, ginfo: &GenomeInfo, prefix: impl AsRef<Path>) {
+        // make folder
+        let parent = prefix.as_ref().parent().unwrap();
+        if !parent.exists() {
+            std::fs::create_dir_all(parent)
+                .expect(&format!("can't creat folder {}", parent.to_string_lossy()));
+        }
+        let filename = prefix.as_ref().file_name().unwrap().to_str().unwrap();
+        for (i, chrname) in ginfo.chromnames.iter().enumerate() {
+            // make a file name per chromosome
+            let path = parent.with_file_name(format!("{}_{}.map", filename, chrname));
+            let mut f = std::fs::File::create(&path).map(BufWriter::new).unwrap();
+            // find the first end record for each chromosome
+            let gwstart = ginfo.gwstarts[i];
+            let gwend = match ginfo.gwstarts.get(i + 1) {
+                None => ginfo.get_total_len_bp(),
+                Some(gwend) => *gwend,
+            };
+            let s = self.0.partition_point(|x| x.0 < gwstart);
+            let e = self.0.partition_point(|x| x.0 < gwend);
+            // write records for each chromosomes
+            let (pos_offset, cm_offset) = self.0[s];
+            for (pos, cm) in &self.0[s..e] {
+                let pos = *pos - pos_offset + 1; // 1-based position
+                let cm = *cm - cm_offset;
+
+                write!(f, "{} . {} {}\n", chrname, cm, pos).unwrap();
+            }
+        }
     }
 }

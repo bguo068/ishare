@@ -1,3 +1,4 @@
+use crate::container::intervals::Intervals;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::io::Read;
@@ -88,5 +89,52 @@ impl GenomeInfo {
     }
     pub fn get_total_len_bp(&self) -> u32 {
         self.chromsize.iter().sum()
+    }
+
+    pub fn split_chromosomes_by_regions(&self, regions: &Intervals<u32>) -> Self {
+        let name = format!("{}_rmpeaks", &self.name);
+        let mut chromsize = vec![];
+        let mut idx = HashMap::new();
+        let mut gwstarts = vec![];
+        let mut chromnames = vec![];
+        let gmaps = vec![];
+        let gw_tot_len_bp = self.get_total_len_bp();
+
+        // new gwstart are from old gwstarts plus region boundaries
+        gwstarts.extend(self.gwstarts.iter());
+        regions
+            .iter()
+            .for_each(|r| gwstarts.extend(&[r.start, r.end]));
+        // dedup
+        gwstarts.sort();
+        gwstarts.dedup();
+        // filter boundaries beyond the total size
+        gwstarts.retain(|x| *x < gw_tot_len_bp);
+
+        for (i, gwstart) in gwstarts.iter().enumerate() {
+            let (_chrid, chrname, chrpos) = self.to_chr_pos(*gwstart);
+            let new_chrname = format!("{}_{}", chrname, chrpos);
+            chromnames.push(new_chrname.clone());
+            idx.insert(new_chrname, i);
+        }
+
+        // use gwstarts to get chrommsome sizes
+        gwstarts.push(gw_tot_len_bp);
+        chromsize.extend(
+            gwstarts
+                .iter()
+                .zip(gwstarts.iter().skip(1))
+                .map(|(a, b)| *b - *a),
+        );
+        gwstarts.pop();
+
+        Self {
+            name,
+            chromnames,
+            chromsize,
+            idx,
+            gwstarts,
+            gmaps,
+        }
     }
 }
