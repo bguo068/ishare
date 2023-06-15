@@ -30,17 +30,19 @@ use statrs::distribution::{ChiSquared, ContinuousCDF};
 ///
 /// Henden et al 2018 [https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1007279]
 pub struct XirsBuilder<'a> {
-    afrq: Vec<f64>,
-    site_pos: Vec<u32>,
+    afrq_i: Vec<f64>,
+    pos_i: Vec<u32>,
     ibd: &'a IbdSet<'a>,
-    nhap: usize,
-    cm: Vec<f64>,   // intermediate variables (columns means in step 1)
-    rm: Vec<f64>,   // intermediate variables (row means, in step 2)
-    rs: Vec<f64>,   // intermediate variables (row sum, in step 3)
-    raw: Vec<f64>,  // un-normalized raw stats
-    norm: Vec<f64>, // normalized raw stats
-    xirs: Vec<f64>,
-    pval: Vec<f64>,
+    npairs: usize,
+    nsites: usize,
+    xs_i: Vec<f64>,   // intermediate variables (columns means in step 1)
+    cm_j: Vec<f64>,   // intermediate variables (columns means in step 1)
+    rm_i: Vec<f64>,   // intermediate variables (row means, in step 2)
+    rs_i: Vec<f64>,   // intermediate variables (row sum, in step 3)
+    raw_i: Vec<f64>,  // un-normalized raw stats
+    norm_i: Vec<f64>, // normalized raw stats
+    xirs_i: Vec<f64>,
+    pval_i: Vec<f64>,
 }
 
 impl<'a> XirsBuilder<'a> {
@@ -69,25 +71,20 @@ impl<'a> XirsBuilder<'a> {
         let nsites = site_pos.len();
         let npairs = nhap * (nhap - 1) / 2;
         Self {
-            afrq,
-            site_pos,
+            afrq_i: afrq,
+            pos_i: site_pos,
             ibd,
-            nhap,
-            cm: Vec::with_capacity(npairs),
-            rm: Vec::with_capacity(nsites),
-            rs: Vec::with_capacity(nsites),
-            raw: Vec::with_capacity(nsites),
-            norm: Vec::with_capacity(nsites),
-            xirs: Vec::with_capacity(nsites),
-            pval: Vec::with_capacity(nsites),
+            npairs,
+            nsites,
+            xs_i: Vec::with_capacity(nsites),
+            cm_j: Vec::with_capacity(npairs),
+            rm_i: Vec::with_capacity(nsites),
+            rs_i: Vec::with_capacity(nsites),
+            raw_i: Vec::with_capacity(nsites),
+            norm_i: Vec::with_capacity(nsites),
+            xirs_i: Vec::with_capacity(nsites),
+            pval_i: Vec::with_capacity(nsites),
         }
-    }
-
-    pub fn get_total_num_pairs(&self) -> usize {
-        self.nhap * (self.nhap - 1) / 2
-    }
-    pub fn get_total_num_sites(&self) -> u32 {
-        self.site_pos.len() as u32
     }
 
     // /// array idx to upper matrix idx
@@ -111,179 +108,76 @@ impl<'a> XirsBuilder<'a> {
         col
     }
 
-    fn blk_2_x(blk: &[IbdSeg]) -> usize {
-        let seg = &blk[0];
-        Self::seg_2_x(seg)
-    }
+    // fn blk_2_x(blk: &[IbdSeg]) -> usize {
+    //     let seg = &blk[0];
+    //     Self::seg_2_x(seg)
+    // }
 
-    fn calculate_cm(&mut self) {
-        let p = self.site_pos.as_slice();
-        let m = self.get_total_num_sites() as usize;
-        let n = self.get_total_num_pairs();
+    fn calculate_cm_xs(&mut self) {
+        let p = self.pos_i.as_slice();
+        let m = self.nsites;
+        let n = self.npairs;
 
+        let mut xs = vec![0f64; m];
         let mut sum = vec![0f64; n];
 
         for seg in self.ibd.iter() {
             let start = p.partition_point(|x| *x < seg.s);
             let end = start + p[start..].partition_point(|x| *x < seg.e);
             let col = Self::seg_2_x(seg);
-            for _row in start..end {
+            for row in start..end {
                 sum[col] += 1.0;
+                xs[row] += 1.0;
             }
         }
 
-        self.cm.extend(sum.into_iter().map(|x| x / m as f64));
+        self.cm_j.extend(sum.into_iter().map(|x| x / m as f64));
+        self.xs_i = xs;
     }
 
     fn calculate_rm(&mut self) {
-        let p = self.site_pos.as_slice();
-        let m = self.get_total_num_sites() as usize;
-        let n = self.get_total_num_pairs();
+        // let p = self.pos_i.as_slice();
+        // let m = self.nsites;
+        let n = self.npairs;
 
-        let mut sum = vec![0f64; m];
-        // for hap pairs that share at least one IBD segment
-        for blk in IbdSetBlockIter::new(&self.ibd, false) {
-            let col = Self::blk_2_x(blk);
-            let cm_col = self.cm[col];
+        let cm_j_total: f64 = self.cm_j.iter().sum();
 
-            let mut non_ibd_start = 0usize;
-            let mut non_ibd_end: usize;
-            let mut start = 0usize;
-            let mut end: usize;
-            for seg in blk {
-                start = start + p[start..].partition_point(|x| *x < seg.s);
-                end = start + p[start..].partition_point(|x| *x < seg.e);
-                // non-ibd region
-                non_ibd_end = start;
-                for row in non_ibd_start..non_ibd_end {
-                    sum[row] += 0.0 - cm_col;
-                }
-                // ibd region
-                for row in start..end {
-                    sum[row] += 1.0 - cm_col;
-                }
-                non_ibd_start = end;
-                start = end;
-            }
-            // trailing non-ibd region
-            for row in non_ibd_start..p.len() {
-                sum[row] += 0.0 - cm_col;
-            }
-        }
-        // for hap pair that does not share IBD segments
-        let it_all = (0..n).into_iter();
-        let it_shared = IbdSetBlockIter::new(&self.ibd, false).map(Self::blk_2_x);
-        use itertools::EitherOrBoth::*;
-        let merged = itertools::merge_join_by(it_all, it_shared, |a, b| a.cmp(b));
-
-        /*
-        merged.for_each(|x| match x {
-            Left(col) => {
-                let cm_col = self.cm[col];
-                for row in 0..p.len() {
-                    sum[row] += 0.0 - cm_col;
-                }
-            }
-            _ => {}
-        });
-        */
-        // NOTE: by first calculating cm_sum for pairs not sharing IBD can dramtically
-        // improve calulating speed
-        let cm_sum_not_share_ibd: f64 = merged
-            .map(|x| match x {
-                Left(col) => Some(0.0 - self.cm[col]),
-                _ => None,
-            })
-            .flatten()
-            .sum();
-        for row in 0..p.len() {
-            sum[row] += cm_sum_not_share_ibd;
-        }
-
-        self.rm.extend(sum.into_iter().map(|x| x / n as f64));
+        let it = self.xs_i.iter().map(|x_i| (*x_i - cm_j_total) / (n as f64));
+        self.rm_i.extend(it);
     }
 
     fn calculate_rs(&mut self) {
-        let p = self.site_pos.as_slice();
-        let m = self.get_total_num_sites() as usize;
-        let n = self.get_total_num_pairs();
-        let pqsqrt: Vec<f64> = self.afrq.iter().map(|p| (*p * (1.0 - *p)).sqrt()).collect();
+        // let p = self.pos_i.as_slice();
+        // let m = self.nsites;
+        let n = self.npairs;
+        let pqsqrt: Vec<f64> = self
+            .afrq_i
+            .iter()
+            .map(|p| (*p * (1.0 - *p)).sqrt())
+            .collect();
+        let cm_j_total: f64 = self.cm_j.iter().sum();
 
-        let mut sum = vec![0f64; m];
-        // for hap pairs that share at least one IBD segment
-        for blk in IbdSetBlockIter::new(&self.ibd, false) {
-            let col = Self::blk_2_x(blk);
-            let cm_col = self.cm[col];
+        let it = self
+            .xs_i
+            .iter()
+            .zip(self.rm_i.iter())
+            .zip(pqsqrt.iter())
+            .map(|((xs_i, rm_i), pq_i)| {
+                let mut val = *xs_i - cm_j_total - *rm_i * (n as f64);
+                val /= pq_i;
+                val
+            });
 
-            let mut non_ibd_start = 0usize;
-            let mut non_ibd_end: usize;
-            let mut start = 0usize;
-            let mut end: usize;
-            for seg in blk {
-                start = start + p[start..].partition_point(|x| *x < seg.s);
-                end = start + p[start..].partition_point(|x| *x < seg.e);
-                // non-ibd region
-                non_ibd_end = start;
-                for row in non_ibd_start..non_ibd_end {
-                    sum[row] += (0.0 - cm_col - self.rm[row]) / pqsqrt[row];
-                }
-                // ibd region
-                for row in start..end {
-                    sum[row] += (1.0 - cm_col - self.rm[row]) / pqsqrt[row];
-                }
-                non_ibd_start = end;
-                start = end;
-            }
-            // trailing non-ibd region
-            for row in non_ibd_start..p.len() {
-                sum[row] += (0.0 - cm_col - self.rm[row]) / pqsqrt[row];
-            }
-        }
-        // // for hap pair that does not share IBD segments
-        let it_all = (0..n).into_iter();
-        let it_shared = IbdSetBlockIter::new(&self.ibd, false).map(Self::blk_2_x);
-        use itertools::EitherOrBoth::*;
-        let merged = itertools::merge_join_by(it_all, it_shared, |a, b| a.cmp(b));
-        // merged.for_each(|x| match x {
-        //     Left(col) => {
-        //         let cm_col = self.cm[col];
-        //         for row in 0..p.len() {
-        //             sum[row] += (0.0 - cm_col - self.rm[row]) / pqsqrt[row];
-        //         }
-        //     }
-        //     _ => {}
-        // });        let col_sum_not_share_ibd: f64 = merged
-        // NOTE: by first calculating cm_sum for pairs not sharing IBD can dramtically
-        // improve calulating speed
-        let mut n_not_share_ibd = 0;
-        let cm_sum_not_share_ibd: f64 = merged
-            .map(|x| match x {
-                Left(col) => {
-                    n_not_share_ibd += 1;
-                    Some(0.0 - self.cm[col])
-                }
-                _ => None,
-            })
-            .flatten()
-            .sum();
-        for row in 0..p.len() {
-            sum[row] += (cm_sum_not_share_ibd + self.rm[row] * n_not_share_ibd as f64) / pqsqrt[row]
-        }
-        // final scaling
-        for row in 0..p.len() {
-            sum[row] /= (n as f64).sqrt();
-        }
-
-        self.rs = sum;
+        self.rs_i.extend(it);
     }
 
     fn calculate_raw(&mut self) {
-        if self.rs.len() != self.get_total_num_sites() as usize {
+        let m = self.nsites;
+        if self.rs_i.len() != m {
             self.calculate_rs();
         }
-        for rs in self.rs.iter() {
-            self.raw
-                .push(*rs / (self.get_total_num_pairs() as f64).sqrt());
+        for rs in self.rs_i.iter() {
+            self.raw_i.push(*rs / (m as f64).sqrt());
         }
     }
 
@@ -292,13 +186,15 @@ impl<'a> XirsBuilder<'a> {
     // subtracted the mean and divided by the standard deviation of all values
     // within each bin (z-score)
     fn calculate_norm(&mut self) {
-        if self.raw.len() != self.get_total_num_sites() as usize {
+        let m = self.nsites;
+        // let n = self.npairs;
+        if self.raw_i.len() != m {
             self.calculate_raw();
         }
 
         // vec of 3-tuple (orig_idx, freq, class)
         let mut annot_freq: Vec<(usize, f64, usize)> = self
-            .afrq
+            .afrq_i
             .iter()
             .enumerate()
             .map(|(i, p)| (i, *p, 0))
@@ -310,12 +206,11 @@ impl<'a> XirsBuilder<'a> {
         // assign frquency bin class
         // the first `extra` bins have `binsz + 1` members
         // the rest `100 - extra` bins have `binsz` members.
-        let n = self.get_total_num_sites() as usize;
-        let binsz = n / 100;
-        let extra = n % 100;
+        let binsz = m / 100;
+        let extra = m % 100;
         let mut s = 0usize;
         let mut class = 0;
-        while s < n {
+        while s < m {
             let e = s + binsz + (class < extra) as usize;
             annot_freq[s..e].iter_mut().for_each(|x| x.2 = class);
             class += 1;
@@ -331,7 +226,7 @@ impl<'a> XirsBuilder<'a> {
 
         run_sums.resize(100, 0.0);
         run_cnts.resize(100, 0);
-        for ((_idx, _p, which), raw_val) in annot_freq.iter().zip(self.raw.iter()) {
+        for ((_idx, _p, which), raw_val) in annot_freq.iter().zip(self.raw_i.iter()) {
             run_cnts[*which] += 1;
             run_sums[*which] += *raw_val;
         }
@@ -344,7 +239,7 @@ impl<'a> XirsBuilder<'a> {
 
         run_sums.resize(100, 0.0);
         run_cnts.resize(100, 0);
-        for ((_idx, _p, which), raw_val) in annot_freq.iter().zip(self.raw.iter()) {
+        for ((_idx, _p, which), raw_val) in annot_freq.iter().zip(self.raw_i.iter()) {
             run_cnts[*which] += 1;
             let diff = *raw_val - means[*which];
             run_sums[*which] += diff * diff;
@@ -356,61 +251,74 @@ impl<'a> XirsBuilder<'a> {
             .map(|(s, n)| (*s / (*n) as f64).sqrt())
             .collect();
 
-        for ((_idx, _p, which), raw_val) in annot_freq.iter().zip(self.raw.iter()) {
+        for ((_idx, _p, which), raw_val) in annot_freq.iter().zip(self.raw_i.iter()) {
             let which = *which;
             let m = means[which];
             let std = stds[which];
-            self.norm.push((*raw_val - m) / std);
+            self.norm_i.push((*raw_val - m) / std);
         }
     }
 
     fn calculate_xirs(&mut self) {
-        if self.norm.len() != self.get_total_num_sites() as usize {
+        let m = self.nsites;
+        if self.norm_i.len() != m {
             self.calculate_norm();
         }
 
-        self.xirs.clear();
+        self.xirs_i.clear();
         // squre of normalized stats
-        self.xirs.extend(self.norm.iter().map(|x| *x * *x));
+        self.xirs_i.extend(self.norm_i.iter().map(|x| *x * *x));
     }
 
     fn calculate_pval(&mut self) {
-        if self.xirs.len() != self.get_total_num_sites() as usize {
+        let m = self.nsites;
+        if self.xirs_i.len() != m {
             self.calculate_xirs();
         }
         let chisq = ChiSquared::new(1.0).unwrap();
 
-        self.pval.clear();
+        self.pval_i.clear();
         // calculate pvalue using cdf function
-        self.pval
-            .extend(self.xirs.iter().map(|x| 1.0 - chisq.cdf(*x)));
+        self.pval_i
+            .extend(self.xirs_i.iter().map(|x| 1.0 - chisq.cdf(*x)));
     }
 
     pub fn finish(&mut self) -> XirsResult {
         println!("calculate 1. cm");
-        self.calculate_cm();
+        self.calculate_cm_xs();
         println!("calculate 2. rm");
         self.calculate_rm();
         println!("calculate 3. rs");
         self.calculate_rs();
-        println!("calculate 4- others");
+        println!("calculate 4. raw");
         self.calculate_raw();
+        println!("calculate 5. norm");
         self.calculate_norm();
+        println!("calculate 6. xirs");
         self.calculate_xirs();
+        println!("calculate 7. xirs");
         self.calculate_pval();
+        println!("calculate 8. writing");
 
-        let n = self.get_total_num_sites() as usize;
-        let mut chr_id = Vec::<u32>::with_capacity(n);
-        let mut chr_pos = Vec::<u32>::with_capacity(n);
-        let gw_pos = self.site_pos.clone();
+        println!("cm: {}, {:?}..", self.cm_j.len(), &self.rm_i[1..5]);
+        println!("rm: {}, {:?}..", self.rm_i.len(), &self.rm_i[1..5]);
+        println!("rs: {}, {:?}..", self.rs_i.len(), &self.rs_i[1..5]);
+        println!("xi: {}, {:?}..", self.xs_i.len(), &self.xs_i[1..5]);
+        println!("afreq: {}, {:?}..", self.afrq_i.len(), &self.afrq_i[1..5]);
+        println!("xris: {}, {:?}..", self.xirs_i.len(), &self.xirs_i[1..5]);
+
+        let m = self.nsites;
+        let mut chr_id = Vec::<u32>::with_capacity(m);
+        let mut chr_pos = Vec::<u32>::with_capacity(m);
+        let gw_pos = self.pos_i.clone();
 
         for gwpos in gw_pos.iter() {
             let (chid, _, chrpos) = self.ibd.get_ginfo().to_chr_pos(*gwpos);
             chr_id.push(chid as u32);
             chr_pos.push(chrpos);
         }
-        let xirs = self.xirs.clone();
-        let pval = self.pval.clone();
+        let xirs = self.xirs_i.clone();
+        let pval = self.pval_i.clone();
 
         XirsResult {
             chr_id,
