@@ -120,11 +120,6 @@ impl GeneticMap {
         } else if bp > x2 {
             bp = x2;
         }
-        // println!("0: {:?}", self.0[0]);
-        // println!("1: {:?}", self.0[1]);
-        // println!("2: {:?}", self.0[2]);
-        // println!("idx={idx}, x1={x1}, y1={y1}, x2={x2}, y2={y2}, cm={cm}, slope={slope}, bp={bp}");
-
         bp
     }
 

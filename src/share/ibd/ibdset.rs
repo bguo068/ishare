@@ -11,6 +11,14 @@ use itertools::Itertools;
 use rust_htslib::bgzf;
 use std::collections::HashMap;
 use std::path::Path;
+use IbdSetPloidyStatus::*;
+
+pub enum IbdSetPloidyStatus {
+    Diploid,
+    DiploidMerged,
+    Haploid,
+    UnknownPloidy,
+}
 
 /// A struct representing a set of IBD segments with references to meta information
 /// - GeneticMap
@@ -22,6 +30,7 @@ pub struct IbdSet<'a> {
     gmap: &'a GeneticMap,
     ginfo: &'a GenomeInfo,
     inds: &'a Individuals,
+    ploidy_status: IbdSetPloidyStatus,
 }
 
 impl<'a> IbdSet<'a> {
@@ -32,11 +41,33 @@ impl<'a> IbdSet<'a> {
             gmap,
             ginfo,
             inds,
+            ploidy_status: UnknownPloidy,
+        }
+    }
+
+    pub fn infer_ploidy(&mut self) {
+        if self.is_valid_haploid_ibd() {
+            self.ploidy_status = Haploid;
+        } else if self.is_valid_diploid_ibd() {
+            if self.has_merged_ibd() {
+                self.ploidy_status = DiploidMerged;
+            } else {
+                self.ploidy_status = Diploid;
+            }
+        } else {
+            self.ploidy_status = UnknownPloidy;
         }
     }
 
     /// Add a segment into the set
+    ///
+    /// Note add segment put ibdset in unknow ploidy status
+    /// Use infer_ploidy when IBD addition are completely done.
     pub fn add(&mut self, ibdseg: IbdSeg) {
+        match self.ploidy_status {
+            UnknownPloidy => {}
+            _ => self.ploidy_status = UnknownPloidy,
+        }
         self.ibd.push(ibdseg)
     }
 
@@ -166,6 +197,12 @@ impl<'a> IbdSet<'a> {
         diploid_inds: &'a Individuals,
         ploidy_converter: &PloidyConverter,
     ) {
+        let is_haploid = match self.ploidy_status {
+            Haploid => true,
+            _ => false,
+        };
+        assert!(is_haploid);
+
         self.inds = diploid_inds;
         self.ibd.iter_mut().for_each(|seg| {
             let (ind1, ind2) = seg.individual_pair();
@@ -175,26 +212,43 @@ impl<'a> IbdSet<'a> {
             seg.j = (ind2 << 2) + hap2 as u32;
             seg.normalized();
         });
+        self.ploidy_status = Diploid;
     }
     pub fn covert_to_haploid(
         &mut self,
         haploid_inds: &'a Individuals,
         ploidy_converter: &PloidyConverter,
     ) {
+        // check ploidy
+        let is_diploid = match self.ploidy_status {
+            Diploid => true,
+            DiploidMerged => true,
+            _ => false,
+        };
+        assert!(is_diploid);
+
         self.inds = haploid_inds;
         self.ibd.iter_mut().for_each(|seg| {
             let (ind1, hap1, ind2, hap2) = seg.haplotype_pair();
             let ind1 = ploidy_converter.d2h(ind1, hap1);
             let ind2 = ploidy_converter.d2h(ind2, hap2);
-            let hap1 = 0;
-            let hap2 = 0;
+            let hap1 = 3;
+            let hap2 = 3;
             seg.i = (ind1 << 2) + hap1 as u32;
             seg.j = (ind2 << 2) + hap2 as u32;
             seg.normalized();
         });
+
+        self.ploidy_status = Haploid;
     }
 
     pub fn merge(&mut self) {
+        let is_diploid_unmerged = match self.ploidy_status {
+            Diploid => true,
+            _ => false,
+        };
+        assert!(is_diploid_unmerged);
+
         self.sort_by_samples();
         self.ibd
             .iter_mut()
@@ -227,6 +281,7 @@ impl<'a> IbdSet<'a> {
             });
         // clean up unused record
         self.ibd.retain(|seg| !((seg.i == 0) && (seg.j == 0)));
+        self.ploidy_status = DiploidMerged;
     }
 
     pub fn merge_using_browning_method(
@@ -236,6 +291,12 @@ impl<'a> IbdSet<'a> {
         gt: &GenotypeMatrix,
         site: &Sites,
     ) {
+        let is_diploid_unmerged = match self.ploidy_status {
+            Diploid => true,
+            _ => false,
+        };
+
+        assert!(is_diploid_unmerged);
         let ginfo = self.ginfo;
         let gmap = self.gmap;
 
@@ -300,6 +361,7 @@ impl<'a> IbdSet<'a> {
             });
         // clean up unused record
         self.ibd.retain(|seg| !((seg.i == 0) && (seg.j == 0)));
+        self.ploidy_status = DiploidMerged;
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &IbdSeg> {
@@ -355,6 +417,16 @@ impl<'a> IbdSet<'a> {
         }
 
         mat
+    }
+
+    pub fn is_valid_haploid_ibd(&self) -> bool {
+        self.ibd.iter().all(|x| x.is_haploid_ibd())
+    }
+    pub fn is_valid_diploid_ibd(&self) -> bool {
+        self.ibd.iter().all(|x| x.is_dipoid_ibd())
+    }
+    pub fn has_merged_ibd(&self) -> bool {
+        self.ibd.iter().any(|x| x.is_from_merge())
     }
 
     /// Remove regions from each IBD segment

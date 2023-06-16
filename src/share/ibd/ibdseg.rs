@@ -41,6 +41,9 @@ impl IbdSeg {
     /// For segment from merging, there is only one possibility:
     /// - (2, 2)
     ///
+    /// For segment from haploid individuals, haplotype indcies should be 3
+    /// for all individuals and all segments
+    /// - (3, 3)
     pub fn new(i: u32, m: u8, j: u32, n: u8, s: u32, e: u32, pos_shift: u32) -> Self {
         IbdSeg {
             i: i * 4 + m as u32,
@@ -88,6 +91,15 @@ impl IbdSeg {
         gmap.get_cm(self.e) - gmap.get_cm(self.s)
     }
 
+    pub fn is_haploid_ibd(&self) -> bool {
+        ((self.i & 0x3) == 3) && ((self.j & 0x3) == 3)
+    }
+    pub fn is_dipoid_ibd(&self) -> bool {
+        let m = self.i & 0x3;
+        let n = self.j & 0x3;
+        (m <= 2) && (n <= 2) && ((m == 2) == (n == 2))
+    }
+
     /// check if IBD segment is resulting from merging of more one original segments
     pub fn is_from_merge(&self) -> bool {
         ((self.i & 0x3) == 2) && ((self.j & 0x3) == 2)
@@ -98,7 +110,10 @@ impl IbdSeg {
     pub fn is_valid(&self) -> bool {
         let m = self.i & 0x3;
         let n = self.j & 0x3;
+        let valid_diploid = (m <= 2) && (n <= 2) && ((m == 2) == (n == 2));
+        let valid_haploid = (m == 3) && (n == 3);
+        let valid_coords = self.s < self.e;
 
-        (m <= 2) && (n <= 2) && ((m == 2) == (n == 2)) && (self.s < self.e)
+        valid_coords && (valid_diploid || valid_haploid)
     }
 }
