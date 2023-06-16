@@ -12,12 +12,21 @@ use rust_htslib::bgzf;
 use std::collections::HashMap;
 use std::path::Path;
 use IbdSetPloidyStatus::*;
+use IbdSetSortStatus::*;
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum IbdSetPloidyStatus {
     Diploid,
     DiploidMerged,
     Haploid,
     UnknownPloidy,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum IbdSetSortStatus {
+    SortedByIndividaulPair,
+    SortedByHaplotypePair,
+    Unsorted,
 }
 
 /// A struct representing a set of IBD segments with references to meta information
@@ -31,6 +40,7 @@ pub struct IbdSet<'a> {
     ginfo: &'a GenomeInfo,
     inds: &'a Individuals,
     ploidy_status: IbdSetPloidyStatus,
+    sort_status: IbdSetSortStatus,
 }
 
 impl<'a> IbdSet<'a> {
@@ -42,6 +52,7 @@ impl<'a> IbdSet<'a> {
             ginfo,
             inds,
             ploidy_status: UnknownPloidy,
+            sort_status: Unsorted,
         }
     }
 
@@ -59,14 +70,51 @@ impl<'a> IbdSet<'a> {
         }
     }
 
+    /// Faster way to check ploidy status
+    ///
+    /// Faster then using methods that iterate over the whole IBD set
+    ///  - self.has_merged_ibd();
+    ///  - self.is_valid_diploid_ibd();
+    ///  - self.is_valid_haploid_ibd();
+    ///
+    pub fn get_ploidy_status(&self) -> IbdSetPloidyStatus {
+        self.ploidy_status
+    }
+
+    pub fn infer_sort_status(&mut self) {
+        if self.is_sorted_by_haplotypes() {
+            self.sort_status = SortedByHaplotypePair;
+        } else if self.is_sorted_by_samples() {
+            self.sort_status = SortedByIndividaulPair;
+        } else {
+            self.sort_status = Unsorted;
+        }
+    }
+
+    /// Faster way to check sorted status
+    ///
+    /// Faster then using methods that iterate over the whole IBD set
+    ///  - self.is_sorted_by_haplotypes();
+    ///  - self.is_sorted_by_samples();
+    ///
+    pub fn get_sort_status(&self) -> IbdSetSortStatus {
+        self.sort_status
+    }
+
     /// Add a segment into the set
     ///
-    /// Note add segment put ibdset in unknow ploidy status
+    /// Note add segment put ibdset in unknow ploidy status and unsorted status
     /// Use infer_ploidy when IBD addition are completely done.
     pub fn add(&mut self, ibdseg: IbdSeg) {
         match self.ploidy_status {
             UnknownPloidy => {}
             _ => self.ploidy_status = UnknownPloidy,
+        }
+        match self.sort_status {
+            Unsorted => {}
+            _ => {
+                self.sort_status = Unsorted;
+            }
         }
         self.ibd.push(ibdseg)
     }
@@ -164,6 +212,7 @@ impl<'a> IbdSet<'a> {
     /// Sort IBD segment by individual pair indicies and then by coordinates
     pub fn sort_by_samples(&mut self) {
         self.ibd.sort_by_key(|s| (s.individual_pair(), s.coords()));
+        self.sort_status = SortedByIndividaulPair;
     }
 
     pub fn is_sorted_by_samples(&self) -> bool {
@@ -176,6 +225,7 @@ impl<'a> IbdSet<'a> {
     /// Sort IBD segment by haplotype pair indicies and then by coordinates
     pub fn sort_by_haplotypes(&mut self) {
         self.ibd.sort_by_key(|s| (s.haplotype_pair(), s.coords()));
+        self.sort_status = SortedByHaplotypePair;
     }
 
     pub fn is_sorted_by_haplotypes(&self) -> bool {
