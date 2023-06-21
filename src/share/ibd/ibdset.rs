@@ -209,6 +209,93 @@ impl<'a> IbdSet<'a> {
         }
     }
 
+    /// read IBD segment from a file in `tskibd` format:
+    /// - columns are delimited by `\t`
+    /// - the first 7 columns are used
+    ///     - Id1: individual 1
+    ///     - Id2: individual 2
+    ///     - Start
+    ///     - End
+    ///     - Ancestor
+    ///     - Tmrca
+    ///     - HasMutation
+    /// - individual/chromomes are converted to index according to meta information
+    /// - position are converted from 1-based to 0-based.
+    /// - for this format, m/n are 3 to represent haploid genome
+    pub fn read_tskibd_file(&mut self, p: impl AsRef<Path>, chrname: &str) {
+        use csv::ReaderBuilder;
+        use csv::StringRecord;
+
+        let reader = bgzf::Reader::from_path(p.as_ref()).unwrap();
+
+        let mut reader = ReaderBuilder::new()
+            .delimiter(b'\t')
+            .has_headers(true)
+            .from_reader(reader);
+
+        let mut record = StringRecord::new();
+        let ind_map = self.inds.m();
+        let chr_map = &self.get_ginfo().idx;
+        let chrid = chr_map[chrname];
+        let pos_shift = self.ginfo.gwstarts[chrid];
+
+        // let gw_chr_start_cm = self.gmap.get_gw_chr_start_cm_vec(self.ginfo);
+
+        // check header column names
+        let header = &reader.headers().unwrap();
+        assert_eq!(&header[0], "Id1");
+        assert_eq!(&header[1], "Id2");
+        assert_eq!(&header[2], "Start");
+        assert_eq!(&header[3], "End");
+        assert_eq!(&header[4], "Ancestor");
+        assert_eq!(&header[5], "Tmrca");
+        assert_eq!(&header[6], "HasMutation");
+
+        while reader.read_record(&mut record).unwrap() {
+            // haploid genome
+            let m = 3;
+            let n = 3;
+
+            let i = ind_map[&record[0]] as u32;
+            let j = ind_map[&record[2]] as u32;
+
+            let s = record[2].parse::<u32>().unwrap() - 1;
+            let e = record[3].parse::<u32>().unwrap() - 1;
+            // let l: f32 = record[7].parse::<f32>().unwrap();
+
+            let mut ibd = IbdSeg::new(i, m, j, n, s, e, pos_shift);
+            ibd.normalized();
+            assert!(ibd.is_valid());
+            self.ibd.push(ibd);
+        }
+    }
+
+    /// read all `{chrname}.ibd` file (in hap-IBD format) into the IBD set
+    /// by globing the folder and calling [IbdSet::read_hapibd_file]
+    pub fn read_tskibd_dir(&mut self, p: impl AsRef<Path>) {
+        for entry in p.as_ref().read_dir().unwrap() {
+            if let Ok(entry) = entry {
+                if !entry.file_type().unwrap().is_file() {
+                    continue;
+                }
+                let filename = entry.file_name();
+                let filename = filename.as_os_str().to_str().unwrap();
+                if !filename.ends_with("ibd") {
+                    continue;
+                }
+                let p = entry.path();
+                let chrname = p.file_stem().unwrap().to_str().unwrap();
+                self.read_tskibd_file(&p, chrname);
+            }
+        }
+    }
+    pub fn read_hmmibd_file(&mut self) {
+        todo!()
+    }
+    pub fn to_hapibd_file(&self) {
+        todo!()
+    }
+
     /// Sort IBD segment by individual pair indicies and then by coordinates
     pub fn sort_by_samples(&mut self) {
         self.ibd.sort_by_key(|s| (s.individual_pair(), s.coords()));

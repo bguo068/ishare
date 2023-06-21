@@ -26,6 +26,9 @@ enum Commands {
         // Path to sample list file
         #[arg(short = 'o', long, default_value = "ibd_cmp_res.txt")]
         out: PathBuf,
+        // fmt of ibd files, supported format 'hapibd', 'tskibd'
+        #[arg(short = 'f', long, default_value = "hapibd")]
+        fmt: String,
         // IBD directory 1
         ibd1_dir: PathBuf,
         // IBD directory 2
@@ -41,6 +44,7 @@ fn main() {
             genome_info,
             samples,
             out,
+            fmt,
             ibd1_dir,
             ibd2_dir,
         }) => {
@@ -49,12 +53,25 @@ fn main() {
             let gmap = gmap::GeneticMap::from_genome_info(&ginfo);
             let inds = Individuals::from_txt_file(&samples);
             let mut ibd1 = IbdSet::new(&gmap, &ginfo, &inds);
-            ibd1.read_hapibd_dir(&ibd1_dir);
             let mut ibd2 = IbdSet::new(&gmap, &ginfo, &inds);
-            ibd2.read_hapibd_dir(&ibd2_dir);
 
-            ibd1.sort_by_samples();
-            ibd2.sort_by_samples();
+            if fmt == "hapibd" {
+                ibd1.read_hapibd_dir(&ibd1_dir);
+                ibd2.read_hapibd_dir(&ibd2_dir);
+                ibd1.sort_by_samples();
+                ibd2.sort_by_samples();
+                ibd1.infer_ploidy();
+                ibd2.infer_ploidy();
+            } else if fmt == "tskibd" {
+                ibd1.read_tskibd_dir(&ibd1_dir);
+                ibd2.read_tskibd_dir(&ibd2_dir);
+                ibd1.sort_by_haplotypes();
+                ibd2.sort_by_haplotypes();
+                ibd1.infer_ploidy();
+                ibd2.infer_ploidy();
+            } else {
+                panic!("format {} is not supported.", fmt);
+            }
 
             {
                 // overlapping analysis
