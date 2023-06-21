@@ -26,7 +26,7 @@ impl<'a> IbdOverlapAnalyzer<'a> {
         }
     }
 
-    fn calc_overlap_rates(&self, len_ranges: Option<&[f32]>, swap12: bool) -> Vec<f32> {
+    fn calc_overlap_rates(&self, len_ranges: Option<&[f32]>, swap12: bool) -> (Vec<f32>, f32) {
         let gmap = self.ibd1.get_gmap();
         let len_ranges = match len_ranges {
             Some(x) => x,
@@ -36,6 +36,8 @@ impl<'a> IbdOverlapAnalyzer<'a> {
         let mut ratio_sums: Vec<f32> = vec![0.0f32; len_ranges.len()];
         let mut tree = IntervalTree::<u32, ()>::new(100);
         let mut itvs = Intervals::new();
+        let mut gw_total_a = 0.0;
+        let mut gw_total_intersect = 0.0;
 
         let blkpair_iter = if swap12 {
             IbdSetBlockPairIter::new(&self.ibd2, &self.ibd1, self.ignore_hap)
@@ -75,6 +77,8 @@ impl<'a> IbdOverlapAnalyzer<'a> {
                             // if two short no need to compare
                             continue;
                         }
+
+                        gw_total_a += cm;
                         // length category
                         let which = len_ranges.partition_point(|x| *x <= cm) - 1;
                         // total intersected length of this a segment by any b segments
@@ -97,6 +101,7 @@ impl<'a> IbdOverlapAnalyzer<'a> {
                         // update the summary vectors
                         counters[which] += 1;
                         ratio_sums[which] += intersect / cm;
+                        gw_total_intersect += intersect;
                     }
                 }
                 (None, Some(_blk2)) => {
@@ -119,6 +124,7 @@ impl<'a> IbdOverlapAnalyzer<'a> {
                             // if two short no need to compare
                             continue;
                         }
+                        gw_total_a += cm;
                         // length category
                         let which = len_ranges.partition_point(|x| *x <= cm) - 1;
                         // total intersected length of this a segment by any b segments
@@ -137,12 +143,12 @@ impl<'a> IbdOverlapAnalyzer<'a> {
             *tot /= *n as f32;
         }
 
-        ratio_sums
+        (ratio_sums, gw_total_intersect / gw_total_a)
     }
 
     pub fn analzyze(&self, len_ranges: Option<&[f32]>) -> IbdOverlapResult {
-        let a_by_b = self.calc_overlap_rates(len_ranges, false);
-        let b_by_a = self.calc_overlap_rates(len_ranges, true);
+        let (a_by_b, a_by_b_gw) = self.calc_overlap_rates(len_ranges, false);
+        let (b_by_a, b_by_a_gw) = self.calc_overlap_rates(len_ranges, true);
         let len_ranges = match len_ranges {
             Some(x) => x,
             None => &[0.0f32],
@@ -150,7 +156,9 @@ impl<'a> IbdOverlapAnalyzer<'a> {
         IbdOverlapResult {
             bins: len_ranges.into(),
             a_by_b,
+            a_by_b_gw,
             b_by_a,
+            b_by_a_gw,
         }
     }
 
@@ -160,7 +168,9 @@ impl<'a> IbdOverlapAnalyzer<'a> {
 pub struct IbdOverlapResult {
     bins: Vec<f32>,
     a_by_b: Vec<f32>,
+    a_by_b_gw: f32,
     b_by_a: Vec<f32>,
+    b_by_a_gw: f32,
 }
 
 impl IbdOverlapResult {
@@ -179,5 +189,6 @@ impl IbdOverlapResult {
         {
             write!(file, "{bin},{ab},{ba}\n").unwrap();
         }
+        write!(file, "genome_wide,{},{}\n", self.a_by_b_gw, self.b_by_a_gw).unwrap();
     }
 }
