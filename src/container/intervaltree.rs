@@ -45,9 +45,9 @@ impl<K, V> From<(Range<K>, V)> for Element<K, V> {
 
 #[derive(Clone, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-struct Node<K, V> {
-    element: Element<K, V>,
-    max: K,
+pub struct Node<K, V> {
+    pub element: Element<K, V>,
+    pub max: K,
 }
 
 /// A simple and generic implementation of an immutable interval tree.
@@ -67,6 +67,29 @@ impl<K: Ord + Clone, V> IntervalTree<K, V> {
         Self {
             data: Vec::<Node<K, V>>::with_capacity(capacity),
         }
+    }
+
+    /// build trees from nodes. this is more flexible than
+    /// building from iterators.
+    ///
+    /// Note: the max value in the node is not used. It will be recalculated
+    pub fn new_from_nodes(mut nodes: Vec<Node<K, V>>) -> Self {
+        nodes
+            .iter_mut()
+            .for_each(|n| n.max = n.element.range.end.clone());
+        nodes.sort_unstable_by(|a, b| a.element.range.start.cmp(&b.element.range.start));
+        if !nodes.is_empty() {
+            Self::update_max(&mut nodes);
+        }
+
+        IntervalTree { data: nodes }
+    }
+
+    /// extract nodes (buffer) to reduce allocation for building new trees
+    ///
+    /// The extracted nodes can be used from `new_from_nodes`
+    pub fn into_nodes(&mut self) -> Vec<Node<K, V>> {
+        std::mem::take(&mut self.data)
     }
 
     /// Clear interval vector and fill with value from iterator
