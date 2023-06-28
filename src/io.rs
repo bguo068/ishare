@@ -14,6 +14,11 @@ pub trait IntoArrowArray {
     fn into_arrow_array(self) -> ArrayRef;
 }
 
+impl IntoArrowArray for Vec<u8> {
+    fn into_arrow_array(self) -> ArrayRef {
+        Arc::new(UInt8Array::from(self)) as ArrayRef
+    }
+}
 impl IntoArrowArray for Vec<u32> {
     fn into_arrow_array(self) -> ArrayRef {
         Arc::new(UInt32Array::from(self)) as ArrayRef
@@ -34,6 +39,11 @@ pub trait FromArrowArray {
     fn from_array_array<'a>(arr: &'a dyn Array) -> &Self;
 }
 
+impl FromArrowArray for [u8] {
+    fn from_array_array<'a>(arr: &'a dyn Array) -> &Self {
+        arr.as_any().downcast_ref::<UInt8Array>().unwrap().values()
+    }
+}
 impl FromArrowArray for [u32] {
     fn from_array_array<'a>(arr: &'a dyn Array) -> &Self {
         arr.as_any().downcast_ref::<UInt32Array>().unwrap().values()
