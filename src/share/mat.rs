@@ -37,6 +37,20 @@ where
         let col_names: Vec<u32> = (0..ncol).collect();
         Self::new(row_names, col_names)
     }
+    pub fn new_from_shape_and_data(nrow: u32, ncol: u32, data: Vec<T>) -> Self {
+        let row_names: Vec<u32> = (0..nrow).collect();
+        let col_names: Vec<u32> = (0..ncol).collect();
+        let row_names_map: HashMap<u32, u32> = row_names.iter().map(|x| (*x, *x)).collect();
+        let col_names_map: HashMap<u32, u32> = col_names.iter().map(|x| (*x, *x)).collect();
+        assert_eq!(nrow as usize * ncol as usize, data.len());
+        Self {
+            row_names,
+            row_names_map,
+            col_names,
+            col_names_map,
+            data,
+        }
+    }
     pub fn new(mut row_names: Vec<u32>, mut col_names: Vec<u32>) -> Self {
         row_names.sort();
         col_names.sort();
@@ -135,6 +149,24 @@ where
         (self.row_names == other.row_names)
             && (self.col_names == other.col_names)
             && (self.data == other.data)
+    }
+
+    pub fn transpose(&mut self) {
+        let mut v = Vec::<T>::with_capacity(self.data.len());
+        for col in 0..self.col_names.len() as u32 {
+            for row in 0..self.row_names.len() as u32 {
+                v.push(self.get_by_positions(row, col));
+            }
+        }
+        self.data = v;
+        std::mem::swap(&mut self.row_names, &mut self.col_names);
+        std::mem::swap(&mut self.row_names_map, &mut self.col_names_map);
+    }
+
+    pub fn get_row_slice(&self, row_idx: u32) -> &[T] {
+        let s = row_idx as usize * self.col_names.len();
+        let e = (row_idx + 1) as usize * self.col_names.len();
+        &self.data[s..e]
     }
 }
 
