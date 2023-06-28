@@ -34,10 +34,10 @@ impl<'a> IbdOverlapAnalyzer<'a> {
         };
         let mut counters = vec![0usize; len_ranges.len()];
         let mut ratio_sums: Vec<f32> = vec![0.0f32; len_ranges.len()];
+        let mut gw_counters = 0usize;
+        let mut gw_ratio_sums = 0.0f32;
         let mut tree = IntervalTree::<u32, ()>::new(100);
         let mut itvs = Intervals::new();
-        let mut gw_total_a = 0.0;
-        let mut gw_total_intersect = 0.0;
 
         let blkpair_iter = if swap12 {
             IbdSetBlockPairIter::new(&self.ibd2, &self.ibd1, self.ignore_hap)
@@ -46,6 +46,8 @@ impl<'a> IbdOverlapAnalyzer<'a> {
         };
 
         for (blk1, blk2) in blkpair_iter {
+            let mut gw_total_a = 0.0;
+            let mut gw_total_intersect = 0.0;
             match (blk1, blk2) {
                 (Some(blk1), Some(blk2)) => {
                     if self.ignore_hap {
@@ -136,6 +138,10 @@ impl<'a> IbdOverlapAnalyzer<'a> {
                 }
                 _ => {}
             }
+            if gw_total_a > 0.001 {
+                gw_counters += 1;
+                gw_ratio_sums += gw_total_intersect / gw_total_a;
+            }
         }
 
         // average out
@@ -143,7 +149,7 @@ impl<'a> IbdOverlapAnalyzer<'a> {
             *tot /= *n as f32;
         }
 
-        (ratio_sums, gw_total_intersect / gw_total_a)
+        (ratio_sums, gw_ratio_sums / gw_counters as f32)
     }
 
     pub fn analzyze(&self, len_ranges: Option<&[f32]>) -> IbdOverlapResult {
