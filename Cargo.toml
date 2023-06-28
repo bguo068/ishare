@@ -20,3 +20,4 @@ rayon = "1.7.0"
 clap = { version = "4.3.3", features = ["derive", "wrap_help"] }
 csv = "1.2.2"
 statrs = "0.16.0"
+ahash = "0.8.3"

@@ -1,6 +1,6 @@
+use ahash::{HashMap, HashMapExt};
 use arrow::array::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;

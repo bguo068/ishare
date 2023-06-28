@@ -1,14 +1,15 @@
 use crate::io::{FromArrowArray, FromParquet, IntoArrowArray, IntoParquet};
+use ahash::HashMap;
 use arrow::array::*;
 use arrow::record_batch::RecordBatch;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
+use std::fmt::Debug;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
 use std::sync::Arc;
-use std::{collections::HashMap, fmt::Debug};
 
 #[derive(Debug, Clone)]
 pub struct NamedMatrix<T>

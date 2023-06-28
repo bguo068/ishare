@@ -7,6 +7,7 @@ use crate::gmap::GeneticMap;
 use crate::indiv::{Individuals, PloidyConverter};
 use crate::share::mat::NamedMatrix;
 use crate::site::Sites;
+use ahash::HashMap;
 use itertools::Itertools;
 use rust_htslib::bgzf;
 use std::collections::HashMap;

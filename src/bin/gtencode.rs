@@ -1,3 +1,4 @@
+use ahash::{HashSet, HashSetExt};
 use clap::{Parser, Subcommand};
 use ishare::{
     genome::GenomeInfo,
@@ -10,10 +11,7 @@ use ishare::{
 };
 use itertools::Itertools;
 use rayon::prelude::*;
-use std::{
-    collections::HashSet,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about=None)]

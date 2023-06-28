@@ -1,6 +1,6 @@
 use crate::container::intervals::Intervals;
+use ahash::{HashMap, HashMapExt};
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
 
