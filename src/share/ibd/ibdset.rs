@@ -10,7 +10,7 @@ use crate::site::Sites;
 use ahash::HashMap;
 use itertools::Itertools;
 use rust_htslib::bgzf;
-use std::collections::HashMap;
+use rust_htslib::tpool::ThreadPool;
 use std::path::Path;
 use IbdSetPloidyStatus::*;
 use IbdSetSortStatus::*;
@@ -147,7 +147,7 @@ impl<'a> IbdSet<'a> {
                     continue;
                 }
                 let p = entry.path();
-                self.read_hapibd_file(&p);
+                self.read_hapibd_file(&p, None);
             }
         }
     }
@@ -164,41 +164,56 @@ impl<'a> IbdSet<'a> {
     ///     - end
     /// - individual/chromomes are converted to index according to meta information
     /// - position are converted from 1-based to 0-based.
-    pub fn read_hapibd_file(&mut self, p: impl AsRef<Path>) {
+    pub fn read_hapibd_file(&mut self, p: impl AsRef<Path>, min_cm: Option<f32>) {
+        use csv::ByteRecord;
         use csv::ReaderBuilder;
-        use csv::StringRecord;
 
-        let reader = bgzf::Reader::from_path(p.as_ref()).unwrap();
+        let tpool = ThreadPool::new(10).unwrap();
+        let mut reader = bgzf::Reader::from_path(p.as_ref()).unwrap();
+        reader.set_thread_pool(&tpool).unwrap();
 
         let mut reader = ReaderBuilder::new()
             .delimiter(b'\t')
             .has_headers(false)
             .from_reader(reader);
 
-        let mut record = StringRecord::new();
+        let mut record = ByteRecord::new();
         let ind_map = self.inds.m();
 
         // let gw_chr_start_cm = self.gmap.get_gw_chr_start_cm_vec(self.ginfo);
+        use std::str::from_utf8;
 
-        while reader.read_record(&mut record).unwrap() {
-            let i = ind_map[&record[0]] as u32;
-            let m: u8 = match record[1].parse::<u8>().unwrap() {
+        while reader.read_byte_record(&mut record).unwrap() {
+            // filter out very short segments
+            if let Some(min_cm) = min_cm {
+                let cm: f32 = from_utf8(&record[7]).unwrap().parse::<f32>().unwrap();
+                if cm < min_cm {
+                    continue;
+                }
+            }
+            // filter out segment is Ibd sample names is not in individuals
+            let i = ind_map.get(from_utf8(&record[0]).unwrap());
+            let j = ind_map.get(from_utf8(&record[2]).unwrap());
+            if i.is_none() || j.is_none() {
+                continue;
+            }
+            let i = *i.unwrap() as u32;
+            let j = *j.unwrap() as u32;
+            let m: u8 = match from_utf8(&record[1]).unwrap().parse::<u8>().unwrap() {
                 1 => 0,
                 2 => 1,
                 0 => 2,
                 _ => panic!(),
             };
-            let j = ind_map[&record[2]] as u32;
-            let n: u8 = match record[3].parse::<u8>().unwrap() {
+            let n: u8 = match from_utf8(&record[3]).unwrap().parse::<u8>().unwrap() {
                 1 => 0,
                 2 => 1,
                 0 => 2,
                 _ => panic!(),
             };
-            let chr = &record[4];
-            let s = record[5].parse::<u32>().unwrap() - 1;
-            let e = record[6].parse::<u32>().unwrap() - 1;
-            // let l: f32 = record[7].parse::<f32>().unwrap();
+            let chr = from_utf8(&record[4]).unwrap();
+            let s = from_utf8(&record[5]).unwrap().parse::<u32>().unwrap() - 1;
+            let e = from_utf8(&record[6]).unwrap().parse::<u32>().unwrap() - 1;
 
             let chrid = self.ginfo.idx[chr];
             let pos_shift = self.ginfo.gwstarts[chrid];
@@ -207,6 +222,7 @@ impl<'a> IbdSet<'a> {
             ibd.normalized();
             assert!(ibd.is_valid());
             self.ibd.push(ibd);
+            // println!("find ibd");
         }
     }
 

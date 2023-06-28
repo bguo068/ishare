@@ -4,6 +4,7 @@ pub mod genotype;
 pub mod gmap;
 pub mod indiv;
 pub mod io;
+pub mod rfmix;
 pub mod share;
 pub mod site;
 pub mod stat;
