@@ -237,6 +237,7 @@ impl<'a> IbdSet<'a> {
         let ind_map = self.inds.m();
         let chr_map = &self.get_ginfo().idx;
         let chrid = chr_map[chrname];
+        let chrmsize = self.ginfo.chromsize[chrid];
         let pos_shift = self.ginfo.gwstarts[chrid];
 
         // let gw_chr_start_cm = self.gmap.get_gw_chr_start_cm_vec(self.ginfo);
@@ -257,15 +258,20 @@ impl<'a> IbdSet<'a> {
             let n = 3;
 
             let i = ind_map[&record[0]] as u32;
-            let j = ind_map[&record[2]] as u32;
+            let j = ind_map[&record[1]] as u32;
 
-            let s = record[2].parse::<u32>().unwrap() - 1;
-            let e = record[3].parse::<u32>().unwrap() - 1;
-            // let l: f32 = record[7].parse::<f32>().unwrap();
-
+            let mut s = record[2].parse::<u32>().unwrap();
+            if s >= 1 {
+                s -= 1;
+            }
+            let mut e = record[3].parse::<u32>().unwrap();
+            assert!(e <= chrmsize, "e={e}, chrmsize: {chrmsize}");
+            if e >= 1 {
+                e -= 1;
+            }
             let mut ibd = IbdSeg::new(i, m, j, n, s, e, pos_shift);
             ibd.normalized();
-            assert!(ibd.is_valid());
+            assert!(ibd.is_valid(), "ibd: {:?}", &ibd);
             self.ibd.push(ibd);
         }
     }

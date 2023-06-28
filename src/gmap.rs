@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct GeneticMap(Vec<(u32, f32)>);
 use crate::genome::GenomeInfo;
 use csv;
@@ -25,7 +26,7 @@ impl GeneticMap {
 
             v.extend(chrmap.0);
 
-            gw_chr_start_bp += chrlen;
+            gw_chr_start_bp += *chrlen;
             gw_chr_start_cm += chrlen_cm;
         }
         Self(v)
@@ -93,7 +94,10 @@ impl GeneticMap {
     pub fn get_cm(&self, bp: u32) -> f32 {
         let idx = self.0.partition_point(|e| e.0 <= bp) - 1;
         let (x1, y1) = self.0[idx];
-        let (x2, y2) = self.0[idx + 1];
+        let (x2, y2) = match self.0.get(idx + 1) {
+            Some(x) => *x,
+            None => panic!("idx={}, bp={}", idx, bp),
+        };
         let slope = (y2 - y1) / (x2 - x1) as f32;
         let mut cm = (bp - x1) as f32 * slope + y1;
         if cm < y1 {
