@@ -312,8 +312,88 @@ impl<'a> IbdSet<'a> {
             }
         }
     }
-    pub fn read_hmmibd_file(&mut self) {
-        todo!()
+
+    /// read all `*.ibd.gz` file (in hap-IBD format) into the IBD set
+    /// by globing the folder and calling [IbdSet::read_hapibd_file]
+    pub fn read_hmmibd_dir(&mut self, p: impl AsRef<Path>) {
+        for entry in p.as_ref().read_dir().unwrap() {
+            if let Ok(entry) = entry {
+                if !entry.file_type().unwrap().is_file() {
+                    continue;
+                }
+                let filename = entry.file_name();
+                let filename = filename.as_os_str().to_str().unwrap();
+                if !filename.ends_with(".hmm.txt") {
+                    continue;
+                }
+                let p = entry.path();
+                self.read_hmmibd_file(&p, Some(2.0));
+            }
+        }
+    }
+
+    pub fn read_hmmibd_file(&mut self, p: impl AsRef<Path>, min_seg_cm: Option<f32>) {
+        let mut reader = csv::ReaderBuilder::new()
+            .delimiter(b'\t')
+            .has_headers(true)
+            .from_path(p.as_ref())
+            .unwrap();
+        let mut rec = csv::ByteRecord::new();
+
+        fn to_str(b: &[u8]) -> &str {
+            std::str::from_utf8(b).unwrap()
+        }
+
+        let sam_map = self.inds.m();
+        while reader.read_byte_record(&mut rec).unwrap() {
+            //  sample1,
+            //  sample2,
+            //  chrname,
+            //  start_pos,
+            //  end_pos,
+            //  ibd,
+            //  n_snp,
+
+            // skip nonibd information
+            let ibd = to_str(&rec[5]).parse::<u8>().unwrap();
+            if ibd != 0 {
+                continue;
+            }
+
+            let chrname = to_str(&rec[2]);
+            let chrid = self.ginfo.idx[chrname];
+            let start_pos = to_str(&rec[3]).parse::<u32>().unwrap() - 1; // 1-based to 0-based
+            let end_pos = to_str(&rec[4]).parse::<u32>().unwrap() - 1; // 1-based to 0-based
+            let s = self.ginfo.to_gw_pos(chrid, start_pos);
+            let e = s + end_pos - start_pos;
+
+            // skip short ibd segments if a threshold is provided
+            if let Some(min_cm) = min_seg_cm {
+                let cm = self.gmap.get_cm_len(s, e);
+                if cm < min_cm {
+                    continue;
+                }
+            }
+
+            // skip samples not in the individual map
+            let i = match sam_map.get(to_str(&rec[0])) {
+                Some(i) => *i as u32,
+                None => continue,
+            };
+            let j = match sam_map.get(to_str(&rec[1])) {
+                Some(j) => *j as u32,
+                None => continue,
+            };
+            // set m/n =3 to indicate haploids.
+            let m = 3;
+            let n = 3;
+            let pos_shift = 0; //already converted to genomew-wise position
+
+            let mut ibdseg = IbdSeg::new(i, m, j, n, s, e, pos_shift);
+            ibdseg.normalized();
+
+            self.ibd.push(ibdseg);
+        }
     }
     pub fn to_hapibd_file(&self) {
         todo!()
