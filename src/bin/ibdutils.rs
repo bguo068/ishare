@@ -19,39 +19,56 @@ enum Commands {
     /// Encode genotype data from VCF file to tables or matrix (-m)
     Compare {
         /// Path to genome info toml file (input)
-        #[arg(short = 'I', long, default_value = "genome.toml")]
+        #[arg(short = 'g', long, default_value = "genome.toml")]
         genome_info: PathBuf,
-        // Path to sample list file
-        #[arg(short = 'S', long, default_value = "samples.txt")]
-        samples: PathBuf,
+        // Path to sample list file for ibd set1
+        #[arg(short = 's', long, required = true)]
+        sample_lst1: PathBuf,
+        // Path to sample list file for ibd set2
+        #[arg(short = 'S', long, required = true)]
+        sample_lst2: PathBuf,
+        // fmt of ibd set1, supported format 'hapibd', 'tskibd' and 'hmmibd'
+        #[arg(short = 'f', long, required = true)]
+        fmt1: String,
+        // fmt of ibd set2, supported format 'hapibd', 'tskibd' and 'hmmibd'
+        #[arg(short = 'F', long, default_value = "hapibd")]
+        fmt2: String,
+        // IBD directory 1
+        #[arg(short = 'i', long, required = true)]
+        ibd1_dir: PathBuf,
+        // IBD directory 2
+        #[arg(short = 'I', long, required = true)]
+        ibd2_dir: PathBuf,
         // Path to sample list file
         #[arg(short = 'o', long, default_value = "ibd_cmp_res.txt")]
         out: PathBuf,
-        // fmt of ibd files, supported format 'hapibd', 'tskibd'
-        #[arg(short = 'f', long, default_value = "hapibd")]
-        fmt: String,
-        // IBD directory 1
-        ibd1_dir: PathBuf,
-        // IBD directory 2
-        ibd2_dir: PathBuf,
     },
 
     PlotIBD {
-        #[arg(short = 'I', long, default_value = "genome.toml")]
+        /// Path to genome info toml file (input)
+        #[arg(short = 'g', long, default_value = "genome.toml")]
         genome_info: PathBuf,
-        // Path to sample list file
-        #[arg(short = 'S', long, default_value = "samples.txt")]
-        samples: PathBuf,
+        // Path to sample list file for ibd set1
+        #[arg(short = 's', long, required = true)]
+        sample_lst1: PathBuf,
+        // Path to sample list file for ibd set2
+        #[arg(short = 'S', long, required = true)]
+        sample_lst2: PathBuf,
+        // fmt of ibd set1, supported format 'hapibd', 'tskibd' and 'hmmibd'
+        #[arg(short = 'f', long, required = true)]
+        fmt1: String,
+        // fmt of ibd set2, supported format 'hapibd', 'tskibd' and 'hmmibd'
+        #[arg(short = 'F', long, default_value = "hapibd")]
+        fmt2: String,
+        // IBD directory 1
+        #[arg(short = 'i', long, required = true)]
+        ibd1_dir: PathBuf,
+        // IBD directory 2
+        #[arg(short = 'I', long, required = true)]
+        ibd2_dir: PathBuf,
         // Path to sample list file
         #[arg(short = 'o', long, default_value = "ibd_cmp_res.txt")]
         out: PathBuf,
-        // fmt of ibd files, supported format 'hapibd', 'tskibd'
-        #[arg(short = 'f', long, default_value = "hapibd")]
-        fmt: String,
-        // IBD directory 1
-        ibd1_dir: PathBuf,
-        // IBD directory 2
-        ibd2_dir: PathBuf,
 
         #[command(flatten)]
         sample1: Sample1,
@@ -84,43 +101,56 @@ fn main() {
     match &cli.command {
         Some(Commands::Compare {
             genome_info,
-            samples,
-            out,
-            fmt,
+            sample_lst1,
+            sample_lst2,
+            fmt1,
+            fmt2,
             ibd1_dir,
             ibd2_dir,
+            out,
         }) => {
             // files
             let ginfo = genome::GenomeInfo::from_toml_file(&genome_info);
             let gmap = gmap::GeneticMap::from_genome_info(&ginfo);
-            let inds = Individuals::from_txt_file(&samples);
-            let mut ibd1 = IbdSet::new(&gmap, &ginfo, &inds);
-            let mut ibd2 = IbdSet::new(&gmap, &ginfo, &inds);
 
-            if fmt == "hapibd" {
-                ibd1.read_hapibd_dir(&ibd1_dir);
-                ibd2.read_hapibd_dir(&ibd2_dir);
-                ibd1.sort_by_samples();
-                ibd2.sort_by_samples();
-                ibd1.infer_ploidy();
-                ibd2.infer_ploidy();
-            } else if fmt == "tskibd" {
-                ibd1.read_tskibd_dir(&ibd1_dir);
-                ibd2.read_tskibd_dir(&ibd2_dir);
-                ibd1.sort_by_haplotypes();
-                ibd2.sort_by_haplotypes();
-                ibd1.infer_ploidy();
-                ibd2.infer_ploidy();
-            } else if fmt == "hmmibd" {
-                ibd1.read_hmmibd_dir(&ibd1_dir);
-                ibd2.read_hmmibd_dir(&ibd2_dir);
-                ibd1.sort_by_haplotypes();
-                ibd2.sort_by_haplotypes();
-                ibd1.infer_ploidy();
-                ibd2.infer_ploidy();
-            } else {
-                panic!("format {} is not supported.", fmt);
+            let (inds1, inds1_opt) = Individuals::from_txt_file(&sample_lst1);
+            let (inds2, inds2_opt) = Individuals::from_txt_file(&sample_lst2);
+            let mut ibd1 = IbdSet::new(&gmap, &ginfo, &inds1);
+            let mut ibd2 = IbdSet::new(&gmap, &ginfo, &inds2);
+
+            for (((ibd, fmt), dir), inds_opt) in [&mut ibd1, &mut ibd2]
+                .iter_mut()
+                .zip([fmt1, fmt2])
+                .zip([ibd1_dir, ibd2_dir])
+                .zip([&inds1_opt, &inds2_opt])
+            {
+                if fmt.as_str() == "hapibd" {
+                    ibd.read_hapibd_dir(dir);
+                    ibd.sort_by_samples();
+                    ibd.infer_ploidy();
+                } else if fmt.as_str() == "tskibd" {
+                    ibd.read_tskibd_dir(dir);
+                    ibd.sort_by_haplotypes();
+                    ibd.infer_ploidy();
+                } else if fmt.as_str() == "hmmibd" {
+                    ibd.read_hmmibd_dir(dir);
+                    ibd.sort_by_haplotypes();
+                    ibd.infer_ploidy();
+                } else {
+                    panic!("format {} is not supported.", fmt);
+                }
+                match inds_opt.as_ref() {
+                    Some((converter, ind_, PloidConvertDirection::Diploid2Haploid)) => {
+                        ibd.covert_to_haploid(ind_, converter);
+                    }
+                    Some((converter, ind_, PloidConvertDirection::Haploid2Diploid)) => {
+                        ibd.covert_to_het_diploid(ind_, converter);
+                    }
+                    None => {}
+                }
             }
+
+            assert_eq!(ibd1.get_inds().v(), ibd2.get_inds().v());
 
             {
                 // overlapping analysis
@@ -129,6 +159,7 @@ fn main() {
                 res.to_csv(out);
             }
             {
+                let inds = ibd1.get_inds();
                 // total IBD analysis
                 let mat1 = ibd1.get_gw_total_ibd_matrix(true);
                 let mat2 = ibd2.get_gw_total_ibd_matrix(true);
@@ -148,44 +179,59 @@ fn main() {
         }
         Some(Commands::PlotIBD {
             genome_info,
-            samples,
-            out,
-            fmt,
+            sample_lst1,
+            sample_lst2,
+            fmt1,
+            fmt2,
             ibd1_dir,
             ibd2_dir,
+            out,
             sample1,
             sample2,
         }) => {
             let ginfo = genome::GenomeInfo::from_toml_file(&genome_info);
             let gmap = gmap::GeneticMap::from_genome_info(&ginfo);
-            let inds = Individuals::from_txt_file(&samples);
-            let mut ibd1 = IbdSet::new(&gmap, &ginfo, &inds);
-            let mut ibd2 = IbdSet::new(&gmap, &ginfo, &inds);
 
-            if fmt == "hapibd" {
-                ibd1.read_hapibd_dir(&ibd1_dir);
-                ibd2.read_hapibd_dir(&ibd2_dir);
-                ibd1.sort_by_samples();
-                ibd2.sort_by_samples();
-                ibd1.infer_ploidy();
-                ibd2.infer_ploidy();
-            } else if fmt == "tskibd" {
-                ibd1.read_tskibd_dir(&ibd1_dir);
-                ibd2.read_tskibd_dir(&ibd2_dir);
-                ibd1.sort_by_haplotypes();
-                ibd2.sort_by_haplotypes();
-                ibd1.infer_ploidy();
-                ibd2.infer_ploidy();
-            } else if fmt == "hmmibd" {
-                ibd1.read_hmmibd_dir(&ibd1_dir);
-                ibd2.read_hmmibd_dir(&ibd2_dir);
-                ibd1.sort_by_haplotypes();
-                ibd2.sort_by_haplotypes();
-                ibd1.infer_ploidy();
-                ibd2.infer_ploidy();
-            } else {
-                panic!("format {} is not supported.", fmt);
+            let (inds1, inds1_opt) = Individuals::from_txt_file(&sample_lst1);
+            let (inds2, inds2_opt) = Individuals::from_txt_file(&sample_lst2);
+            let mut ibd1 = IbdSet::new(&gmap, &ginfo, &inds1);
+            let mut ibd2 = IbdSet::new(&gmap, &ginfo, &inds2);
+
+            for (((ibd, fmt), dir), inds_opt) in [&mut ibd1, &mut ibd2]
+                .iter_mut()
+                .zip([fmt1, fmt2])
+                .zip([ibd1_dir, ibd2_dir])
+                .zip([&inds1_opt, &inds2_opt])
+            {
+                if fmt.as_str() == "hapibd" {
+                    ibd.read_hapibd_dir(dir);
+                    ibd.sort_by_samples();
+                    ibd.infer_ploidy();
+                    println!("{:?}", ibd.as_slice().len());
+                } else if fmt.as_str() == "tskibd" {
+                    ibd.read_tskibd_dir(dir);
+                    ibd.sort_by_haplotypes();
+                    ibd.infer_ploidy();
+                } else if fmt.as_str() == "hmmibd" {
+                    ibd.read_hmmibd_dir(dir);
+                    ibd.sort_by_haplotypes();
+                    ibd.infer_ploidy();
+                } else {
+                    panic!("format {} is not supported.", fmt);
+                }
+                match inds_opt.as_ref() {
+                    Some((converter, ind_, PloidConvertDirection::Diploid2Haploid)) => {
+                        ibd.covert_to_haploid(ind_, converter);
+                    }
+                    Some((converter, ind_, PloidConvertDirection::Haploid2Diploid)) => {
+                        ibd.covert_to_het_diploid(ind_, converter);
+                    }
+                    None => {}
+                }
             }
+
+            assert_eq!(ibd1.get_inds().v(), ibd2.get_inds().v());
+            let inds = ibd1.get_inds();
 
             let mut id1 = match sample1.ind_ix1 {
                 Some(id) => {

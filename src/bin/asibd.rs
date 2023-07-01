@@ -65,7 +65,8 @@ fn main() {
     eprintln!("reading genetic map files");
     let gmap = GeneticMap::from_genome_info(&ginfo);
     eprintln!("reading sample list");
-    let indivs = Individuals::from_txt_file(&cli.samples);
+    let (indivs, opt) = Individuals::from_txt_file(&cli.samples);
+    assert!(opt.is_none(), "should use single column samples list");
 
     eprintln!("reading ibd file");
     let mut ibd = IbdSet::new(&gmap, &ginfo, &indivs);

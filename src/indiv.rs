@@ -2,7 +2,6 @@ use ahash::{HashMap, HashMapExt};
 use arrow::array::*;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use arrow::record_batch::RecordBatch;
@@ -17,23 +16,146 @@ pub struct Individuals {
     vec: Vec<String>,
     map: HashMap<String, usize>,
 }
+
+pub enum PloidConvertDirection {
+    Diploid2Haploid,
+    Haploid2Diploid,
+}
+
 impl Individuals {
-    pub fn from_txt_file(p: impl AsRef<Path>) -> Individuals {
-        let vec: Vec<_> = std::fs::File::open(p.as_ref())
-            .map(BufReader::new)
-            .unwrap()
-            .lines()
-            .map(|r| r.unwrap())
-            .collect();
+    /// Reads individual data from a text file.
+    ///
+    /// The function accepts three types of files:
+    ///
+    /// 1. Single Column:
+    ///    Each line represents a name of a sample.
+    /// 2. Two Columns (tab-separated):
+    ///    This format indicates haploid to diploid conversion.  The first
+    ///    column contains haploid sample names, and the second column contains
+    ///    the corresponding diploid names.  Each diploid sample should have two
+    ///    haploid samples mapped to it.  The first of the two haploid names
+    ///    will be assigned haplotype index 1 (encoded as 0), and the second
+    ///    haploid sample will be assigned haplotype index 2 (encoded as 1).
+    /// 3. Three Columns (tab-separated):
+    ///    This format indicates diploid to haploid conversion.  Each line
+    ///    contains the diploid sample name followed by the names of the
+    ///    converted haploid samples.  The second column contains the name of
+    ///    haplotype 1 of the diploid sample, and the third column contains the
+    ///    name of haplotype 2.
+    ///
+    /// Return Values:
+    /// - The first `Individuals` is the "from" individuals.
+    /// - `PloidConverter` contains two maps (`d2h` and `h2d`).
+    /// - The second `Individuals` is the "to" individuals.
+    /// - `PloidConvertDirection` indicates the conversion direction: either
+    /// diploid-to-haploid or haploid-to-diploid.
+    pub fn from_txt_file(
+        p: impl AsRef<Path>,
+    ) -> (
+        Individuals,
+        Option<(PloidyConverter, Individuals, PloidConvertDirection)>,
+    ) {
+        use std::io::read_to_string;
+        let contents = read_to_string(File::open(p.as_ref()).unwrap()).unwrap();
+        let ncolumns = contents.trim().lines().next().unwrap().split("\t").count();
+        match ncolumns {
+            1 => {
+                let v: Vec<String> = contents.trim().lines().map(|x| x.to_owned()).collect();
+                let m: HashMap<_, _> = v
+                    .iter()
+                    .enumerate()
+                    .map(|(i, s)| (s.to_owned(), i))
+                    .collect();
+                (Self { vec: v, map: m }, None)
+            }
+            2 => {
+                let direction = PloidConvertDirection::Haploid2Diploid;
+                let mut v_h = vec![];
+                let mut m_h = HashMap::new();
+                let mut v_d = vec![];
+                let mut m_d = HashMap::new();
+                let mut h2dm = HashMap::new();
+                let mut d2hm = HashMap::new();
 
-        let map: HashMap<String, usize> = vec
-            .iter()
-            .enumerate()
-            .map(|(i, sample_ref)| (sample_ref.clone(), i))
-            .collect();
+                for line in contents.trim().lines() {
+                    let mut fields = line.split("\t");
+                    let h = fields.next().unwrap(); // column 1 is hap
+                    let d = fields.next().unwrap(); // column 2 is dip
+                    v_h.push(h.to_owned());
+                    m_h.insert(h.to_owned(), m_h.len());
 
-        Self { vec, map }
+                    if !m_d.contains_key(d) {
+                        // first hap
+                        v_d.push(d.to_owned());
+                        m_d.insert(d.to_owned(), m_d.len());
+                        h2dm.insert(m_h[h] as u32, (m_d[d] as u32, 0));
+                        d2hm.insert((m_d[d] as u32, 0), m_h[h] as u32);
+                    } else {
+                        // second hap
+
+                        // assert hap1 is found ,hap2 not. This also prevents
+                        // an errorneous third hap from being added.
+                        assert!(d2hm.contains_key(&(m_d[d] as u32, 0)));
+                        assert!(!d2hm.contains_key(&(m_d[d] as u32, 1)));
+
+                        h2dm.insert(m_h[h] as u32, (m_d[d] as u32, 1));
+                        d2hm.insert((m_d[d] as u32, 1), m_h[h] as u32);
+                    }
+                }
+
+                (
+                    Self { vec: v_h, map: m_h },
+                    Some((
+                        PloidyConverter { h2dm, d2hm },
+                        Individuals { vec: v_d, map: m_d },
+                        direction,
+                    )),
+                )
+            }
+            3 => {
+                let direction = PloidConvertDirection::Diploid2Haploid;
+                let mut v_d = vec![];
+                let mut m_d = HashMap::new();
+                let mut v_h = vec![];
+                let mut m_h = HashMap::new();
+                let mut h2dm = HashMap::new();
+                let mut d2hm = HashMap::new();
+
+                for line in contents.trim().lines() {
+                    let mut fields = line.split("\t");
+                    let d = fields.next().unwrap(); // column 1 is dip
+                    let h1 = fields.next().unwrap(); // column 2 is hap
+                    let h2 = fields.next().unwrap(); // column 2 is hap
+
+                    v_d.push(d.to_owned());
+                    m_d.insert(d.to_owned(), m_d.len());
+
+                    v_h.push(h1.to_owned());
+                    m_h.insert(h1.to_owned(), m_h.len());
+
+                    v_h.push(h2.to_owned());
+                    m_h.insert(h2.to_owned(), m_h.len());
+
+                    h2dm.insert(m_h[h1] as u32, (m_d[d] as u32, 0));
+                    d2hm.insert((m_d[d] as u32, 0), m_h[h1] as u32);
+
+                    h2dm.insert(m_h[h2] as u32, (m_d[d] as u32, 1));
+                    d2hm.insert((m_d[d] as u32, 1), m_h[h2] as u32);
+                }
+
+                (
+                    Self { vec: v_d, map: m_d },
+                    Some((
+                        PloidyConverter { h2dm, d2hm },
+                        Individuals { vec: v_h, map: m_h },
+                        direction,
+                    )),
+                )
+            }
+            _ => panic!("samples/individuals file format error"),
+        }
     }
+
     pub fn from_iter<'a>(it: impl Iterator<Item = &'a str> + 'a) -> Self {
         let mut v = Vec::<String>::new();
         let mut m = HashMap::<String, usize>::new();
