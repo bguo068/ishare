@@ -133,7 +133,8 @@ impl<'a> IbdOverlapAnalyzer<'a> {
                         let intersect = 0.0f32;
                         // update the summary vectors
                         counters[which] += 1;
-                        ratio_sums[which] = intersect / cm;
+
+                        ratio_sums[which] += intersect / cm;
                     }
                 }
                 _ => {}
