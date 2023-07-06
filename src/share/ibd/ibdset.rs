@@ -274,8 +274,17 @@ impl<'a> IbdSet<'a> {
             let m = 3;
             let n = 3;
 
-            let i = ind_map[&record[0]] as u32;
-            let j = ind_map[&record[1]] as u32;
+            let i = match ind_map.get(&record[0]) {
+                Some(id) => *id as u32,
+                None => continue,
+            };
+            let j = match ind_map.get(&record[1]) {
+                Some(id) => *id as u32,
+                None => continue,
+            };
+
+            // let i = ind_map[&record[0]] as u32;
+            // let j = ind_map[&record[1]] as u32;
 
             let mut s = record[2].parse::<u32>().unwrap();
             if s >= 1 {
