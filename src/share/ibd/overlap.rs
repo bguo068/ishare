@@ -75,14 +75,9 @@ impl<'a> IbdOverlapAnalyzer<'a> {
                         let s1 = a.start;
                         let e1 = a.end;
                         let cm = gmap.get_cm_len(s1, e1);
-                        if cm < len_ranges[0] {
-                            // if two short no need to compare
-                            continue;
-                        }
 
                         gw_total_a += cm;
-                        // length category
-                        let which = len_ranges.partition_point(|x| *x <= cm) - 1;
+
                         // total intersected length of this a segment by any b segments
                         let mut intersect = 0.0f32;
                         for b in tree.query(a.clone()) {
@@ -100,10 +95,17 @@ impl<'a> IbdOverlapAnalyzer<'a> {
 
                             intersect += gmap.get_cm_len(s, e);
                         }
+                        gw_total_intersect += intersect;
+
+                        if cm < len_ranges[0] {
+                            // if two short no need to compare
+                            continue;
+                        }
+                        // length category
+                        let which = len_ranges.partition_point(|x| *x <= cm) - 1;
                         // update the summary vectors
                         counters[which] += 1;
                         ratio_sums[which] += intersect / cm;
-                        gw_total_intersect += intersect;
                     }
                 }
                 (None, Some(_blk2)) => {
@@ -122,11 +124,13 @@ impl<'a> IbdOverlapAnalyzer<'a> {
                         let s1 = a.start;
                         let e1 = a.end;
                         let cm = gmap.get_cm_len(s1, e1);
+
+                        gw_total_a += cm;
+
                         if cm < len_ranges[0] {
                             // if two short no need to compare
                             continue;
                         }
-                        gw_total_a += cm;
                         // length category
                         let which = len_ranges.partition_point(|x| *x <= cm) - 1;
                         // total intersected length of this a segment by any b segments
