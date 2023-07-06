@@ -1,3 +1,6 @@
+#! /usr/bin/env bash
+
+set -e
 # clone repos used for simulation
 git clone git@github.com:bguo068/posseleff_simulations.git
 git -C posseleff_simulations checkout c58f9d988c9827ce870f859fa1230a0679fc4e32
@@ -12,12 +15,11 @@ cd ..
 # install hmmibd that allows to change recombination rate
 git clone git@github.com:bguo068/hmmibd-rs.git
 cd hmmibd-rs
-git checkout rs # rs branch has improved hmmibd2 code
 x86_64-conda-linux-gnu-gcc -o hmmIBD_rec -O3 -lm -Wall hmmIBD.c
-cargo build --release --example hmmibd2
+cargo build --release --bin hmmibd2
 cd ..
 cp hmmibd-rs/hmmIBD_rec  posseleff_simulations/bin/
-cp hmmibd-rs/target/release/examples/hmmibd2 posseleff_simulations/bin/
+cp hmmibd-rs/target/release/hmmibd2 posseleff_simulations/bin/
 rm -rf hmmibd-rs
 
 # modified some code to allow output heterzygous diploid vcf files
@@ -39,7 +41,7 @@ for chrno in {1..3}; do
         --selpos  500000 \
         --num_origins 1 \
         --N 10000 \
-        --s 0.3 \
+        --s 0.0 \
         --h 0.5 \
         --g_sel_start 80 \
         --r 6.6666667e-7 \
@@ -60,7 +62,15 @@ if [ ! -d bcf ]; then mkdir bcf; fi
 if [ ! -d vcf_filt ]; then mkdir vcf_filt; fi
 
 for chrno in {1..3}; do 
-    bcftools view 3_${chrno}.vcf -Ob -o bcf/sel_chr${chrno}.bcf
+    mv 3_${chrno}.trees ibd_tskibd/
+
+    # NOTE: it is important that the sample node ids and individual Ids are not in the same order
+    # fix order
+    tskit nodes ibd_tskibd/3_${chrno}.trees | awk '$2==1 && NR%2==1 {print "tsk_" $5}'  > sample_order.txt
+    # make the sample consistent across chromosomes
+    cat sample_order.txt  | awk -v OFS='\t' '{print $1, "tsk_" NR-1}' > sample_name_map.txt
+
+    bcftools view -S sample_order.txt 3_${chrno}.vcf | bcftools reheader -s sample_name_map.txt | bcftools view -Ob -o bcf/sel_chr${chrno}.bcf
     bcftools index -f bcf/sel_chr${chrno}.bcf
 
     # ## fix ALT/REF due to slim modification
@@ -68,7 +78,6 @@ for chrno in {1..3}; do
     bcftools index -f vcf_filt/sel_chr${chrno}.vcf.gz
 
     # ## call tskibd
-    mv 3_${chrno}.trees ibd_tskibd/
     posseleff_simulations/bin/tskibd ${chrno} 15000 150 2 ibd_tskibd/3_${chrno}.trees
     mv ${chrno}.ibd ibd_tskibd/
     echo "chr${chrno} . 0.0 1" > ${chrno}.map
@@ -81,8 +90,8 @@ for chrno in {1..3}; do
     # convert file
     echo | awk -v OFS='\t' 'END{$1="CHROM"; $2 = "POS"; for (i=0; i<1000; i++) $(3+i)=i; print}' > hmmibdinput.txt
     bcftools query -f "%CHROM\t%POS[\t%GT]\n" vcf_filt/sel_chr${chrno}.vcf.gz | tr '|' '\t' | sed 's/^chr//' >> hmmibdinput.txt
-    # ./posseleff_simulations/bin/hmmIBD_rec -i hmmibdinput.txt -n 100 -r  6.6666667e-7 -o ./ibd_hmmibd/$chrno
-    ./posseleff_simulations/bin/hmmibd2 -i hmmibdinput.txt -n 100 --rec-rate  6.6666667e-7 --max-all 2 --filt-ibd-only  --filt-min-seg-cm 2.0 -o ./ibd_hmmibd2/$chrno
+    ./posseleff_simulations/bin/hmmIBD_rec -i hmmibdinput.txt -n 100 -m 5 -r  6.6666667e-7 -o ./ibd_hmmibd/$chrno
+    ./posseleff_simulations/bin/hmmibd2 -i hmmibdinput.txt -n 100 -m5 --rec-rate  6.6666667e-7 --max-all 2 --filt-ibd-only  --filt-min-seg-cm 2.0 -o ./ibd_hmmibd2/$chrno
 done
 
 # clear intermediate files
