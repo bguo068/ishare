@@ -183,7 +183,21 @@ impl<'a> IbdSet<'a> {
         // let gw_chr_start_cm = self.gmap.get_gw_chr_start_cm_vec(self.ginfo);
         use std::str::from_utf8;
 
-        while reader.read_byte_record(&mut record).unwrap() {
+        println!("{}", p.as_ref().to_string_lossy());
+        loop {
+            // this allows skipping rows that has wrong number of fields
+            match reader.read_byte_record(&mut record) {
+                Ok(yes) => {
+                    if !yes {
+                        break;
+                    }
+                }
+                e => {
+                    eprintln!("Warning: {:?}", e);
+                    continue;
+                }
+            }
+
             // filter out very short segments
             if let Some(min_cm) = min_cm {
                 let cm: f32 = from_utf8(&record[7]).unwrap().parse::<f32>().unwrap();
@@ -648,6 +662,8 @@ impl<'a> IbdSet<'a> {
                     tot += len;
                 }
                 mat.set_by_positions(ind1, ind2, tot);
+                // set value at symmetrical location
+                mat.set_by_positions(ind2, ind1, tot);
             } else {
                 let (ind1, hap1, ind2, hap2) = blk[0].haplotype_pair();
                 assert!((hap1 == 1) || (hap1 == 2));
@@ -662,6 +678,8 @@ impl<'a> IbdSet<'a> {
                     tot += len;
                 }
                 mat.set_by_positions(hid1, hid2, tot);
+                // set value at symmetrical location
+                mat.set_by_positions(hid2, hid1, tot);
             }
         }
 
