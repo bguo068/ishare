@@ -297,14 +297,12 @@ impl<'a> IbdSet<'a> {
                 None => continue,
             };
 
-            // let i = ind_map[&record[0]] as u32;
-            // let j = ind_map[&record[1]] as u32;
-
-            let mut s = record[2].parse::<u32>().unwrap();
+            // allow converting floats to ints
+            let mut s = record[2].parse::<f32>().unwrap() as u32;
             if s >= 1 {
                 s -= 1;
             }
-            let mut e = record[3].parse::<u32>().unwrap();
+            let mut e = record[3].parse::<f32>().unwrap() as u32;
             assert!(e <= chrmsize, "e={e}, chrmsize: {chrmsize}");
             if e >= 1 {
                 e -= 1;
