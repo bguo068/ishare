@@ -46,7 +46,7 @@ impl<'a> ASIBDSet<'a> {
         self.asibd.push(asibdseg)
     }
 
-    pub fn get_asibd_from_ibdsets_and_fbmat(&mut self, ibdset: &IbdSet<'a>, la_set: &LASet) {
+    pub fn get_asibd_from_ibdsets_and_laset(&mut self, ibdset: &IbdSet<'a>, la_set: &LASet) {
         let mut tree = IntervalTree::new(1000);
         for blk in IbdSetBlockIter::new(ibdset, false) {
             let (i, m, j, n) = blk[0].haplotype_pair();

@@ -86,7 +86,7 @@ fn main() {
 
     eprintln!("inferring as-ibd file");
     let mut asibd = ASIBDSet::new(&gmap, &ginfo, &indivs, &ancestry);
-    asibd.get_asibd_from_ibdsets_and_fbmat(&ibd, &la_set);
+    asibd.get_asibd_from_ibdsets_and_laset(&ibd, &la_set);
 
     eprintln!("writing as-ibd file");
     let out = File::create(&cli.out).map(BufWriter::new).unwrap();
