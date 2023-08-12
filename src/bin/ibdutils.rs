@@ -39,6 +39,9 @@ enum Commands {
         /// IBD directory 2
         #[arg(short = 'I', long, required = true)]
         ibd2_dir: PathBuf,
+        /// Use (Do not Ignore) haplotype information (i.e. not flattening before overlapping analysis) if true
+        #[arg(short = 'N', long, default_value_t = false)]
+        use_hap_info: bool,
         /// Path to sample list file
         #[arg(short = 'o', long, default_value = "ibd_cmp_res.txt")]
         out: PathBuf,
@@ -107,6 +110,7 @@ fn main() {
             fmt2,
             ibd1_dir,
             ibd2_dir,
+            use_hap_info,
             out,
         }) => {
             // files
@@ -150,20 +154,24 @@ fn main() {
                 }
             }
 
+            let ignore_hap = if *use_hap_info { false } else { true };
             assert_eq!(ibd1.get_inds().v(), ibd2.get_inds().v());
 
             {
                 // overlapping analysis
-                let oa = overlap::IbdOverlapAnalyzer::new(&mut ibd1, &mut ibd2, true);
+                let oa = overlap::IbdOverlapAnalyzer::new(&mut ibd1, &mut ibd2, ignore_hap);
                 let res = oa.analzyze(Some(&[3.0f32, 4.0, 6.0, 10.0, 18.0]));
                 res.to_csv(out);
             }
             {
                 let inds = ibd1.get_inds();
                 // total IBD analysis
-                let mat1 = ibd1.get_gw_total_ibd_matrix(true);
-                let mat2 = ibd2.get_gw_total_ibd_matrix(true);
-                let n = inds.v().len();
+                let mat1 = ibd1.get_gw_total_ibd_matrix(ignore_hap);
+                let mat2 = ibd2.get_gw_total_ibd_matrix(ignore_hap);
+                let mut n = inds.v().len();
+                if !ignore_hap {
+                    n *= 2; // n is the number of haplotypes if not ignore_hap
+                }
                 let pairs = (0..n - 1)
                     .map(|i| ((i + 1)..n).map(move |j| (i, j)))
                     .flatten();
