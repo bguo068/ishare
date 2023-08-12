@@ -73,7 +73,7 @@ impl<'a> IbdSet<'a> {
 
     /// Faster way to check ploidy status
     ///
-    /// Faster then using methods that iterate over the whole IBD set
+    /// Faster than using methods that iterate over the whole IBD set
     ///  - self.has_merged_ibd();
     ///  - self.is_valid_diploid_ibd();
     ///  - self.is_valid_haploid_ibd();
