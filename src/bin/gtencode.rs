@@ -1,4 +1,4 @@
-use ahash::{HashSet, HashSetExt};
+use ahash::{AHashMap, HashSet, HashSetExt};
 use clap::{Parser, Subcommand};
 use ishare::{
     genome::GenomeInfo,
@@ -121,6 +121,55 @@ enum Commands {
         /// optional low threshold of total number of sites where a genome pair shares a rare allele
         #[arg(short = 's', long)]
         min_shared: Option<u32>,
+        /// path to output file '*.jac'. If specified, results will not be printed on the screen
+        #[arg(short = 'o', long)]
+        output: Option<PathBuf>,
+    },
+
+    /// Calculate pairwise similarity via Cosine
+    // See definition in https://en.wikipedia.org/wiki/Cosine_similarity
+    Cosine {
+        /// Path to genotype record table (input)
+        rec: PathBuf,
+        /// optional subsets of genome, if not set, use all genomes
+        #[arg(short, long, group = "genome_selection")]
+        genomes: Option<Vec<u32>>,
+        /// optional paths to one or two genome lists (each row is a genome ids).
+        /// If one list is provided, calculate within-list sharing.
+        /// If two lists are provided, calculate inter-list sharing.
+        /// The program will refuse to run if two overlapping lists are provided.
+        #[arg(short = 'l', long, group = "genome_selection")]
+        lists: Vec<PathBuf>,
+        /// optional low threshold of consine similarity for a genome pair
+        #[arg(short = 'c', long)]
+        min_cosine: Option<f64>,
+        /// optional low threshold of magnitude (denominator) for a genome pair
+        #[arg(short = 'm', long)]
+        min_magnitude: Option<f64>,
+        /// optional low threshold of dot product (numerator) for a genome pair
+        #[arg(short = 'p', long)]
+        min_dot_prod: Option<i32>,
+        /// path to output file '*.jac'. If specified, results will not be printed on the screen
+        #[arg(short = 'o', long)]
+        output: Option<PathBuf>,
+    },
+    /// Calculate pairwise similarity via GRM (GCTA formula)
+    // See defintion in Eqn3 of GCTA paper: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3014363/
+    Grm {
+        /// Path to genotype record table (input)
+        rec: PathBuf,
+        /// optional subsets of genome, if not set, use all genomes
+        #[arg(short, long, group = "genome_selection")]
+        genomes: Option<Vec<u32>>,
+        /// optional paths to one or two genome lists (each row is a genome ids).
+        /// If one list is provided, calculate within-list sharing.
+        /// If two lists are provided, calculate inter-list sharing.
+        /// The program will refuse to run if two overlapping lists are provided.
+        #[arg(short = 'l', long, group = "genome_selection")]
+        lists: Vec<PathBuf>,
+        /// optional low threshold of grm relationship for a genome pair
+        #[arg(short = 'r', long)]
+        min_grm_related: Option<f64>,
         /// path to output file '*.jac'. If specified, results will not be printed on the screen
         #[arg(short = 'o', long)]
         output: Option<PathBuf>,
@@ -478,65 +527,6 @@ fn main() {
             min_shared,
             output,
         }) => {
-            let records = GenotypeRecords::from_parquet_file(rec);
-            assert!(records.is_sorted_by_genome());
-
-            let ind_file = rec.with_extension("ind");
-            let _inds = Individuals::from_parquet_file(&ind_file);
-
-            // genomes vec
-            let genomes: Vec<u32> = match genomes {
-                Some(v) => v.clone(),
-                None => Vec::new(),
-            };
-
-            // read genome lists from files
-            use std::io::Read;
-            let mut lst1 = Vec::<u32>::new();
-            let mut lst2 = Vec::<u32>::new();
-            let mut s = String::new();
-
-            let mut file_to_int_vec = |p| {
-                let mut reader = std::fs::File::open(p).map(std::io::BufReader::new).unwrap();
-                s.clear();
-                reader.read_to_string(&mut s).unwrap();
-                let mut v = s
-                    .trim()
-                    .split("\n")
-                    .map(|s| s.parse::<u32>().unwrap())
-                    .collect::<Vec<u32>>();
-                assert!(v.len() != 0);
-                v.sort();
-                v
-            };
-
-            match lists.len() {
-                0 => {}
-                1 => {
-                    // within subset sharing
-                    lst1.extend(file_to_int_vec(&lists[0]));
-                    lst2.extend_from_slice(lst1.as_slice());
-                }
-                2 => {
-                    // inter-subset sharing
-                    lst1.extend(file_to_int_vec(&lists[0]));
-                    lst2.extend(file_to_int_vec(&lists[1]));
-
-                    // ensure non-overlapping
-                    let mut set = HashSet::<u32>::new();
-                    set.extend(&lst1);
-                    let overlapping = lst2.iter().any(|x| set.contains(x));
-                    if overlapping {
-                        eprintln!("list1 and list2 are overlapping");
-                        std::process::exit(-1);
-                    }
-                }
-                _ => {
-                    eprintln!("--lists options can specied no more than 2 times");
-                    std::process::exit(-1);
-                }
-            }
-
             let min_jaccard = match min_jaccard {
                 Some(x) => *x,
                 None => -1.0f64,
@@ -550,58 +540,13 @@ fn main() {
                 None => 0u32,
             };
 
-            let min_gid = records.records().first().unwrap().get_genome();
-            let max_gid = records.records().last().unwrap().get_genome();
+            let records = GenotypeRecords::from_parquet_file(rec);
+            assert!(records.is_sorted_by_genome());
 
-            let mut row_genomes = Vec::<u32>::new();
-            let mut col_genomes = Vec::<u32>::new();
-            let pairs: Vec<(u32, u32)> = match (genomes.len() > 0, lst1.len() > 0) {
-                (true, false) => {
-                    row_genomes.extend(genomes.iter());
-                    col_genomes.extend(genomes.iter());
-                    genomes
-                        .iter()
-                        .map(|x| *x)
-                        .cartesian_product(genomes.iter().map(|x| *x))
-                        .filter(|(a, b)| *a > *b)
-                        .collect()
-                }
-                (false, true) => {
-                    row_genomes.extend(&lst1);
-                    col_genomes.extend(&lst2);
+            let ind_file = rec.with_extension("ind");
+            let _inds = Individuals::from_parquet_file(&ind_file);
 
-                    if lists.len() == 2 {
-                        // two non-overallping list. no need to filter
-                        lst1.iter()
-                            .map(|x| *x)
-                            .cartesian_product(lst2.iter().map(|x| *x))
-                            .collect()
-                    } else {
-                        // two identical list need to filtering
-                        lst1.iter()
-                            .map(|x| *x)
-                            .cartesian_product(lst2.iter().map(|x| *x))
-                            .filter(|(a, b)| *a > *b)
-                            .collect()
-                    }
-                }
-                (true, true) => {
-                    panic!("--gnomes and --lists should not be specified at the same time");
-                }
-                (false, false) => {
-                    let n = (max_gid - min_gid) as usize;
-                    if n * n * 8 / 1024 / 1024 / 1024 > 30 {
-                        eprintln!("too many pairs! consider using --lists option to restrict number of pairs for each run!");
-                        std::process::exit(-1);
-                    }
-                    row_genomes.extend(min_gid..max_gid);
-                    col_genomes.extend(min_gid..max_gid);
-                    (min_gid..max_gid)
-                        .cartesian_product(min_gid..max_gid)
-                        .filter(|(a, b)| *a > *b)
-                        .collect()
-                }
-            };
+            let (pairs, row_genomes, col_genomes) = prep_pairs(&records, genomes, lists);
 
             // run in parallel and collect row results
             let res: Vec<(u32, u32, u32, u32)> = pairs
@@ -633,8 +578,9 @@ fn main() {
                 .flatten()
                 .collect();
 
-            // for identicial sets, elements correponsing to lower matrix is not calculated
-            // use this as an indicator to fill the the low part of the matrix when updating the full jaccard matrix
+            // for identicial sets, elements correponsing to lower matrix is not
+            // calculated use this as an indicator to fill the the low part of
+            // the matrix when updating the full jaccard matrix
             let identifical = row_genomes == col_genomes;
 
             let mut resmat = NamedMatrix::new(row_genomes, col_genomes);
@@ -670,16 +616,218 @@ fn main() {
                     // let resmat0 = resmat.clone();
                     println!("WARN: output option is specified, results are not printed on the screen, check file {:?}", p);
                     // println!("\n writing...");
-                    resmat.into_parquet(&p);
+                    resmat.into_parquet(&p)
+                }
+                None => {}
+            }
+        }
+        Some(Commands::Cosine {
+            rec,
+            genomes,
+            lists,
+            min_cosine,
+            min_magnitude,
+            min_dot_prod,
+            output,
+        }) => {
+            let min_cosine = match min_cosine {
+                Some(x) => *x,
+                None => -0.001f64,
+            };
+            let min_magnitude = match min_magnitude {
+                Some(x) => *x,
+                None => -0.001f64,
+            };
+            let min_dot_prod = match min_dot_prod {
+                Some(x) => *x,
+                None => 0i32,
+            };
 
-                    // println!("reading...");
-                    // let resmat2 = ResultMatrix::from_parquet(&p);
+            let records = GenotypeRecords::from_parquet_file(rec);
+            assert!(records.is_sorted_by_genome());
 
-                    // println!("resmat: {:?}", resmat);
-                    // println!("resmat2 {:?}", resmat2);
-                    // println!("{:?}", resmat0.shape());
-                    // println!("{:?}", resmat2.shape());
-                    // assert!(resmat2.is_equal(&resmat0));
+            let ind_file = rec.with_extension("ind");
+            let _inds = Individuals::from_parquet_file(&ind_file);
+
+            let (pairs, row_genomes, col_genomes) = prep_pairs(&records, genomes, lists);
+
+            // run in parallel and collect row results
+            let res: Vec<(u32, u32, i32, i32, i32)> = pairs
+                .into_par_iter()
+                .map(|(genome1, genome2)| {
+                    let mut sum_a2: i32 = 0;
+                    let mut sum_b2: i32 = 0;
+                    let mut sum_ab: i32 = 0;
+                    for (_pos, a, b) in records.iter_genome_pair_genotypes(genome1, genome2) {
+                        let (a, b) = match (a, b) {
+                            (Some(a), Some(b)) if a == b => (1, 1),
+                            // different rare variants, similarity decrease
+                            (Some(_), Some(_)) => (-1, 1),
+                            (Some(_), None) => (1, 0),
+                            (None, Some(_)) => (0, 1),
+                            (None, None) => (0, 0),
+                        };
+                        sum_a2 += a * a;
+                        sum_b2 += b * b;
+                        sum_ab += a * b;
+                    }
+
+                    let dot_prod = sum_ab;
+                    let magnitude = ((sum_a2 as f64) * (sum_b2 as f64)).sqrt();
+                    let cosine = dot_prod as f64 / magnitude;
+
+                    let mut out = Some((genome1, genome2, sum_a2, sum_b2, sum_ab));
+                    if (dot_prod < min_dot_prod)
+                        || (magnitude < min_magnitude)
+                        || (cosine < min_cosine)
+                    {
+                        out = None;
+                    }
+
+                    out
+                })
+                .flatten()
+                .collect();
+
+            // for identicial sets, elements correponsing to lower matrix is not
+            // calculated use this as an indicator to fill the the low part of
+            // the matrix when updating the full jaccard matrix
+            let identifical = row_genomes == col_genomes;
+
+            let mut resmat = NamedMatrix::new(row_genomes, col_genomes);
+
+            for (g1, g2, sum_a2, sum_b2, sum_ab) in res {
+                let dot_prod = sum_ab;
+                let magnitude = ((sum_a2 as f64) * (sum_b2 as f64)).sqrt();
+                let cosine = dot_prod as f64 / magnitude;
+
+                if output.is_none() {
+                    println!(
+                        "g1={g1}, g2={g2}, sum_a2={sum_a2}, sum_b2={sum_b2}, sum_ab={sum_ab}, cosine={cosine:.6}",
+                    );
+                }
+
+                // update the matrix
+                resmat.set_by_names(g1, g2, cosine);
+                if identifical {
+                    resmat.set_by_names(g2, g1, cosine);
+                }
+            }
+
+            // write matrix to files
+            match output.as_ref() {
+                Some(output) => {
+                    let dir = output.parent().unwrap().to_str().unwrap();
+                    let mut filename = output.file_name().unwrap().to_str().unwrap().to_owned();
+                    if !filename.ends_with(".cos") {
+                        filename.push_str(".cos");
+                    }
+                    let mut p = PathBuf::from(dir);
+                    p.push(filename);
+
+                    // let resmat0 = resmat.clone();
+                    println!("WARN: output option is specified, results are not printed on the screen, check file {:?}", p);
+                    // println!("\n writing...");
+                    resmat.into_parquet(&p)
+                }
+                None => {}
+            }
+        }
+        Some(Commands::Grm {
+            rec,
+            genomes,
+            lists,
+            min_grm_related,
+            output,
+        }) => {
+            let min_grm_related = match min_grm_related {
+                Some(x) => *x,
+                None => -0.001f64,
+            };
+
+            let mut records = GenotypeRecords::from_parquet_file(rec);
+            let ind_file = rec.with_extension("ind");
+            let _inds = Individuals::from_parquet_file(&ind_file);
+            let sites_file = rec.with_extension("sit");
+            let _sites = Sites::from_parquet_file(&sites_file);
+            let freq_map = calc_allele_frequency(&mut records, _inds.v().len() * 2, _sites.len());
+
+            records.sort_by_genome();
+            assert!(records.is_sorted_by_genome());
+
+            let (pairs, row_genomes, col_genomes) = prep_pairs(&records, genomes, lists);
+            let base_sum = calc_base_relationship(&freq_map);
+
+            // run in parallel and collect row results
+            let res: Vec<(u32, u32, f64)> = pairs
+                .into_par_iter()
+                .map(|(genome1, genome2)| {
+                    let mut sum = base_sum;
+                    for (_pos, a, b) in records.iter_genome_pair_genotypes(genome1, genome2) {
+                        let (a, b) = match (a, b) {
+                            (Some(a), Some(b)) if a == b => (0.0, 0.0),
+                            // different rare variants, similarity decrease
+                            (Some(_), Some(_)) => continue, // FIXME
+                            (Some(_), None) => (0.0, 2.0),
+                            (None, Some(_)) => (2.0, 0.0),
+                            (None, None) => continue,
+                        };
+                        match freq_map.get(&_pos) {
+                            Some(p) => {
+                                sum -= (2.0 - 2.0 * p) * (2.0 - 2.0 * p) / 2.0 / p / (1.0 - p);
+                                sum += (a - 2.0 * p) * (b - 2.0 * p) / 2.0 / p / (1.0 - p);
+                            }
+                            None => {}
+                        }
+                    }
+
+                    let n = freq_map.len() as f64;
+                    let relationship = sum / n;
+
+                    let mut out = Some((genome1, genome2, relationship));
+                    if relationship < min_grm_related {
+                        out = None
+                    }
+
+                    out
+                })
+                .flatten()
+                .collect();
+
+            // for identicial sets, elements correponsing to lower matrix is not
+            // calculated use this as an indicator to fill the the low part of
+            // the matrix when updating the full jaccard matrix
+            let identifical = row_genomes == col_genomes;
+
+            let mut resmat = NamedMatrix::new(row_genomes, col_genomes);
+
+            for (g1, g2, relationship) in res {
+                if output.is_none() {
+                    println!("g1={g1}, g2={g2}, relationship={relationship:.6}",);
+                }
+
+                // update the matrix
+                resmat.set_by_names(g1, g2, relationship);
+                if identifical {
+                    resmat.set_by_names(g2, g1, relationship);
+                }
+            }
+
+            // write matrix to files
+            match output.as_ref() {
+                Some(output) => {
+                    let dir = output.parent().unwrap().to_str().unwrap();
+                    let mut filename = output.file_name().unwrap().to_str().unwrap().to_owned();
+                    if !filename.ends_with(".grm") {
+                        filename.push_str(".grm");
+                    }
+                    let mut p = PathBuf::from(dir);
+                    p.push(filename);
+
+                    // let resmat0 = resmat.clone();
+                    println!("WARN: output option is specified, results are not printed on the screen, check file {:?}", p);
+                    // println!("\n writing...");
+                    resmat.into_parquet(&p)
                 }
                 None => {}
             }
@@ -688,4 +836,166 @@ fn main() {
             println!("\nUse '-h  or [subcommand] -h' to show help message");
         }
     }
+}
+
+// helper functions
+
+fn file_to_u32_vec(p: impl AsRef<Path>) -> Vec<u32> {
+    let mut s = String::new();
+    let mut reader = std::fs::File::open(p).map(std::io::BufReader::new).unwrap();
+    s.clear();
+    use std::io::Read;
+    reader.read_to_string(&mut s).unwrap();
+    let mut v = s
+        .trim()
+        .split("\n")
+        .map(|s| s.parse::<u32>().unwrap())
+        .collect::<Vec<u32>>();
+    assert!(v.len() != 0);
+    v.sort();
+    v
+}
+
+fn prep_pairs(
+    records: &GenotypeRecords,
+    genomes: &Option<Vec<u32>>,
+    lists: &Vec<PathBuf>,
+) -> (
+    // pairs
+    Vec<(u32, u32)>,
+    // row genomes
+    Vec<u32>,
+    // col genomes
+    Vec<u32>,
+) {
+    // genomes vec
+    let genomes: Vec<u32> = match genomes {
+        Some(v) => v.clone(),
+        None => Vec::new(),
+    };
+
+    // read genome lists from files
+
+    let mut lst1 = Vec::<u32>::new();
+    let mut lst2 = Vec::<u32>::new();
+
+    match lists.len() {
+        0 => {}
+        1 => {
+            // within subset sharing
+            lst1.extend(file_to_u32_vec(&lists[0]));
+            lst2.extend_from_slice(lst1.as_slice());
+        }
+        2 => {
+            // inter-subset sharing
+            lst1.extend(file_to_u32_vec(&lists[0]));
+            lst2.extend(file_to_u32_vec(&lists[1]));
+
+            // ensure non-overlapping
+            let mut set = HashSet::<u32>::new();
+            set.extend(&lst1);
+            let overlapping = lst2.iter().any(|x| set.contains(x));
+            if overlapping {
+                eprintln!("list1 and list2 are overlapping");
+                std::process::exit(-1);
+            }
+        }
+        _ => {
+            eprintln!("--lists options can specied no more than 2 times");
+            std::process::exit(-1);
+        }
+    }
+
+    let min_gid = records.records().first().unwrap().get_genome();
+    let max_gid = records.records().last().unwrap().get_genome();
+    let mut row_genomes = Vec::<u32>::new();
+    let mut col_genomes = Vec::<u32>::new();
+    let pairs: Vec<(u32, u32)> = match (genomes.len() > 0, lst1.len() > 0) {
+        (true, false) => {
+            row_genomes.extend(genomes.iter());
+            col_genomes.extend(genomes.iter());
+            genomes
+                .iter()
+                .map(|x| *x)
+                .cartesian_product(genomes.iter().map(|x| *x))
+                .filter(|(a, b)| *a > *b)
+                .collect()
+        }
+        (false, true) => {
+            row_genomes.extend(&lst1);
+            col_genomes.extend(&lst2);
+
+            if lists.len() == 2 {
+                // two non-overallping list. no need to filter
+                lst1.iter()
+                    .map(|x| *x)
+                    .cartesian_product(lst2.iter().map(|x| *x))
+                    .collect()
+            } else {
+                // two identical list need to filtering
+                lst1.iter()
+                    .map(|x| *x)
+                    .cartesian_product(lst2.iter().map(|x| *x))
+                    .filter(|(a, b)| *a > *b)
+                    .collect()
+            }
+        }
+        (true, true) => {
+            panic!("--gnomes and --lists should not be specified at the same time");
+        }
+        (false, false) => {
+            let n = (max_gid - min_gid) as usize;
+            if n * n * 8 / 1024 / 1024 / 1024 > 30 {
+                eprintln!("too many pairs! consider using --lists option to restrict number of pairs for each run!");
+                std::process::exit(-1);
+            }
+            row_genomes.extend(min_gid..max_gid);
+            col_genomes.extend(min_gid..max_gid);
+            (min_gid..max_gid)
+                .cartesian_product(min_gid..max_gid)
+                .filter(|(a, b)| *a > *b)
+                .collect()
+        }
+    };
+
+    (pairs, row_genomes, col_genomes)
+}
+
+fn calc_allele_frequency(
+    rec: &mut GenotypeRecords,
+    num_hap: usize,
+    num_sites: usize,
+) -> AHashMap<u32, f64> {
+    rec.sort_by_position();
+    let mut freq_map = AHashMap::<u32, f64>::with_capacity(num_sites);
+    let mut pos = u32::MAX;
+    let mut cnt = 0u32;
+    for r in rec.records() {
+        let p = r.get_position();
+        if p != pos {
+            if pos != u32::MAX {
+                freq_map.insert(pos, 1.0 - (cnt as f64) / (num_hap as f64));
+            }
+            pos = p;
+            cnt = 1;
+        } else {
+            cnt += 1;
+        }
+        if pos != u32::MAX {
+            freq_map.insert(pos, 1.0 - (cnt as f64) / (num_hap as f64));
+        }
+    }
+    freq_map
+}
+
+/// Calculate the base sum of relationship (assuming all genotypes are reference allele)
+///
+/// This is helpful as majority all the genotype are 0s (x=2 references).
+/// We can iterative update the run sum of relatedships when we see a non-ref allelel:
+/// subtracting a value assume ref allele and add a value consider non-ref
+fn calc_base_relationship(freq_map: &AHashMap<u32, f64>) -> f64 {
+    freq_map
+        .values()
+        .map(|p| (2.0 - 2.0 * p) * (2.0 - 2.0 * p) / 2.0 / p / (1.0 - p))
+        .sum()
 }
