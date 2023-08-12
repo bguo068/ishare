@@ -42,6 +42,9 @@ enum Commands {
         /// Use (Do not Ignore) haplotype information (i.e. not flattening before overlapping analysis) if true
         #[arg(short = 'N', long, default_value_t = false)]
         use_hap_info: bool,
+        /// output details
+        #[arg(short = 'D', long, default_value_t = false)]
+        write_details: bool,
         /// Path to sample list file
         #[arg(short = 'o', long, default_value = "ibd_cmp_res.txt")]
         out: PathBuf,
@@ -111,6 +114,7 @@ fn main() {
             ibd1_dir,
             ibd2_dir,
             use_hap_info,
+            write_details,
             out,
         }) => {
             // files
@@ -159,7 +163,16 @@ fn main() {
 
             {
                 // overlapping analysis
-                let oa = overlap::IbdOverlapAnalyzer::new(&mut ibd1, &mut ibd2, ignore_hap);
+                let prefix_for_details = match *write_details {
+                    true => Some(out),
+                    false => None,
+                };
+                let oa = overlap::IbdOverlapAnalyzer::new(
+                    &mut ibd1,
+                    &mut ibd2,
+                    ignore_hap,
+                    prefix_for_details,
+                );
                 let res = oa.analzyze(Some(&[3.0f32, 4.0, 6.0, 10.0, 18.0]));
                 res.to_csv(out);
             }

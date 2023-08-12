@@ -2,15 +2,22 @@ use super::ibdset::*;
 use crate::container::intervals::Intervals;
 use crate::container::intervaltree::IntervalTree;
 use std::io::BufWriter;
+use std::path::PathBuf;
 
 pub struct IbdOverlapAnalyzer<'a> {
     ibd1: &'a IbdSet<'a>,
     ibd2: &'a IbdSet<'a>,
+    prefix_for_details: Option<&'a PathBuf>,
     ignore_hap: bool,
 }
 
 impl<'a> IbdOverlapAnalyzer<'a> {
-    pub fn new(ibd1: &'a IbdSet<'a>, ibd2: &'a IbdSet<'a>, ignore_hap: bool) -> Self {
+    pub fn new(
+        ibd1: &'a IbdSet<'a>,
+        ibd2: &'a IbdSet<'a>,
+        ignore_hap: bool,
+        prefix_for_details: Option<&'a PathBuf>,
+    ) -> Self {
         if ignore_hap {
             assert!(ibd1.is_sorted_by_samples());
             assert!(ibd2.is_sorted_by_samples());
@@ -22,12 +29,15 @@ impl<'a> IbdOverlapAnalyzer<'a> {
         Self {
             ibd1,
             ibd2,
+            prefix_for_details,
             ignore_hap,
         }
     }
 
     fn calc_overlap_rates(&self, len_ranges: Option<&[f32]>, swap12: bool) -> (Vec<f32>, f32) {
         let gmap = self.ibd1.get_gmap();
+        let ginfo = self.ibd1.get_ginfo();
+        let sample_names = self.ibd1.get_inds().v();
         let len_ranges = match len_ranges {
             Some(x) => x,
             None => &[0.0f32],
@@ -38,6 +48,19 @@ impl<'a> IbdOverlapAnalyzer<'a> {
         let mut gw_ratio_sums = 0.0f32;
         let mut tree = IntervalTree::<u32, ()>::new(100);
         let mut itvs = Intervals::new();
+        let mut detail_file = match (self.prefix_for_details, swap12) {
+            (None, _) => None,
+            (Some(prefix_for_detials), true) => Some(
+                std::fs::File::create(prefix_for_detials.with_extension("abyb"))
+                    .map(BufWriter::new)
+                    .unwrap(),
+            ),
+            (Some(prefix_for_detials), false) => Some(
+                std::fs::File::create(prefix_for_detials.with_extension("bbya"))
+                    .map(BufWriter::new)
+                    .unwrap(),
+            ),
+        };
 
         let blkpair_iter = if swap12 {
             IbdSetBlockPairIter::new(&self.ibd2, &self.ibd1, self.ignore_hap)
@@ -48,8 +71,25 @@ impl<'a> IbdOverlapAnalyzer<'a> {
         for (blk1, blk2) in blkpair_iter {
             let mut gw_total_a = 0.0;
             let mut gw_total_intersect = 0.0;
-            match (blk1, blk2) {
+            let pair_info = match (blk1, blk2) {
                 (Some(blk1), Some(blk2)) => {
+                    // for output details
+                    let (sample1, hapid1, sample2, hapid2) = {
+                        let (i, j, m, n) = blk1[0].haplotype_pair();
+                        let s1 = &sample_names[i as usize];
+                        let s2 = &sample_names[j as usize];
+                        let h1 = match m {
+                            0 => 1,
+                            1 => 2,
+                            _ => 0,
+                        };
+                        let h2 = match n {
+                            0 => 1,
+                            1 => 2,
+                            _ => 0,
+                        };
+                        (s1, h1, s2, h2)
+                    };
                     if self.ignore_hap {
                         // when ignore hap, we need to flattend segments
                         itvs.clear();
@@ -106,12 +146,41 @@ impl<'a> IbdOverlapAnalyzer<'a> {
                         // update the summary vectors
                         counters[which] += 1;
                         ratio_sums[which] += intersect / cm;
+
+                        // Write a record to the detail file for each subject segment
+                        // s1,h1,s2,h2,chr,astart, aend, overlap_ratio, interval_lwr
+                        if let Some(detail_file) = detail_file.as_mut() {
+                            use std::io::Write;
+                            let interval_lwr = len_ranges[which];
+                            let (_ichr, chrname, astart) = ginfo.to_chr_pos(a.start);
+                            let aend = astart + (a.end - a.start);
+                            write!(detail_file, "{sample1}\t{hapid1}\t{sample2}\t{hapid2}\t{chrname}\t{astart}\t{aend}\t{interval_lwr}\t{:.4}\n", intersect/cm ).unwrap();
+                        }
                     }
+                    Some((sample1, hapid1, sample2, hapid2))
                 }
                 (None, Some(_blk2)) => {
                     // ignore
+                    None
                 }
                 (Some(blk1), None) => {
+                    // for output details
+                    let (sample1, hapid1, sample2, hapid2) = {
+                        let (i, j, m, n) = blk1[0].haplotype_pair();
+                        let s1 = &sample_names[i as usize];
+                        let s2 = &sample_names[j as usize];
+                        let h1 = match m {
+                            0 => 1,
+                            1 => 2,
+                            _ => 0,
+                        };
+                        let h2 = match n {
+                            0 => 1,
+                            1 => 2,
+                            _ => 0,
+                        };
+                        (s1, h1, s2, h2)
+                    };
                     // flatten a
                     itvs.clear();
                     itvs.extend_from_iter(blk1.iter().map(|x| (x.s, x.e)));
@@ -139,13 +208,34 @@ impl<'a> IbdOverlapAnalyzer<'a> {
                         counters[which] += 1;
 
                         ratio_sums[which] += intersect / cm;
+                        // Write a record to the detail file for each subject segment
+                        // s1,h1,s2,h2,chr,astart, aend, overlap_ratio, interval_lwr
+                        if let Some(detail_file) = detail_file.as_mut() {
+                            use std::io::Write;
+                            let interval_lwr = len_ranges[which];
+                            let (_ichr, chrname, astart) = ginfo.to_chr_pos(a.start);
+                            let aend = astart + (a.end - a.start);
+                            write!(detail_file, "{sample1}\t{hapid1}\t{sample2}\t{hapid2}\t{chrname}\t{astart}\t{aend}\t{interval_lwr}\t{:.4}\n", intersect/cm ).unwrap();
+                        }
                     }
+                    Some((sample1, hapid1, sample2, hapid2))
                 }
-                _ => {}
-            }
-            if gw_total_a > 0.001 {
+                _ => None,
+            };
+            if let Some((sample1, hapid1, sample2, hapid2)) = pair_info {
                 gw_counters += 1;
                 gw_ratio_sums += gw_total_intersect / gw_total_a;
+                // Write a record to the detail file for a sample-pair with non-zero IBD sharig in
+                // ibd1
+                if let Some(detail_file) = detail_file.as_mut() {
+                    use std::io::Write;
+                    write!(
+                    detail_file,
+                    "{sample1}\t{hapid1}\t{sample2}\t{hapid2}\tgenome_wide\t-1\t-1\t-1\t{:.4}\n",
+                    gw_total_intersect / gw_total_a
+                )
+                    .unwrap();
+                }
             }
         }
 
@@ -158,8 +248,10 @@ impl<'a> IbdOverlapAnalyzer<'a> {
     }
 
     pub fn analzyze(&self, len_ranges: Option<&[f32]>) -> IbdOverlapResult {
-        let (a_by_b, a_by_b_gw) = self.calc_overlap_rates(len_ranges, false);
-        let (b_by_a, b_by_a_gw) = self.calc_overlap_rates(len_ranges, true);
+        let swap = false;
+        let (a_by_b, a_by_b_gw) = self.calc_overlap_rates(len_ranges, swap);
+        let swap = true;
+        let (b_by_a, b_by_a_gw) = self.calc_overlap_rates(len_ranges, swap);
         let len_ranges = match len_ranges {
             Some(x) => x,
             None => &[0.0f32],
