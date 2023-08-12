@@ -21,25 +21,25 @@ enum Commands {
         /// Path to genome info toml file (input)
         #[arg(short = 'g', long, default_value = "genome.toml")]
         genome_info: PathBuf,
-        // Path to sample list file for ibd set1
+        /// Path to sample list file for ibd set1
         #[arg(short = 's', long, required = true)]
         sample_lst1: PathBuf,
-        // Path to sample list file for ibd set2
+        /// Path to sample list file for ibd set2
         #[arg(short = 'S', long, required = true)]
         sample_lst2: PathBuf,
-        // fmt of ibd set1, supported format 'hapibd', 'tskibd' and 'hmmibd'
+        /// fmt of ibd set1, supported format 'hapibd', 'tskibd' and 'hmmibd'
         #[arg(short = 'f', long, required = true)]
         fmt1: String,
-        // fmt of ibd set2, supported format 'hapibd', 'tskibd' and 'hmmibd'
-        #[arg(short = 'F', long, default_value = "hapibd")]
+        /// fmt of ibd set2, supported format 'hapibd', 'tskibd' and 'hmmibd'
+        #[arg(short = 'F', long, required = true)]
         fmt2: String,
-        // IBD directory 1
+        /// IBD directory 1
         #[arg(short = 'i', long, required = true)]
         ibd1_dir: PathBuf,
-        // IBD directory 2
+        /// IBD directory 2
         #[arg(short = 'I', long, required = true)]
         ibd2_dir: PathBuf,
-        // Path to sample list file
+        /// Path to sample list file
         #[arg(short = 'o', long, default_value = "ibd_cmp_res.txt")]
         out: PathBuf,
     },
