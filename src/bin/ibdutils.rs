@@ -134,7 +134,10 @@ fn main() {
             {
                 if fmt.as_str() == "hapibd" {
                     ibd.read_hapibd_dir(dir);
-                    ibd.sort_by_samples();
+                    match *use_hap_info {
+                        true => ibd.sort_by_haplotypes(),
+                        false => ibd.sort_by_samples(),
+                    }
                     ibd.infer_ploidy();
                 } else if fmt.as_str() == "tskibd" {
                     ibd.read_tskibd_dir(dir);
