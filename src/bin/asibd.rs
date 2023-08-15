@@ -14,7 +14,7 @@ use std::{
 use clap::Parser;
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = None)]
+#[command(name="asibd", author, version, about, long_about = None)]
 struct Cli {
     /// path to rfmix2 fb.tsv file
     #[arg(short = 'f', long, required = true)]

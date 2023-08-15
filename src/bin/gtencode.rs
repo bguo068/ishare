@@ -14,7 +14,7 @@ use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
-#[command(author, version, about, long_about=None)]
+#[command(name="gtencode", author, version, about, long_about=None)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
