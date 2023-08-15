@@ -40,8 +40,12 @@ enum Commands {
         #[arg(short = 'I', long, required = true)]
         ibd2_dir: PathBuf,
         /// Use (Do not Ignore) haplotype information (i.e. not flattening before overlapping analysis) if true
-        #[arg(short = 'N', long, default_value_t = false)]
-        use_hap_info: bool,
+        #[arg(long, default_value_t = false)]
+        use_hap_overlap: bool,
+        /// Use (Do not Ignore) haplotype information for total ibd calculation. If true, calculate
+        /// haplotype-level total ibd; if false, calculate merged sample-level total ibd.
+        #[arg(long, default_value_t = false)]
+        use_hap_totibd: bool,
         /// output details
         #[arg(short = 'D', long, default_value_t = false)]
         write_details: bool,
@@ -113,7 +117,8 @@ fn main() {
             fmt2,
             ibd1_dir,
             ibd2_dir,
-            use_hap_info,
+            use_hap_overlap,
+            use_hap_totibd,
             write_details,
             out,
         }) => {
@@ -134,7 +139,7 @@ fn main() {
             {
                 if fmt.as_str() == "hapibd" {
                     ibd.read_hapibd_dir(dir);
-                    match *use_hap_info {
+                    match *use_hap_overlap {
                         true => ibd.sort_by_haplotypes(),
                         false => ibd.sort_by_samples(),
                     }
@@ -161,10 +166,10 @@ fn main() {
                 }
             }
 
-            let ignore_hap = if *use_hap_info { false } else { true };
             assert_eq!(ibd1.get_inds().v(), ibd2.get_inds().v());
 
             {
+                let ignore_hap = if *use_hap_overlap { false } else { true };
                 // overlapping analysis
                 let prefix_for_details = match *write_details {
                     true => Some(out),
@@ -180,8 +185,31 @@ fn main() {
                 res.to_csv(out);
             }
             {
-                let inds = ibd1.get_inds();
                 // total IBD analysis
+                let ignore_hap = if *use_hap_totibd { false } else { true };
+
+                // re-sort ibd
+                match ignore_hap {
+                    true => {
+                        for ibd in [&mut ibd1, &mut ibd2] {
+                            if !ibd.is_sorted_by_samples() {
+                                ibd.sort_by_samples();
+                            }
+                            ibd.infer_ploidy()
+                        }
+                    }
+                    false => {
+                        for ibd in [&mut ibd1, &mut ibd2] {
+                            if !ibd.is_sorted_by_haplotypes() {
+                                ibd.sort_by_haplotypes();
+                            }
+                            ibd.infer_ploidy()
+                        }
+                    }
+                }
+
+                let inds = ibd1.get_inds();
+
                 let mat1 = ibd1.get_gw_total_ibd_matrix(ignore_hap);
                 let mat2 = ibd2.get_gw_total_ibd_matrix(ignore_hap);
                 let mut n = inds.v().len();
