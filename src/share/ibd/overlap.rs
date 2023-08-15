@@ -52,12 +52,12 @@ impl<'a> IbdOverlapAnalyzer<'a> {
             (None, _) => None,
             (Some(prefix_for_detials), true) => Some(
                 std::fs::File::create(prefix_for_detials.with_extension("abyb"))
-                    .map(BufWriter::new)
+                    .map(|f| BufWriter::with_capacity(100000000, f))
                     .unwrap(),
             ),
             (Some(prefix_for_detials), false) => Some(
                 std::fs::File::create(prefix_for_detials.with_extension("bbya"))
-                    .map(BufWriter::new)
+                    .map(|f| BufWriter::with_capacity(100000000, f))
                     .unwrap(),
             ),
         };
