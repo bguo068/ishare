@@ -664,12 +664,10 @@ impl<'a> IbdSet<'a> {
                 mat.set_by_positions(ind2, ind1, tot);
             } else {
                 let (ind1, hap1, ind2, hap2) = blk[0].haplotype_pair();
-                assert!((hap1 == 1) || (hap1 == 2));
-                assert!((hap2 == 1) || (hap2 == 2));
-                let hap1 = hap1 as u32 - 1;
-                let hap2 = hap2 as u32 - 1;
-                let hid1 = ind1 * 2 + hap1;
-                let hid2 = ind2 * 2 + hap2;
+                assert!((hap1 == 0) || (hap1 == 1));
+                assert!((hap2 == 0) || (hap2 == 1));
+                let hid1 = ind1 * 2 + hap1 as u32;
+                let hid2 = ind2 * 2 + hap2 as u32;
                 let mut tot = 0.0f32;
                 for r in blk {
                     let len = gmap.get_cm_len(r.s, r.e);
