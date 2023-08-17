@@ -138,9 +138,6 @@ impl<'a> IbdSet<'a> {
     pub fn read_hapibd_dir(&mut self, p: impl AsRef<Path>) {
         for entry in p.as_ref().read_dir().unwrap() {
             if let Ok(entry) = entry {
-                if !entry.file_type().unwrap().is_file() {
-                    continue;
-                }
                 let filename = entry.file_name();
                 let filename = filename.as_os_str().to_str().unwrap();
                 if !filename.ends_with("ibd.gz") {
@@ -319,9 +316,6 @@ impl<'a> IbdSet<'a> {
     pub fn read_tskibd_dir(&mut self, p: impl AsRef<Path>) {
         for entry in p.as_ref().read_dir().unwrap() {
             if let Ok(entry) = entry {
-                if !entry.file_type().unwrap().is_file() {
-                    continue;
-                }
                 let filename = entry.file_name();
                 let filename = filename.as_os_str().to_str().unwrap();
                 if !filename.ends_with("ibd") {
@@ -339,9 +333,6 @@ impl<'a> IbdSet<'a> {
     pub fn read_hmmibd_dir(&mut self, p: impl AsRef<Path>) {
         for entry in p.as_ref().read_dir().unwrap() {
             if let Ok(entry) = entry {
-                if !entry.file_type().unwrap().is_file() {
-                    continue;
-                }
                 let filename = entry.file_name();
                 let filename = filename.as_os_str().to_str().unwrap();
                 if !filename.ends_with(".hmm.txt") {
