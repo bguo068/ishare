@@ -70,7 +70,7 @@ fn main() {
 
     eprintln!("reading ibd file");
     let mut ibd = IbdSet::new(&gmap, &ginfo, &indivs);
-    ibd.read_hapibd_file(&cli.hapibd_ibd, Some(21.4));
+    ibd.read_hapibd_file(&cli.hapibd_ibd, cli.min_ibd_seg_cm);
     ibd.sort_by_haplotypes();
 
     eprintln!("reading LA position list");
