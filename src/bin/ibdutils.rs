@@ -5,7 +5,7 @@ use ishare::{
     indiv::*,
     share::ibd::{ibdseg::IbdSeg, ibdset::*, overlap},
 };
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name="ibdutils", author, version, about, long_about=None)]
@@ -58,26 +58,26 @@ enum Commands {
         /// Path to genome info toml file (input)
         #[arg(short = 'g', long, default_value = "genome.toml")]
         genome_info: PathBuf,
-        // Path to sample list file for ibd set1
+        /// Path to sample list file for ibd set1
         #[arg(short = 's', long, required = true)]
         sample_lst1: PathBuf,
-        // Path to sample list file for ibd set2
+        /// Path to sample list file for ibd set2
         #[arg(short = 'S', long, required = true)]
         sample_lst2: PathBuf,
-        // fmt of ibd set1, supported format 'hapibd', 'tskibd' and 'hmmibd'
+        /// fmt of ibd set1, supported format 'hapibd', 'tskibd' and 'hmmibd'
         #[arg(short = 'f', long, required = true)]
         fmt1: String,
-        // fmt of ibd set2, supported format 'hapibd', 'tskibd' and 'hmmibd'
+        /// fmt of ibd set2, supported format 'hapibd', 'tskibd' and 'hmmibd'
         #[arg(short = 'F', long, default_value = "hapibd")]
         fmt2: String,
-        // IBD directory 1
+        /// IBD directory 1
         #[arg(short = 'i', long, required = true)]
         ibd1_dir: PathBuf,
-        // IBD directory 2
+        /// IBD directory 2
         #[arg(short = 'I', long, required = true)]
         ibd2_dir: PathBuf,
-        // Path to sample list file
-        #[arg(short = 'o', long, default_value = "ibd_cmp_res.txt")]
+        /// Path to output file (prefix)
+        #[arg(short = 'o', long, default_value = "ibd_cmp_res")]
         out: PathBuf,
 
         #[command(flatten)]
@@ -90,8 +90,10 @@ enum Commands {
 #[derive(Args)]
 #[group(required = true, multiple = false)]
 struct Sample1 {
+    /// sample1 of the a pair by name
     #[arg(short = 'n', long)]
     ind_name1: Option<String>,
+    /// sample1 of the a pair by index
     #[arg(short = 'x', long)]
     ind_ix1: Option<u32>,
 }
@@ -99,8 +101,10 @@ struct Sample1 {
 #[derive(Args)]
 #[group(required = true, multiple = false)]
 struct Sample2 {
+    /// sample2 of the a pair by name
     #[arg(short = 'N', long)]
     ind_name2: Option<String>,
+    /// sample2 of the a pair by index
     #[arg(short = 'X', long)]
     ind_ix2: Option<u32>,
 }
@@ -335,7 +339,9 @@ fn main() {
 
             let out = PathBuf::from(out).with_extension("svg");
 
-            plot_svg(v1, v2, out, &ginfo).unwrap();
+            let svg_string = plot_svg(v1, v2, &ginfo).unwrap();
+            std::fs::write(&out, svg_string)
+                .expect(&format!("cannot write to file: {}", out.to_str().unwrap()));
         }
 
         _ => {
@@ -378,99 +384,99 @@ fn write_pair_total(
     writer.close().unwrap();
 }
 
+/// plot IBD of a sample pair from both v1 and v2
 fn plot_svg(
     v1: &[IbdSeg],
     v2: &[IbdSeg],
-    out: impl AsRef<Path>,
     ginfo: &GenomeInfo,
-) -> Result<(), Box<dyn std::error::Error>> {
-    use plotters::{prelude::*, style::text_anchor::*};
-    let root_area = SVGBackend::new(out.as_ref(), (1024, 768)).into_drawing_area();
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut ret = String::new();
 
-    root_area.fill(&WHITE)?;
+    {
+        use plotters::{prelude::*, style::text_anchor::*};
+        let root_area = SVGBackend::with_string(&mut ret, (1024, 768)).into_drawing_area();
+        root_area.fill(&WHITE)?;
 
-    let nchrom = ginfo.chromnames.len() as f32;
-    let chrsz_max = *ginfo.chromsize.iter().max().unwrap() as f32;
-    let mut cc = ChartBuilder::on(&root_area)
-        .margin(40)
-        .set_left_and_bottom_label_area_size(50)
-        .set_label_area_size(LabelAreaPosition::Left, 60)
-        .caption("IBD shared by a pair of samples", ("sans-serif", 30))
-        .build_cartesian_2d(-1.0f32..chrsz_max, -1.0f32..nchrom)?;
+        let nchrom = ginfo.chromnames.len() as f32;
+        let chrsz_max = *ginfo.chromsize.iter().max().unwrap() as f32;
+        let mut cc = ChartBuilder::on(&root_area)
+            .margin(40)
+            .set_left_and_bottom_label_area_size(50)
+            .set_label_area_size(LabelAreaPosition::Left, 60)
+            .caption("IBD shared by a pair of samples", ("sans-serif", 30))
+            .build_cartesian_2d(-1.0f32..chrsz_max, -1.0f32..nchrom)?;
 
-    cc.configure_mesh()
-        .x_labels(20)
-        .y_labels(0)
-        .disable_mesh()
-        .x_desc("Position")
-        .y_desc("Chromosome")
-        .axis_desc_style(("sans-serif", 20))
-        .x_label_formatter(&|v| format!("{:.0}", v))
-        .y_label_formatter(&|v| format!("{:.0}", v))
-        .draw()?;
+        cc.configure_mesh()
+            .x_labels(20)
+            .y_labels(0)
+            .disable_mesh()
+            .x_desc("Position")
+            .y_desc("Chromosome")
+            .axis_desc_style(("sans-serif", 20))
+            .x_label_formatter(&|v| format!("{:.0}", v))
+            .y_label_formatter(&|v| format!("{:.0}", v))
+            .draw()?;
 
-    // draw IBD segments
-    let mut points = vec![];
-    for (iv, v) in [v1, v2].iter().enumerate() {
-        eprintln!("Set{} size: {}", iv, v.len());
-        for (iseg, seg) in v.iter().enumerate() {
-            let (direction, color, label) = match iv {
-                0 => (1.0f32, &BLUE, "Set1"),
-                1 => (-1.0f32, &RED, "Set2"),
-                _ => panic!(),
-            };
-            points.clear();
-            let (_, m, _, n) = seg.haplotype_pair();
-            let (chrid, chrname, s) = ginfo.to_chr_pos(seg.s);
-            let e = seg.e - seg.s + s;
-            eprintln!("\t{}\t{}\t{}", chrname, s + 1, e + 1);
+        // draw IBD segments
+        let mut points = vec![];
+        for (iv, v) in [v1, v2].iter().enumerate() {
+            eprintln!("Set{} size: {}", iv, v.len());
+            for (iseg, seg) in v.iter().enumerate() {
+                let (direction, color, label) = match iv {
+                    0 => (1.0f32, &BLUE, "Set1"),
+                    1 => (-1.0f32, &RED, "Set2"),
+                    _ => panic!(),
+                };
+                points.clear();
+                let (_, m, _, n) = seg.haplotype_pair();
+                let (chrid, chrname, s) = ginfo.to_chr_pos(seg.s);
+                let e = seg.e - seg.s + s;
+                eprintln!("\t{}\t{}\t{}", chrname, s + 1, e + 1);
 
-            let y = chrid as f32 + (m + n + 1) as f32 * 0.03 * direction;
-            points.push((s as f32, y));
-            points.push((e as f32, y));
+                let y = chrid as f32 + (m + n + 1) as f32 * 0.03 * direction;
+                points.push((s as f32, y));
+                points.push((e as f32, y));
 
-            let ls = LineSeries::new(
-                points.iter().map(|x| (x.0, x.1)),
-                color.clone().stroke_width(2),
-            );
+                let ls = LineSeries::new(
+                    points.iter().map(|x| (x.0, x.1)),
+                    color.clone().stroke_width(2),
+                );
 
-            let s = cc.draw_series(ls)?;
-            let legstyle = |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color.clone());
-            if iseg == 0 {
-                s.label(label).legend(legstyle);
+                let s = cc.draw_series(ls)?;
+                let legstyle = |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color.clone());
+                if iseg == 0 {
+                    s.label(label).legend(legstyle);
+                }
             }
         }
+
+        let right_center = Pos::new(HPos::Right, VPos::Center);
+
+        // customize y tick labels
+        cc.draw_series(PointSeries::of_element(
+            (0.0f32..nchrom).step(1.0).values().map(|y| (0.0, y)),
+            5,
+            ShapeStyle::from(&BLACK).filled(),
+            &|coord, size, style| {
+                let ts = TextStyle {
+                    pos: right_center,
+                    font: ("sans-serif", 12).into(),
+                    color: RGBAColor(style.color.0, style.color.1, style.color.2, 0.8)
+                        .to_backend_color(),
+                };
+                let chrid = coord.1 as usize;
+                let chrname = &ginfo.chromnames[chrid];
+                EmptyElement::at(coord)
+                    + PathElement::new(vec![(-size, 0), (0, 0)], style)
+                    + Text::new(format!("{}", chrname), (-size - 5, 0), ts)
+            },
+        ))?;
+
+        cc.configure_series_labels().border_style(&BLACK).draw()?;
+
+        // To avoid the IO failure being ignored silently, we manually call the present function
+        root_area.present().expect("Unable to write result to file");
     }
 
-    let right_center = Pos::new(HPos::Right, VPos::Center);
-
-    // customize y tick labels
-    cc.draw_series(PointSeries::of_element(
-        (0.0f32..nchrom).step(1.0).values().map(|y| (0.0, y)),
-        5,
-        ShapeStyle::from(&BLACK).filled(),
-        &|coord, size, style| {
-            let ts = TextStyle {
-                pos: right_center,
-                font: ("sans-serif", 12).into(),
-                color: RGBAColor(style.color.0, style.color.1, style.color.2, 0.8)
-                    .to_backend_color(),
-            };
-            let chrid = coord.1 as usize;
-            let chrname = &ginfo.chromnames[chrid];
-            EmptyElement::at(coord)
-                + PathElement::new(vec![(-size, 0), (0, 0)], style)
-                + Text::new(format!("{}", chrname), (-size - 5, 0), ts)
-        },
-    ))?;
-
-    cc.configure_series_labels().border_style(&BLACK).draw()?;
-
-    // To avoid the IO failure being ignored silently, we manually call the present function
-    root_area.present().expect("Unable to write result to file");
-    println!(
-        "Result has been saved to {}",
-        out.as_ref().to_string_lossy()
-    );
-    Ok(())
+    Ok(ret)
 }
