@@ -57,6 +57,10 @@ impl<'a> IbdSet<'a> {
         }
     }
 
+    pub fn into_vec(self) -> Vec<IbdSeg> {
+        self.ibd
+    }
+
     pub fn infer_ploidy(&mut self) {
         if self.is_valid_haploid_ibd() {
             self.ploidy_status = Haploid;

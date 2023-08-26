@@ -1,3 +1,5 @@
+use axum::extract::Query;
+use axum::Json;
 use clap::{Args, Parser, Subcommand};
 use ishare::{
     genome::{self, GenomeInfo},
@@ -5,6 +7,7 @@ use ishare::{
     indiv::*,
     share::ibd::{ibdseg::IbdSeg, ibdset::*, overlap},
 };
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -68,7 +71,7 @@ enum Commands {
         #[arg(short = 'f', long, required = true)]
         fmt1: String,
         /// fmt of ibd set2, supported format 'hapibd', 'tskibd' and 'hmmibd'
-        #[arg(short = 'F', long, default_value = "hapibd")]
+        #[arg(short = 'F', long, required = true)]
         fmt2: String,
         /// IBD directory 1
         #[arg(short = 'i', long, required = true)]
@@ -84,6 +87,10 @@ enum Commands {
         sample1: Sample1,
         #[command(flatten)]
         sample2: Sample2,
+
+        /// Server at the given port
+        #[arg(long)]
+        port: Option<u16>,
     },
 }
 
@@ -244,8 +251,10 @@ fn main() {
             out,
             sample1,
             sample2,
+            port,
         }) => {
-            let ginfo = genome::GenomeInfo::from_toml_file(&genome_info);
+            use std::sync::Arc;
+            let ginfo = Arc::new(genome::GenomeInfo::from_toml_file(&genome_info));
             let gmap = gmap::GeneticMap::from_genome_info(&ginfo);
 
             let (inds1, inds1_opt) = Individuals::from_txt_file(&sample_lst1);
@@ -287,61 +296,169 @@ fn main() {
             }
 
             assert_eq!(ibd1.get_inds().v(), ibd2.get_inds().v());
-            let inds = ibd1.get_inds();
 
-            let mut id1 = match sample1.ind_ix1 {
-                Some(id) => {
-                    assert!(id < inds.v().len() as u32);
-                    id
+            // temporary solution
+            let ibdv1 = Arc::new(ibd1.into_vec());
+            let ibdv2 = Arc::new(ibd2.into_vec());
+            let inds1 = Arc::new(inds1);
+            // let inds2 = Arc::new(inds2);
+
+            match port {
+                Some(port) => {
+                    use tokio::runtime::Runtime;
+                    let rt = Runtime::new().unwrap();
+                    let url = format!("0.0.0.0:{port}");
+                    println!("serve at {url}");
+
+                    #[derive(Serialize, Deserialize, Debug)]
+                    struct IdPair {
+                        id1: String,
+                        id2: String,
+                    }
+                    #[derive(Deserialize, Debug)]
+                    struct SearchQuery {
+                        q: String,
+                        _page: Option<u32>,
+                    }
+
+                    #[derive(Serialize, Deserialize, Debug)]
+                    struct Item {
+                        id: u32,
+                        text: String,
+                    }
+                    #[derive(Serialize, Debug)]
+                    struct SearchResult {
+                        items: Vec<Item>,
+                        more: bool,
+                    }
+
+                    rt.block_on(async move {
+                        use axum::{routing::get, Router};
+                        // our router
+                        let app = Router::new()
+                            .route(
+                                "/",
+                                get({
+                                    use axum::response::Html;
+                                    || async move {
+                                        let home =
+                                            std::fs::read_to_string("ibdutils_index.html").unwrap();
+                                        Html(home)
+                                    }
+                                }),
+                            )
+                            .route(
+                                "/searchid",
+                                get({
+                                    let idv1 = inds1.clone();
+                                    |query: Query<SearchQuery>| async move {
+                                        let q = &query.q;
+                                        println!("Query: {:?}", query);
+                                        let items = idv1
+                                            .as_ref()
+                                            .v()
+                                            .iter()
+                                            .enumerate()
+                                            .filter(|(_i, name)| name.contains(q))
+                                            .take(5)
+                                            .map(|(i, name)| Item {
+                                                id: i as u32,
+                                                text: name.to_owned(),
+                                            })
+                                            .collect::<Vec<Item>>();
+                                        let search_result = SearchResult {
+                                            items,
+                                            more: false, // Simulating that there are more pages
+                                        };
+                                        println!("Results: {:?}", search_result);
+                                        Json(search_result)
+                                    }
+                                }),
+                            )
+                            .route(
+                                "/plotibd",
+                                get({
+                                    let ibdv1 = ibdv1.clone();
+                                    let ibdv2 = ibdv2.clone();
+                                    let inds1 = inds1.clone();
+                                    |ids: Query<IdPair>| async move {
+                                        let mut id1 = *inds1.m().get(&ids.id1).unwrap_or(&0) as u32;
+                                        let mut id2 = *inds1.m().get(&ids.id2).unwrap_or(&1) as u32;
+                                        let n = inds1.v().len();
+                                        if (id1 == 0) && (id2 == 0) {
+                                            use rand::Rng;
+                                            let mut rng = rand::thread_rng();
+                                            id1 = rng.gen_range(1..n) as u32;
+                                            id2 = rng.gen_range(0..id1) as u32;
+                                        }
+                                        if id1 < id2 {
+                                            std::mem::swap(&mut id1, &mut id2);
+                                        }
+                                        let first = ibdv1[..]
+                                            .partition_point(|x| x.individual_pair() < (id1, id2));
+                                        let last = ibdv1[..]
+                                            .partition_point(|x| x.individual_pair() <= (id1, id2));
+                                        let v1 = &ibdv1[first..last];
+                                        let first = ibdv2[..]
+                                            .partition_point(|x| x.individual_pair() < (id1, id2));
+                                        let last = ibdv2[..]
+                                            .partition_point(|x| x.individual_pair() <= (id1, id2));
+                                        let v2 = &ibdv2[first..last];
+                                        let svg_string = plot_svg(v1, v2, ginfo.as_ref()).unwrap();
+                                        axum::response::Html(svg_string)
+                                    }
+                                }),
+                            );
+                        axum::Server::bind(&url.parse().unwrap())
+                            .serve(app.into_make_service())
+                            .await
+                            .unwrap();
+                    });
                 }
                 None => {
-                    let s = sample1.ind_name1.as_ref().unwrap();
-                    inds.m()[s] as u32
-                }
-            };
-            let mut id2 = match sample2.ind_ix2 {
-                Some(id) => {
-                    assert!(id < inds.v().len() as u32);
-                    id
-                }
-                None => {
-                    let s = sample2.ind_name2.as_ref().unwrap();
-                    inds.m()[s] as u32
-                }
-            };
-            eprintln!(
-                "Samples\n\tsample1:\t{}\t{}\n\tsample2:\t{}\t{}",
-                inds.v()[id1 as usize],
-                id1,
-                inds.v()[id2 as usize],
-                id2
-            );
+                    let inds = inds1.clone();
+                    let mut id1 = match sample1.ind_ix1 {
+                        Some(id) => {
+                            assert!(id < inds.v().len() as u32);
+                            id
+                        }
+                        None => {
+                            let s = sample1.ind_name1.as_ref().unwrap();
+                            inds.m()[s] as u32
+                        }
+                    };
+                    let mut id2 = match sample2.ind_ix2 {
+                        Some(id) => {
+                            assert!(id < inds.v().len() as u32);
+                            id
+                        }
+                        None => {
+                            let s = sample2.ind_name2.as_ref().unwrap();
+                            inds.m()[s] as u32
+                        }
+                    };
+                    eprintln!(
+                        "Samples\n\tsample1:\t{}\t{}\n\tsample2:\t{}\t{}",
+                        inds.v()[id1 as usize],
+                        id1,
+                        inds.v()[id2 as usize],
+                        id2
+                    );
 
-            if id1 < id2 {
-                std::mem::swap(&mut id1, &mut id2);
+                    if id1 < id2 {
+                        std::mem::swap(&mut id1, &mut id2);
+                    }
+                    let first = ibdv1[..].partition_point(|x| x.individual_pair() < (id1, id2));
+                    let last = ibdv1[..].partition_point(|x| x.individual_pair() <= (id1, id2));
+                    let v1 = &ibdv1[first..last];
+                    let first = ibdv2[..].partition_point(|x| x.individual_pair() < (id1, id2));
+                    let last = ibdv2[..].partition_point(|x| x.individual_pair() <= (id1, id2));
+                    let v2 = &ibdv2[first..last];
+                    let svg_string = plot_svg(v1, v2, ginfo.as_ref()).unwrap();
+                    std::fs::write(&out, svg_string)
+                        .expect(&format!("cannot write to file: {}", out.to_str().unwrap()));
+                }
             }
-
-            let first = ibd1
-                .as_slice()
-                .partition_point(|x| x.individual_pair() < (id1, id2));
-            let last = ibd1
-                .as_slice()
-                .partition_point(|x| x.individual_pair() <= (id1, id2));
-            let v1 = &ibd1.as_slice()[first..last];
-
-            let first = ibd2
-                .as_slice()
-                .partition_point(|x| x.individual_pair() < (id1, id2));
-            let last = ibd2
-                .as_slice()
-                .partition_point(|x| x.individual_pair() <= (id1, id2));
-            let v2 = &ibd2.as_slice()[first..last];
-
-            let out = PathBuf::from(out).with_extension("svg");
-
-            let svg_string = plot_svg(v1, v2, &ginfo).unwrap();
-            std::fs::write(&out, svg_string)
-                .expect(&format!("cannot write to file: {}", out.to_str().unwrap()));
         }
 
         _ => {

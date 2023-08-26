@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Select2 AJAX Example</title>
+    <!-- Include jQuery -->
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <!-- Include Select2 CSS and JS -->
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-beta.1/dist/css/select2.min.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-beta.1/dist/js/select2.min.js"></script>
+</head>
+
+<body>
+    <!-- The select element -->
+    <div>
+        Sample 1:
+        <select id='sample1' class="mySelect2" style="width: 300px;">
+            <!-- Options will be populated by Select2 with AJAX -->
+        </select>
+        Sample 2:
+        <select id='sample2' class="mySelect2" style="width: 300px;">
+            <!-- Options will be populated by Select2 with AJAX -->
+        </select>
+        <button id="getPlot" onclick="submitPair()">Get Plot</button>
+    </div>
+    <div>
+        Interval (ms)
+        <input id='interval' type="text" value="500">
+        <button id='randomPlot' onclick="randomPair()">Random Pair and plot</button>
+    </div>
+
+    <div id="svg-container">
+        <!-- SVG will go here -->
+    </div>
+
+
+    <script>
+        // Your JavaScript code goes here
+        $(document).ready(function () {
+            // Initialize Select2
+            $('.mySelect2').select2({
+                ajax: {
+                    type: "GET",
+                    url: '/searchid', // The API URL
+                    dataType: 'json', // Data type to expect from the server
+                    delay: 250, // Rate-limiting to 250ms
+                    data: function (params) {
+                        return {
+                            q: params.term, // The search term
+                            page: params.page // The current page
+                        };
+                    },
+                    processResults: function (data, params) {
+                        // Map the API response to Select2's format
+                        console.log(data);
+                        return {
+                            results: data.items,
+                            pagination: {
+                                more: false //(params.page * 30) < data.total_count
+                            }
+                        };
+                    },
+                    cache: true, // Enable caching
+                },
+                placeholder: 'Search for an item', // Placeholder text
+                minimumInputLength: 1 // Minimum number of characters required to trigger a search
+            });
+        });
+
+
+        let intervalId;
+
+        const randomPair = function () {
+            if (intervalId) {
+                clearInterval(intervalId);
+            }
+            let interval = document.getElementById('interval').value;
+
+            intervalId = setInterval(function () {
+                const url = `/plotibd?id1=0&id2=0`;
+                fetch(url)
+                    .then(response => response.text())
+                    .then(data => {
+                        document.getElementById('svg-container').innerHTML = data;
+                    });
+            }, interval);
+        }
+        randomPair(); // Initialize with default value
+
+        const submitPair = function () {
+            if (intervalId) {
+                clearInterval(intervalId);
+            }
+            const sample1 = document.getElementById('sample1').value;
+            const sample2 = document.getElementById('sample2').value;
+
+            // Construct the URL with query parameters
+            const url = `/plotibd?id1=${sample1}&id2=${sample2}`;
+
+            // Fetch data from the server
+            fetch(url)
+                .then(response => response.text())  // Assuming server responds with json
+                .then(text => {
+                    // console.log(text);  // Handle your server response here
+                    document.getElementById("svg-container").innerHTML = text;
+
+                })
+                .catch((error) => {
+                    console.error('Error fetching data:', error);
+                });
+        };
+    </script>
+</body>
+
+</html>
