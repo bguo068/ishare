@@ -52,6 +52,12 @@ struct Cli {
     #[arg(short = 'P', long, default_value_t = 0.9)]
     min_prob: f32,
 
+    /// size of memory buffer for reading the large fb.tsv file in Mb.
+    /// Large buffer size might reduce the number of system calls for io over network
+    /// and accelerate the file reading step
+    #[arg(short = 'B', long, default_value_t = 100)]
+    buffer_size_mb: usize,
+
     /// path to output file
     #[arg(short = 'p', long, required = true)]
     out: PathBuf,
@@ -78,7 +84,14 @@ fn main() {
     pos.sort();
     eprintln!("reading LA fb.tsv file");
     let (ancestry, la_set) = {
-        let fb = FbMatrix::from_fb_csv(&cli.rfmix2_fb, &pos, &ginfo, &indivs, cli.min_prob);
+        let fb = FbMatrix::from_fb_csv(
+            &cli.rfmix2_fb,
+            &pos,
+            &ginfo,
+            &indivs,
+            cli.min_prob,
+            cli.buffer_size_mb,
+        );
         let ancestry = fb.get_ancestries().to_owned();
         let la_set = LASet::from_fbmat(&fb);
         (ancestry, la_set)

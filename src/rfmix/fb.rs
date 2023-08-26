@@ -69,8 +69,13 @@ impl FbMatrix {
         ginfo: &GenomeInfo,
         inds: &Individuals,
         min_prob: f32,
+        buffer_size_mb: usize,
     ) -> Self {
-        let mut reader = File::open(p.as_ref()).map(BufReader::new).unwrap();
+        let reader = File::open(p.as_ref()).expect(&format!(
+            "cannot open file {}",
+            p.as_ref().to_str().unwrap()
+        ));
+        let mut reader = BufReader::with_capacity(1024 * buffer_size_mb, reader);
         let mut buf = String::with_capacity(100000);
         let mut ancestry = Vec::<String>::new();
         let mut windows = vec![];
@@ -81,7 +86,9 @@ impl FbMatrix {
         let mut v = Vec::<u8>::new();
 
         // line 1
+        let mut ln_cnt = 0;
         reader.read_line(&mut buf).unwrap();
+        ln_cnt += 1;
         for a in buf.trim().split("\t").skip(1) {
             ancestry.push(a.to_owned());
         }
@@ -95,6 +102,7 @@ impl FbMatrix {
 
         // line 2, skip 2 columns, read sample name for every k_anc *2 columns
         reader.read_line(&mut buf).unwrap();
+        ln_cnt += 1;
         for field in buf.trim().split("\t").skip(4).step_by(k_anc * 2) {
             let sam = field.split(":::").next().unwrap();
             let samid = match inds.m().get(sam) {
@@ -107,6 +115,13 @@ impl FbMatrix {
 
         // line 3-end
         while reader.read_line(&mut buf).unwrap() > 0 {
+            ln_cnt += 1;
+            if ln_cnt % 100 == 0 {
+                eprint!(
+                    "\r\t\tread {:6.3} % positions",
+                    100.0 * ln_cnt as f64 / pos.len() as f64
+                );
+            }
             let mut fields = buf.trim().split("\t");
             let chrname = fields.next().unwrap();
             let chrid = ginfo.idx[chrname];
