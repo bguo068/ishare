@@ -25,3 +25,4 @@ plotters = { version = "0.3.5", default-features = false, features = ["svg_backe
 axum = "0.6.20"
 tokio = { version = "1.32.0", features = ["rt-multi-thread"] }
 rand = "0.8.5"
+skato-rs = {path="../skato-rs"}

@@ -162,4 +162,13 @@ pub enum Commands {
         #[arg(short = 'o', long)]
         output: Option<PathBuf>,
     },
+    // binary trait SKAT-O test
+    // see details in Lee et al 2012 AJHG: https://www.cell.com/ajhg/fulltext/S0002-9297(12)00316-3
+    Skato {
+        /// Path to genotype record table (input)
+        rec: PathBuf,
+        /// optional subsets of genome, if not set, use all genomes
+        #[arg(short, long, group = "genome_selection")]
+        genomes: Option<Vec<u32>>,
+    },
 }

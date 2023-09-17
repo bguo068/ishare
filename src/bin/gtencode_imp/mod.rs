@@ -8,4 +8,5 @@ pub mod records;
 pub mod samples;
 pub mod share;
 pub mod sites;
+pub mod skato;
 pub mod utils;
