@@ -1,9 +1,10 @@
 use crate::gmap::GeneticMap;
+use serde::{Deserialize, Serialize};
 
 /// struct representing an *encoded* IBD segment:
 /// - for i and j, the lower 2 bits encode haplotype id, upper bits encodes individual id
 /// - for s and e, the values are either chromosome-level bp poistion or genome-wide bp position
-#[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
+#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Copy, Clone, Serialize, Deserialize)]
 pub struct IbdSeg {
     pub i: u32,
     pub j: u32,

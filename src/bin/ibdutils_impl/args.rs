@@ -10,6 +10,39 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Encode txt format IBD to binary version IBD with regions
+    /// of extreme high IBD sharing or low SNP density region be excluded.
+    Encode {
+        /// Path to genome info toml file (input)
+        #[arg(short = 'g', long, default_value = "genome.toml")]
+        genome_info: PathBuf,
+        /// Path to sample list file for ibd set1
+        #[arg(short = 's', long, required = true)]
+        sample_lst: PathBuf,
+        /// fmt of ibd set1, supported format 'hapibd', 'tskibd' and 'hmmibd'
+        #[arg(short = 'f', long, required = true)]
+        fmt: String,
+        /// IBD directory
+        #[arg(short = 'i', long, required = true)]
+        ibd_dir: PathBuf,
+        /// genome regions with IBD coverage larger
+        /// than `outlier_upper` * std above 3% trimmed mean will be removed
+        #[arg(long, default_value_t = 10.0)]
+        outlier_upper: f64,
+        /// position list to calcualte snp density
+        #[arg(long)]
+        position_lst: PathBuf,
+        /// 1 cM windows with less than min_snp SNPs will be excluded
+        #[arg(long, default_value_t = 15)]
+        min_snp: u32,
+        /// threshold: sample pairs with flattend IBD > genome size * threshold
+        /// are treated as highly related.
+        #[arg(long, default_value_t = 2.0)]
+        min_cm: f32,
+        /// Path to output file (prefix)
+        #[arg(short = 'o', long, default_value = "ibd_encode")]
+        out_prefix: PathBuf,
+    },
     /// Encode genotype data from VCF file to tables or matrix (-m)
     Compare {
         /// Path to genome info toml file (input)

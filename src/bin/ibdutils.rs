@@ -9,6 +9,7 @@ fn main() {
 
     match &cli.command {
         Some(c) => match c {
+            args @ Commands::Encode { .. } => encode::main_encode(args),
             args @ Commands::Compare { .. } => compare::main_compare(args),
             args @ Commands::PlotIBD { .. } => plotibd::main_plotibd(args),
             args @ Commands::GetUnrelated { .. } => unrelated::main_unrelated(args),

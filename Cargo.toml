@@ -28,3 +28,4 @@ rand = "0.8.5"
 skato-rs = {path="../skato-rs"}
 log = "0.4.20"
 env_logger = "0.10.0"
+slice-group-by = "0.3.1"
