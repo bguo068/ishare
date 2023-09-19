@@ -9,6 +9,7 @@ use itertools::{
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::fs::File;
@@ -104,7 +105,7 @@ impl GenotypeRecords {
     pub fn sort_by_position(&mut self) {
         match self.sort_status {
             0 | 2 => {
-                self.data.sort_by_key(|x| x.get_pos_genome());
+                self.data.par_sort_unstable_by_key(|x| x.get_pos_genome());
                 self.sort_status = 1
             }
             1 => {}
@@ -117,7 +118,7 @@ impl GenotypeRecords {
     pub fn sort_by_genome(&mut self) {
         match self.sort_status {
             0 | 1 => {
-                self.data.sort_by_key(|x| x.get_genome_pos());
+                self.data.par_sort_unstable_by_key(|x| x.get_genome_pos());
                 self.sort_status = 2;
             }
             2 => {}
