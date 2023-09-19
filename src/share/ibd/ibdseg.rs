@@ -1,6 +1,6 @@
 use crate::gmap::GeneticMap;
 use serde::{Deserialize, Serialize};
-
+use std::path::Path;
 /// struct representing an *encoded* IBD segment:
 /// - for i and j, the lower 2 bits encode haplotype id, upper bits encodes individual id
 /// - for s and e, the values are either chromosome-level bp poistion or genome-wide bp position
@@ -117,4 +117,52 @@ impl IbdSeg {
 
         valid_coords && (valid_diploid || valid_haploid)
     }
+}
+
+pub fn write_ibdseg_vec(v: &Vec<IbdSeg>, out: impl AsRef<Path>) {
+    use std::io::Write;
+    let mut file = std::fs::File::create(out.as_ref())
+        .map(std::io::BufWriter::new)
+        .expect(&format!(
+            "cannot create file {}",
+            out.as_ref().to_str().unwrap()
+        ));
+    let sz = v.len() as u64;
+    file.write(&sz.to_le_bytes()).unwrap();
+
+    for seg in v.iter() {
+        file.write(&seg.i.to_le_bytes()).unwrap();
+        file.write(&seg.j.to_le_bytes()).unwrap();
+        file.write(&seg.s.to_le_bytes()).unwrap();
+        file.write(&seg.e.to_le_bytes()).unwrap();
+    }
+}
+
+pub fn read_ibdseg_vec(out: impl AsRef<Path>) -> Vec<IbdSeg> {
+    let mut file = std::fs::File::open(out.as_ref())
+        .map(std::io::BufReader::new)
+        .expect(&format!(
+            "cannot read file {}",
+            out.as_ref().to_str().unwrap()
+        ));
+    let mut byte8 = [0u8; 8];
+    let mut byte4 = [0u8; 4];
+    use std::io::Read;
+    file.read_exact(&mut byte8).unwrap();
+    let sz = u64::from_le_bytes(byte8);
+    let mut v = Vec::with_capacity(sz as usize);
+
+    for _ in 0..sz {
+        file.read_exact(&mut byte4).unwrap();
+        let i = u32::from_be_bytes(byte4);
+        file.read_exact(&mut byte4).unwrap();
+        let j = u32::from_be_bytes(byte4);
+        file.read_exact(&mut byte4).unwrap();
+        let s = u32::from_be_bytes(byte4);
+        file.read_exact(&mut byte4).unwrap();
+        let e = u32::from_be_bytes(byte4);
+        let seg = IbdSeg { i, j, s, e };
+        v.push(seg);
+    }
+    v
 }

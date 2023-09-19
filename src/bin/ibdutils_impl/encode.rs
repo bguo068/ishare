@@ -5,11 +5,11 @@ use ishare::{
     genome::GenomeInfo,
     gmap::{self, GeneticMap},
     indiv::*,
-    share::ibd::{ibdseg::IbdSeg, ibdset::*},
+    share::ibd::{ibdseg::*, ibdset::*},
 };
 use itertools::Itertools;
 use log::*;
-use std::{io::Read, path::PathBuf};
+use std::path::PathBuf;
 
 pub fn main_encode(args: &Commands) {
     if let Commands::Encode {
@@ -75,7 +75,8 @@ pub fn main_encode(args: &Commands) {
         info!("after encoding no. ibd: {}", v.len());
 
         // write binary
-        write_ibdseg_vec(&v, out_prefix);
+        let out = format!("{}.eibd", out_prefix.to_str().unwrap());
+        write_ibdseg_vec(&v, &out);
 
         //    histogram: txt
         write_histogram(&sp, &cov, out_prefix, &ginfo);
@@ -313,50 +314,6 @@ fn cut_ibd(ibd: &IbdSet, region_to_keep: &Intervals<u32>, min_cm: f32) -> Vec<Ib
         }
     }
     out
-}
-
-fn write_ibdseg_vec(v: &Vec<IbdSeg>, out_prefix: &PathBuf) {
-    use std::io::Write;
-    let s = out_prefix.to_str().unwrap();
-    let out = format!("{}.eibd", s);
-    let mut file = std::fs::File::create(out.clone())
-        .map(std::io::BufWriter::new)
-        .expect(&format!("cannot create file {}", out));
-    let sz = v.len() as u64;
-    file.write(&sz.to_le_bytes()).unwrap();
-
-    for seg in v.iter() {
-        file.write(&seg.i.to_le_bytes()).unwrap();
-        file.write(&seg.j.to_le_bytes()).unwrap();
-        file.write(&seg.s.to_le_bytes()).unwrap();
-        file.write(&seg.e.to_le_bytes()).unwrap();
-    }
-}
-
-pub fn read_ibdseg_vec(prefix: &PathBuf) {
-    let s = prefix.to_str().unwrap();
-    let out = format!("{}.eibd", s);
-    let mut file = std::fs::File::open(out.clone())
-        .map(std::io::BufReader::new)
-        .expect(&format!("cannot read file {}", out));
-    let mut byte8 = [0u8; 8];
-    let mut byte4 = [0u8; 4];
-    file.read_exact(&mut byte8).unwrap();
-    let sz = u64::from_le_bytes(byte8);
-    let mut v = Vec::with_capacity(sz as usize);
-
-    for _ in 0..sz {
-        file.read_exact(&mut byte4).unwrap();
-        let i = u32::from_be_bytes(byte4);
-        file.read_exact(&mut byte4).unwrap();
-        let j = u32::from_be_bytes(byte4);
-        file.read_exact(&mut byte4).unwrap();
-        let s = u32::from_be_bytes(byte4);
-        file.read_exact(&mut byte4).unwrap();
-        let e = u32::from_be_bytes(byte4);
-        let seg = IbdSeg { i, j, s, e };
-        v.push(seg);
-    }
 }
 
 fn write_histogram(sp: &Vec<u32>, cov: &Vec<usize>, out_prefix: &PathBuf, ginfo: &GenomeInfo) {
