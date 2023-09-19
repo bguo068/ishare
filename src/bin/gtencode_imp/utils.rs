@@ -148,12 +148,35 @@ pub fn calc_allele_frequency(
             cnt += 1;
         }
         if target_pos != u32::MAX {
-            freq_map.insert(target_pos, 1.0 - (cnt as f64) / (num_hap as f64));
+            freq_map.insert(target_pos, (cnt as f64) / (num_hap as f64));
         }
     }
     freq_map
 }
 
+pub fn calc_allele_count(rec: &mut GenotypeRecords, num_sites: usize) -> AHashMap<u32, u32> {
+    rec.sort_by_position();
+    let mut count_map = AHashMap::<u32, u32>::with_capacity(num_sites);
+    let mut target_pos = u32::MAX;
+    let mut cnt = 0u32;
+    for r in rec.records() {
+        let front_poistion = r.get_position();
+        if front_poistion != target_pos {
+            if target_pos != u32::MAX {
+                // allele cnt
+                count_map.insert(target_pos, cnt);
+            }
+            target_pos = front_poistion;
+            cnt = 1;
+        } else {
+            cnt += 1;
+        }
+        if target_pos != u32::MAX {
+            count_map.insert(target_pos, cnt);
+        }
+    }
+    count_map
+}
 /// Calculate the base sum of relationship (assuming all genotypes are reference allele)
 ///
 /// This is helpful as majority all the genotype are 0s (x=2 references).
