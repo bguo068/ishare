@@ -14,6 +14,10 @@ pub enum Commands {
     Encode {
         /// Path to VCF (input)
         vcf: PathBuf,
+        /// Path to a list of samples (input). Genotypes are only extracted for these samples;
+        /// if none, genotypes for all samples will be extracted
+        #[arg(short = 'S', long)]
+        samples_lst: Option<PathBuf>,
         /// Path to genome info toml file (input)
         #[arg(short = 'I', long, default_value = "genome.toml")]
         genome_info: PathBuf,

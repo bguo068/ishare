@@ -4,6 +4,7 @@ use crate::io::IntoParquet;
 use crate::share::ibd::ibdset::IbdSet;
 use crate::stat::xirs::*;
 use crate::vcf::*;
+use ahash::AHashSet;
 
 #[test]
 fn compare_table_matrix_enc() {
@@ -14,12 +15,13 @@ fn compare_table_matrix_enc() {
     let vcf_path = "testdata/bcf/small.bcf";
 
     let max_maf = 0.001f64;
-    let (sit, _ind, rec) = read_vcf(&ginfo, vcf_path, max_maf, None);
+    let (sit, _ind, rec) = read_vcf(&AHashSet::new(), &ginfo, vcf_path, max_maf, None);
 
     // here use a very low min_maf to encode rare variants and common varints in matrix,
     // so that it can use be to very the accuracy of table encoding of rare variants
     let min_maf = 0.0;
-    let (sit2, _ind2, gm2) = read_vcf_for_genotype_matrix(&ginfo, vcf_path, min_maf, None);
+    let (sit2, _ind2, gm2) =
+        read_vcf_for_genotype_matrix(&AHashSet::new(), &ginfo, vcf_path, min_maf, None);
 
     for r in rec.records() {
         let pos = r.get_position();
@@ -54,9 +56,12 @@ fn calc_xirs() {
         "testdata/vcf_filt/chr2.vcf.gz",
         "testdata/vcf_filt/chr3.vcf.gz",
     ];
-    let (mut sites, inds, mut mat) = read_vcf_for_genotype_matrix(&ginfo, vcf_fns[0], 0.01, None);
+    let target_samples = AHashSet::new();
+    let (mut sites, inds, mut mat) =
+        read_vcf_for_genotype_matrix(&target_samples, &ginfo, vcf_fns[0], 0.01, None);
     for vcf_fn in &vcf_fns[1..] {
-        let (sites2, inds2, mat2) = read_vcf_for_genotype_matrix(&ginfo, vcf_fn, 0.01, None);
+        let (sites2, inds2, mat2) =
+            read_vcf_for_genotype_matrix(&target_samples, &ginfo, vcf_fn, 0.01, None);
         assert!(inds.v() == inds2.v());
         sites.merge(sites2);
         mat.merge(mat2);

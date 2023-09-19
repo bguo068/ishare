@@ -1,3 +1,5 @@
+use ahash::AHashSet;
+
 use crate::{
     genome::GenomeInfo,
     genotype::{common::*, rare::*},
@@ -7,6 +9,7 @@ use crate::{
 use std::path::Path;
 
 pub fn read_vcf(
+    target_samples: &AHashSet<String>,
     gconfig: &GenomeInfo,
     vcf_path: impl AsRef<Path>,
     max_maf: f64,
@@ -38,9 +41,26 @@ pub fn read_vcf(
         .samples()
         .into_iter()
         .map(|x| std::str::from_utf8(x).unwrap());
-    let individuals = Individuals::from_iter(it);
 
-    let ac_thres = (nsam as f64 * max_maf * 2.0).floor() as usize;
+    // calculate sample_mask
+    let mut sample_mask = vec![true; header.sample_count() as usize];
+    if target_samples.len() > 0 {
+        for (i, s) in it.clone().enumerate() {
+            if !target_samples.contains(s) {
+                sample_mask[i] = false;
+            }
+        }
+    }
+
+    // only sameples in targets
+    let individuals = Individuals::from_iter(
+        it.zip(sample_mask.iter())
+            .filter(|(_s, yes)| **yes)
+            .map(|(s, _yes)| s),
+    );
+    let sel_nsam = individuals.v().len();
+
+    let ac_thres = (sel_nsam as f64 * max_maf * 2.0).floor() as usize;
 
     let mut ab = AlleleBuffer::new();
     let mut rid_last = None;
@@ -144,20 +164,31 @@ pub fn read_vcf(
         let raw_gt_slice = unsafe { std::slice::from_raw_parts(bcf_fmt.p, bcf_fmt.p_len as usize) };
 
         // make a vector allele idx
-        let gt_iter = raw_gt_slice.iter().map(|x| {
-            let mut i = match ((*x) as i32).into() {
-                GenotypeAllele::Unphased(i) => i as u8,
-                GenotypeAllele::Phased(i) => i as u8,
-                _ => {
-                    panic!("Currently GT should not be missing!")
+        let mut hap_mask = vec![];
+        for sm in sample_mask.iter() {
+            hap_mask.push(*sm);
+            hap_mask.push(*sm);
+        }
+
+        let gt_iter = raw_gt_slice
+            .iter()
+            .zip(hap_mask.iter())
+            // skip 'no' haplotypes
+            .filter(|(_, &m)| m)
+            .map(|(x, _)| {
+                let mut i = match ((*x) as i32).into() {
+                    GenotypeAllele::Unphased(i) => i as u8,
+                    GenotypeAllele::Phased(i) => i as u8,
+                    _ => {
+                        panic!("Currently GT should not be missing!")
+                    }
+                };
+                if i != 0 {
+                    // rebase
+                    i += start_allele;
                 }
-            };
-            if i != 0 {
-                // rebase
-                i += start_allele;
-            }
-            i
-        });
+                i
+            });
 
         if is_new_pos {
             // read genotype
@@ -199,6 +230,7 @@ pub fn read_vcf(
 }
 
 pub fn read_vcf_for_genotype_matrix(
+    target_samples: &AHashSet<String>,
     gconfig: &GenomeInfo,
     vcf_path: impl AsRef<Path>,
     min_maf: f64,
@@ -223,16 +255,34 @@ pub fn read_vcf_for_genotype_matrix(
     let nsam = header.sample_count();
 
     // Output:
-    let mut gm = GenotypeMatrix::new((nsam as usize) * 2);
     let mut sites: Sites = Sites::new();
     // Individuals
     let it = header
         .samples()
         .into_iter()
         .map(|x| std::str::from_utf8(x).unwrap());
-    let individuals = Individuals::from_iter(it);
 
-    let ac_thres = (nsam as f64 * min_maf * 2.0).floor() as usize;
+    // calculate sample_mask
+    let mut sample_mask = vec![true; header.sample_count() as usize];
+    if target_samples.len() > 0 {
+        for (i, s) in it.clone().enumerate() {
+            if !target_samples.contains(s) {
+                sample_mask[i] = false;
+            }
+        }
+    }
+
+    // only sameples in targets
+    let individuals = Individuals::from_iter(
+        it.zip(sample_mask.iter())
+            .filter(|(_s, yes)| **yes)
+            .map(|(s, _yes)| s),
+    );
+
+    let sel_nsam = individuals.v().len();
+    let mut gm = GenotypeMatrix::new((sel_nsam as usize) * 2);
+
+    let ac_thres = (sel_nsam as f64 * min_maf * 2.0).floor() as usize;
     let mut rid_last = None;
     let mut pos_last = None;
 
@@ -298,16 +348,26 @@ pub fn read_vcf_for_genotype_matrix(
         let raw_gt_slice = unsafe { std::slice::from_raw_parts(bcf_fmt.p, bcf_fmt.p_len as usize) };
 
         // make a vector allele idx
-        let gt_iter = raw_gt_slice.iter().map(|x| {
-            let i = match (*x as i32).into() {
-                GenotypeAllele::Unphased(i) => i as u8,
-                GenotypeAllele::Phased(i) => i as u8,
-                _ => {
-                    panic!("Currently GT should not be missing!")
-                }
-            };
-            i == 1
-        });
+        let mut hap_mask = vec![];
+        for sm in sample_mask.iter() {
+            hap_mask.push(*sm);
+            hap_mask.push(*sm);
+        }
+        let gt_iter = raw_gt_slice
+            .iter()
+            .zip(hap_mask.iter())
+            // skip 'no' haplotypes
+            .filter(|(_, &m)| m)
+            .map(|(x, _)| {
+                let i = match (*x as i32).into() {
+                    GenotypeAllele::Unphased(i) => i as u8,
+                    GenotypeAllele::Phased(i) => i as u8,
+                    _ => {
+                        panic!("Currently GT should not be missing!")
+                    }
+                };
+                i == 1
+            });
         let ac: usize = gt_iter.clone().map(|x| if x { 1 } else { 0 }).sum();
 
         if (ac < ac_thres) || (((nsam * 2) as usize - ac) < ac_thres) {

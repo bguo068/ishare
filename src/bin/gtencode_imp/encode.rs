@@ -8,9 +8,10 @@ use std::path::{Path, PathBuf};
 
 pub fn main_encode(args: &Commands) {
     // unpack cli args
-    let (vcf, genome_info, out, parallel_chunksize_bp, matrix, threshold_maf) =
+    let (vcf, sample_lst, genome_info, out, parallel_chunksize_bp, matrix, threshold_maf) =
         if let Commands::Encode {
             vcf,
+            samples_lst,
             genome_info,
             out,
             parallel_chunksize_bp,
@@ -20,6 +21,7 @@ pub fn main_encode(args: &Commands) {
         {
             (
                 vcf,
+                samples_lst,
                 genome_info,
                 out,
                 parallel_chunksize_bp,
@@ -33,6 +35,19 @@ pub fn main_encode(args: &Commands) {
     use std::time::Instant;
     let start = Instant::now();
     println!("# Encoding genotypes ...");
+
+    // read sample list
+    use ahash::AHashSet;
+    let mut target_samples = AHashSet::new();
+    if let Some(sample_lst) = sample_lst.as_ref() {
+        std::fs::read_to_string(sample_lst)
+            .expect("can not open sample list file")
+            .trim()
+            .split("\n")
+            .for_each(|x| {
+                target_samples.insert(x.to_owned());
+            });
+    }
 
     // encoding
     let ginfo = GenomeInfo::from_toml_file(genome_info);
@@ -89,7 +104,13 @@ pub fn main_encode(args: &Commands) {
             .into_par_iter()
             .map(|region| {
                 // (sites, individuals, GenotypeMatrix)
-                let res = read_vcf_for_genotype_matrix(&ginfo, vcf, *threshold_maf, region);
+                let res = read_vcf_for_genotype_matrix(
+                    &target_samples,
+                    &ginfo,
+                    vcf,
+                    *threshold_maf,
+                    region,
+                );
                 if region.is_some() {
                     println!("{:?}", region);
                 }
@@ -120,7 +141,7 @@ pub fn main_encode(args: &Commands) {
             .into_par_iter()
             .map(|region| {
                 // (sites, individuals, GenotypeRecords)
-                let res = read_vcf(&ginfo, vcf, *threshold_maf, region);
+                let res = read_vcf(&target_samples, &ginfo, vcf, *threshold_maf, region);
                 if region.is_some() {
                     println!("{:?}", region);
                 }
