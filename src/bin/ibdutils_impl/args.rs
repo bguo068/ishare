@@ -29,9 +29,10 @@ pub enum Commands {
         /// than `outlier_upper` * std above 3% trimmed mean will be removed
         #[arg(long, default_value_t = 10.0)]
         outlier_upper: f64,
-        /// position list to calcualte snp density
+        /// position list to calcualte snp density. If None,
+        // the position list will be generated from IBD segments
         #[arg(long)]
-        position_lst: PathBuf,
+        position_lst: Option<PathBuf>,
         /// 1 cM windows with less than min_snp SNPs will be excluded
         #[arg(long, default_value_t = 15)]
         min_snp: u32,

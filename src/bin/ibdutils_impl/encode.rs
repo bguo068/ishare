@@ -7,6 +7,7 @@ use ishare::{
     indiv::*,
     share::ibd::{ibdseg::IbdSeg, ibdset::*},
 };
+use itertools::Itertools;
 use log::*;
 use std::{io::Read, path::PathBuf};
 
@@ -39,7 +40,10 @@ pub fn main_encode(args: &Commands) {
         info!("before encoding no. ibd: {}", ibd.as_slice().len());
 
         // read positions
-        let positions = read_positions(&ginfo, position_lst);
+        let positions = match position_lst.as_ref() {
+            Some(position_lst) => read_positions(&ginfo, position_lst),
+            None => get_uniq_positions_from_ibd(&ibd),
+        };
 
         // count snps per cM
         //   calculate low snp regions
@@ -422,4 +426,15 @@ fn write_removed_region(
             }
         }
     }
+}
+fn get_uniq_positions_from_ibd(ibd: &IbdSet) -> Vec<u32> {
+    use ahash::{HashSet, HashSetExt};
+    let mut set = HashSet::new();
+    for seg in ibd.iter() {
+        set.insert(seg.s);
+        set.insert(seg.e);
+    }
+    let mut v = set.iter().map(|x| *x).collect_vec();
+    v.sort();
+    v
 }
