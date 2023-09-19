@@ -175,6 +175,28 @@ impl GenotypeRecords {
     pub fn records(&self) -> &[GenotypeRecord] {
         &self.data
     }
+    pub fn records_mut(&mut self) -> &mut [GenotypeRecord] {
+        &mut self.data
+    }
+
+    pub fn filter_multi_allelic_site(&mut self) {
+        self.sort_by_position();
+        use slice_group_by::*;
+        for blk in self
+            .data
+            .as_mut_slice()
+            .linear_group_by_key_mut(|r| r.get_position())
+        {
+            // identify position with multile alleles
+            let allele = blk[0].get_allele();
+            if blk.iter().any(|x| x.get_allele() != allele) {
+                // mark for all records at this position for deletion
+                blk.iter_mut().for_each(|r| r.set_position(u32::MAX));
+            }
+        }
+        self.data.retain(|x| x.get_position() != u32::MAX);
+    }
+
     pub fn into_parquet_file(self, p: impl AsRef<Path>) {
         let v = self
             .data
