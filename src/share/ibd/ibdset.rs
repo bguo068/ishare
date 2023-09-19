@@ -9,6 +9,7 @@ use crate::share::mat::NamedMatrix;
 use crate::site::Sites;
 use ahash::HashMap;
 use itertools::Itertools;
+use rayon::prelude::*;
 use rust_htslib::bgzf;
 use rust_htslib::tpool::ThreadPool;
 use std::path::Path;
@@ -417,7 +418,8 @@ impl<'a> IbdSet<'a> {
 
     /// Sort IBD segment by individual pair indicies and then by coordinates
     pub fn sort_by_samples(&mut self) {
-        self.ibd.sort_by_key(|s| (s.individual_pair(), s.coords()));
+        self.ibd
+            .par_sort_by_key(|s| (s.individual_pair(), s.coords()));
         self.sort_status = SortedByIndividaulPair;
     }
 
@@ -430,7 +432,8 @@ impl<'a> IbdSet<'a> {
 
     /// Sort IBD segment by haplotype pair indicies and then by coordinates
     pub fn sort_by_haplotypes(&mut self) {
-        self.ibd.sort_by_key(|s| (s.haplotype_pair(), s.coords()));
+        self.ibd
+            .par_sort_by_key(|s| (s.haplotype_pair(), s.coords()));
         self.sort_status = SortedByHaplotypePair;
     }
 
