@@ -26,3 +26,5 @@ axum = "0.6.20"
 tokio = { version = "1.32.0", features = ["rt-multi-thread"] }
 rand = "0.8.5"
 skato-rs = {path="../skato-rs"}
+log = "0.4.20"
+env_logger = "0.10.0"
