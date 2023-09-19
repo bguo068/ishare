@@ -8,7 +8,7 @@ use ishare::{
     share::ibd::{ibdseg::IbdSeg, ibdset::*},
 };
 use log::*;
-use std::path::PathBuf;
+use std::{io::Read, path::PathBuf};
 
 pub fn main_encode(args: &Commands) {
     if let Commands::Encode {
@@ -329,6 +329,32 @@ fn write_ibdseg_vec(v: &Vec<IbdSeg>, out_prefix: &PathBuf) {
     }
 }
 
+pub fn read_ibdseg_vec(prefix: &PathBuf) {
+    let s = prefix.to_str().unwrap();
+    let out = format!("{}.eibd", s);
+    let mut file = std::fs::File::open(out.clone())
+        .map(std::io::BufReader::new)
+        .expect(&format!("cannot read file {}", out));
+    let mut byte8 = [0u8; 8];
+    let mut byte4 = [0u8; 4];
+    file.read_exact(&mut byte8).unwrap();
+    let sz = u64::from_le_bytes(byte8);
+    let mut v = Vec::with_capacity(sz as usize);
+
+    for _ in 0..sz {
+        file.read_exact(&mut byte4).unwrap();
+        let i = u32::from_be_bytes(byte4);
+        file.read_exact(&mut byte4).unwrap();
+        let j = u32::from_be_bytes(byte4);
+        file.read_exact(&mut byte4).unwrap();
+        let s = u32::from_be_bytes(byte4);
+        file.read_exact(&mut byte4).unwrap();
+        let e = u32::from_be_bytes(byte4);
+        let seg = IbdSeg { i, j, s, e };
+        v.push(seg);
+    }
+}
+
 fn write_histogram(sp: &Vec<u32>, cov: &Vec<usize>, out_prefix: &PathBuf, ginfo: &GenomeInfo) {
     let s = out_prefix.to_str().unwrap();
     let out = format!("{}_hist.tsv", s);
@@ -367,8 +393,33 @@ fn write_removed_region(
         std::fs::File::create(out.clone()).expect(&format!("cannot create file {}", out));
     use std::io::Write;
     for r in region_to_remove.iter() {
-        let (_, name, s) = ginfo.to_chr_pos(r.start);
-        let e = s + (r.end - r.start);
-        write!(file, "{}\t{}\t{}\n", name, s, e).unwrap();
+        let (chrid_s, name_s, s) = ginfo.to_chr_pos(r.start);
+        let (chrid_e, name_e, e) = ginfo.to_chr_pos(r.end);
+        if chrid_s == chrid_e {
+            write!(file, "{}\t{}\t{}\n", name_s, s, e).unwrap();
+        } else {
+            let mut start;
+            let mut end;
+            let mut name;
+            for chrid in chrid_s..=chrid_e {
+                if chrid == chrid_s {
+                    // first
+                    start = s;
+                    end = ginfo.chromsize[chrid_s] - 1;
+                    name = name_s;
+                } else if chrid == chrid_e {
+                    // last
+                    start = 0;
+                    end = e;
+                    name = name_e;
+                } else {
+                    // every full chromosomes in the middle
+                    start = 0;
+                    end = ginfo.chromsize[chrid] - 1;
+                    name = ginfo.chromnames[chrid].as_str();
+                }
+                write!(file, "{}\t{}\t{}\n", name, start, end).unwrap();
+            }
+        }
     }
 }
