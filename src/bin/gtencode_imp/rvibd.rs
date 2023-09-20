@@ -1,7 +1,10 @@
+use crate::gtencode_imp::utils::calc_allele_count;
+
 use super::super::Commands;
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use ishare::container::intervaltree::IntervalTree;
 use ishare::genotype::rare::GenotypeRecords;
+use ishare::gmap::GeneticMap;
 use ishare::indiv::Individuals;
 use ishare::{genome::GenomeInfo, share::ibd::ibdseg::*};
 use itertools::Itertools;
@@ -9,7 +12,7 @@ use log::{info, LevelFilter};
 use rayon::prelude::*;
 use slice_group_by::*;
 use std::fs::File;
-use std::io::BufWriter;
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
@@ -46,6 +49,7 @@ pub fn main_rvibd(args: &Commands) {
 
         info!("read genome info"); // (for ibd) to compare with that from rare variants
         let ginfo = GenomeInfo::from_toml_file(genome_info);
+        let gmap = GeneticMap::from_genome_info(&ginfo);
 
         info!("read rv records");
         let records = GenotypeRecords::from_parquet_file(rec);
@@ -63,7 +67,7 @@ pub fn main_rvibd(args: &Commands) {
 
         match *which {
             0 => position_scan(records, ibd, &ginfo, out_prefix),
-            1 => pairwise_compare(records, ibd, &ginfo, inds.v().len() * 2, out_prefix),
+            1 => pairwise_compare(records, ibd, &gmap, inds.v().len() * 2, out_prefix),
             _ => panic!("Not implemented"),
         }
     }
@@ -199,7 +203,6 @@ fn position_scan_chunk(
         });
     }
     let mut file = rwlock_file.write().unwrap();
-    use std::io::Write;
     for r in res {
         write!(
             file,
@@ -214,10 +217,13 @@ fn position_scan_chunk(
 fn pairwise_compare(
     mut records: GenotypeRecords,
     mut ibd: Vec<IbdSeg>,
-    _ginfo: &GenomeInfo,
+    gmap: &GeneticMap,
     nhap: usize,
     out_prefix: impl AsRef<Path>,
 ) {
+    info!("get allele count map");
+    let ac_map = calc_allele_count(&mut records);
+
     info!("remove multiallelic sites");
     records.filter_multi_allelic_site();
 
@@ -228,6 +234,15 @@ fn pairwise_compare(
     ibd.par_sort();
 
     let total_pair = nhap * (nhap - 1) / 2;
+
+    let rwlock_file = {
+        let out = format!("{}_rvibd.matched", out_prefix.as_ref().to_str().unwrap());
+        File::create(&out)
+            .map(BufWriter::new)
+            .map(RwLock::new)
+            .map(Arc::new)
+            .unwrap()
+    };
 
     // split into ~ 1000 chunks
     let chunks = {
@@ -248,7 +263,17 @@ fn pairwise_compare(
 
     let res: Vec<_> = chunks
         .par_iter()
-        .map(|(tri_idx1, tri_idx2)| pairwise_compare_chunk(&records, &ibd, *tri_idx1, *tri_idx2))
+        .map(|(tri_idx1, tri_idx2)| {
+            pairwise_compare_chunk(
+                &records,
+                &ibd,
+                *tri_idx1,
+                *tri_idx2,
+                rwlock_file.clone(),
+                &gmap,
+                &ac_map,
+            )
+        })
         .collect();
 
     let mut acc_counters = [0usize; 6];
@@ -261,7 +286,6 @@ fn pairwise_compare(
 
     let out = format!("{}_rvibd.pair", out_prefix.as_ref().to_str().unwrap());
     let mut file = File::create(&out).map(BufWriter::new).unwrap();
-    use std::io::Write;
     write!(
         file,
         "{}\t{}\t{}\t{}\t{}\t{}\n",
@@ -293,11 +317,25 @@ fn test_idx_to_i_j() {
     assert_eq!(idx_to_i_j(4), (3, 1));
     assert_eq!(idx_to_i_j(5), (3, 2));
 }
+
+struct MatchedRvIBD {
+    g1: u32,
+    g2: u32,
+    s: u32,
+    e: u32,
+    cm: f32,
+    p: u32,
+    ac: u32,
+}
+
 fn pairwise_compare_chunk(
     records: &GenotypeRecords,
     ibd: &Vec<IbdSeg>,
     tri_idx1: usize,
     tri_idx2: usize,
+    rwlock_file: Arc<RwLock<BufWriter<File>>>,
+    gmap: &GeneticMap,
+    ac_map: &AHashMap<u32, u32>,
 ) -> [usize; 6] {
     info!("entering: {} - {}", tri_idx1, tri_idx2);
     let mut tree = IntervalTree::new(100);
@@ -323,6 +361,7 @@ fn pairwise_compare_chunk(
 
     let merged_iter = pair_iter.merge_join_by(ibdblk_iter, |a, b| a.cmp(&b[0].genome_id_pair()));
 
+    let mut v = Vec::<MatchedRvIBD>::new();
     for item in merged_iter {
         match item {
             itertools::EitherOrBoth::Both(pair, blk) => {
@@ -337,14 +376,28 @@ fn pairwise_compare_chunk(
                     // whether genome b has rv
                     let b = b.is_some();
                     // whether genome a and b share ibd over this rv
-                    let c = tree.query_point(pos).next().is_some();
+                    let ele = tree.query_point(pos).next();
+                    let c = ele.is_some();
                     match (a, b, c) {
                         (true, false, false) => counter[0] += 1,
                         (false, true, false) => counter[1] += 1,
                         (true, true, false) => counter[2] += 1,
                         (true, false, true) => counter[3] += 1,
                         (false, true, true) => counter[4] += 1,
-                        (true, true, true) => counter[5] += 1,
+                        (true, true, true) => {
+                            counter[5] += 1;
+                            let rng = &ele.unwrap().range;
+                            let matched = MatchedRvIBD {
+                                g1: i,
+                                g2: j,
+                                s: rng.start,
+                                e: rng.end,
+                                p: pos,
+                                cm: gmap.get_cm_len(rng.start, rng.end),
+                                ac: ac_map[&pos],
+                            };
+                            v.push(matched);
+                        }
                         _ => {}
                     }
                 }
@@ -369,6 +422,18 @@ fn pairwise_compare_chunk(
             }
         }
     }
+
+    let mut file = rwlock_file.write().unwrap();
+    for r in v {
+        file.write_all(&r.g1.to_le_bytes()).unwrap();
+        file.write_all(&r.g2.to_le_bytes()).unwrap();
+        file.write_all(&r.s.to_le_bytes()).unwrap();
+        file.write_all(&r.e.to_le_bytes()).unwrap();
+        file.write_all(&r.cm.to_le_bytes()).unwrap();
+        file.write_all(&r.p.to_le_bytes()).unwrap();
+        file.write_all(&r.ac.to_le_bytes()).unwrap();
+    }
+
     info!("leaving: {} - {}", tri_idx1, tri_idx2);
     counter
 }
