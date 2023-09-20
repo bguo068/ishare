@@ -105,7 +105,9 @@ impl GenotypeRecords {
     pub fn sort_by_position(&mut self) {
         match self.sort_status {
             0 | 2 => {
-                self.data.par_sort_unstable_by_key(|x| x.get_pos_genome());
+                self.data.par_sort_unstable_by_key(|x| {
+                    (x.get_pos_genome(), x.get_position(), x.get_allele())
+                });
                 self.sort_status = 1
             }
             1 => {}
@@ -118,7 +120,9 @@ impl GenotypeRecords {
     pub fn sort_by_genome(&mut self) {
         match self.sort_status {
             0 | 1 => {
-                self.data.par_sort_unstable_by_key(|x| x.get_genome_pos());
+                self.data.par_sort_unstable_by_key(|x| {
+                    (x.get_genome_pos(), x.get_position(), x.get_allele())
+                });
                 self.sort_status = 2;
             }
             2 => {}
