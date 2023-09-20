@@ -154,13 +154,13 @@ pub fn read_ibdseg_vec(out: impl AsRef<Path>) -> Vec<IbdSeg> {
 
     for _ in 0..sz {
         file.read_exact(&mut byte4).unwrap();
-        let i = u32::from_be_bytes(byte4);
+        let i = u32::from_le_bytes(byte4);
         file.read_exact(&mut byte4).unwrap();
-        let j = u32::from_be_bytes(byte4);
+        let j = u32::from_le_bytes(byte4);
         file.read_exact(&mut byte4).unwrap();
-        let s = u32::from_be_bytes(byte4);
+        let s = u32::from_le_bytes(byte4);
         file.read_exact(&mut byte4).unwrap();
-        let e = u32::from_be_bytes(byte4);
+        let e = u32::from_le_bytes(byte4);
         let seg = IbdSeg { i, j, s, e };
         v.push(seg);
     }
