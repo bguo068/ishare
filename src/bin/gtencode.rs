@@ -18,6 +18,7 @@ fn main() {
             args @ Commands::Cosine { .. } => cosine::main_cosine(args),
             args @ Commands::Grm { .. } => grm::main_grm(args),
             args @ Commands::Skato { .. } => skato::main_skato(args),
+            args @ Commands::RvIBD { .. } => rvibd::main_rvibd(args),
         },
         None => {
             println!("\nUse '-h  or [subcommand] -h' to show help message");

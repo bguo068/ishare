@@ -181,4 +181,23 @@ pub enum Commands {
         #[arg(short, long, group = "genome_selection")]
         genomes: Option<Vec<u32>>,
     },
+    /// Encode genotype data from VCF file to tables or matrix (-m)
+    RvIBD {
+        /// Path to encoded ibd (input)
+        eibd: PathBuf,
+        /// Path to encode rare vairant genotype records(input)
+        rec: PathBuf,
+        /// a list sample names to encode ibd. This is compared with
+        /// samples order in encode rare genotype
+        #[arg(short = 'S', long)]
+        samples_lst: PathBuf,
+        /// Path to genome info toml file (input)
+        #[arg(short = 'I', long, default_value = "genome.toml")]
+        genome_info: PathBuf,
+        /// Path to Genotype record table (output)
+        #[arg(short = 'o', long, default_value = "rvibd_out")]
+        out_prefix: PathBuf,
+        #[arg(short = 'w', long, default_value_t = 0)]
+        which: u32,
+    },
 }
