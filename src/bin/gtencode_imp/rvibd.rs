@@ -8,7 +8,10 @@ use itertools::Itertools;
 use log::{info, LevelFilter};
 use rayon::prelude::*;
 use slice_group_by::*;
+use std::fs::File;
+use std::io::BufWriter;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock};
 
 trait GenomeIDPair {
     fn genome_id_pair(&self) -> (u32, u32);
@@ -135,29 +138,21 @@ fn position_scan(
         v
     };
 
-    let res: Vec<_> = chunks
-        .par_iter()
-        .map(|&(start, end)| {
-            println!("=> {start} - {end}");
-            position_scan_chunk(start, end, &records, &ginfo, &tree)
-        })
-        .collect();
-    let mut v: Vec<_> = res.into_iter().flat_map(|v| v.into_iter()).collect();
-    v.sort();
+    // prepare rwlock file
 
-    let out = format!("{}_rvibd.psc", out_prefix.as_ref().to_str().unwrap());
-    let mut file = std::fs::File::create(&out)
-        .map(std::io::BufWriter::new)
-        .unwrap();
-    use std::io::Write;
-    for r in v {
-        write!(
-            file,
-            "{}\t{}\t{}\t{}\t{}\t{}\n",
-            r.chrid, r.chrpos, r.ac, r.within, r.between, r.out,
-        )
-        .unwrap();
-    }
+    let rwlock_file = {
+        let out = format!("{}_rvibd.pos", out_prefix.as_ref().to_str().unwrap());
+        File::create(&out)
+            .map(BufWriter::new)
+            .map(RwLock::new)
+            .map(Arc::new)
+            .unwrap()
+    };
+
+    chunks.par_iter().for_each(|&(start, end)| {
+            println!("=> {start} - {end}");
+        position_scan_chunk(start, end, &records, &ginfo, &tree, rwlock_file.clone())
+    });
 }
 
 fn position_scan_chunk(
@@ -166,7 +161,8 @@ fn position_scan_chunk(
     records: &GenotypeRecords,
     ginfo: &GenomeInfo,
     tree: &IntervalTree<u32, (u32, u32)>,
-) -> Vec<PositionScanRecord> {
+    rwlock_file: Arc<RwLock<BufWriter<File>>>,
+) {
     let mut genomes_with_rv = AHashSet::<u32>::new();
 
     let mut res = Vec::new();
@@ -202,9 +198,17 @@ fn position_scan_chunk(
             out,
         });
     }
+    let mut file = rwlock_file.write().unwrap();
+    use std::io::Write;
+    for r in res {
+        write!(
+            file,
+            "{}\t{}\t{}\t{}\t{}\t{}\n",
+            r.chrid, r.chrpos, r.ac, r.within, r.between, r.out,
+        )
+        .unwrap();
+    }
     println!("<============ {start} - {end}");
-
-    res
 }
 
 fn pairwise_compare(
@@ -252,10 +256,8 @@ fn pairwise_compare(
             .for_each(|(acc, c)| *acc += *c);
     }
 
-    let out = format!("{}_rvibd.pwc", out_prefix.as_ref().to_str().unwrap());
-    let mut file = std::fs::File::create(&out)
-        .map(std::io::BufWriter::new)
-        .unwrap();
+    let out = format!("{}_rvibd.pair", out_prefix.as_ref().to_str().unwrap());
+    let mut file = File::create(&out).map(BufWriter::new).unwrap();
     use std::io::Write;
     write!(
         file,
@@ -360,7 +362,7 @@ fn pairwise_compare_chunk(
                 }
             }
             itertools::EitherOrBoth::Right(_blk) => {
-                panic!("not possible");
+                // panic!("not possible");
             }
         }
     }
