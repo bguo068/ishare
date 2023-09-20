@@ -150,7 +150,7 @@ fn position_scan(
     };
 
     chunks.par_iter().for_each(|&(start, end)| {
-            println!("=> {start} - {end}");
+        println!("=> {start} - {end}");
         position_scan_chunk(start, end, &records, &ginfo, &tree, rwlock_file.clone())
     });
 }
@@ -218,6 +218,9 @@ fn pairwise_compare(
     nhap: usize,
     out_prefix: impl AsRef<Path>,
 ) {
+    info!("remove multiallelic sites");
+    records.filter_multi_allelic_site();
+
     info!("sort rv records by genome");
     records.sort_by_genome();
 
