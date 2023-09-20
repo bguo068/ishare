@@ -154,6 +154,7 @@ pub fn calc_allele_frequency(
     freq_map
 }
 
+#[allow(dead_code)]
 pub fn calc_allele_count(rec: &mut GenotypeRecords, num_sites: usize) -> AHashMap<u32, u32> {
     rec.sort_by_position();
     let mut count_map = AHashMap::<u32, u32>::with_capacity(num_sites);

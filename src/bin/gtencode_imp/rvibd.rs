@@ -10,6 +10,18 @@ use rayon::prelude::*;
 use slice_group_by::*;
 use std::path::{Path, PathBuf};
 
+trait GenomeIDPair {
+    fn genome_id_pair(&self) -> (u32, u32);
+}
+impl GenomeIDPair for IbdSeg {
+    fn genome_id_pair(&self) -> (u32, u32) {
+        let (sid1, hid1, sid2, hid2) = self.haplotype_pair();
+        let gid1 = (sid1 << 1) + hid1 as u32;
+        let gid2 = (sid2 << 1) + hid2 as u32;
+        (gid1, gid2)
+    }
+}
+
 pub fn main_rvibd(args: &Commands) {
     if let Commands::RvIBD {
         eibd,
@@ -88,7 +100,12 @@ fn position_scan(
     info!("sort rv records by position");
     records.sort_by_position();
     info!("build ibd interval tress");
-    let it = ibd.into_iter().map(|seg| (seg.s..seg.e, (seg.i, seg.j)));
+
+    let it = ibd.into_iter().map(|seg| {
+        let rng = seg.s..seg.e;
+        let genome_pair = seg.genome_id_pair();
+        (rng, genome_pair)
+    });
     let tree = IntervalTree::from_iter(it);
 
     dbg!(tree.iter().count());
@@ -290,28 +307,31 @@ fn pairwise_compare_chunk(
         let (i2, j2) = idx_to_i_j(tri_idx2);
         let a = ibd
             .as_slice()
-            .partition_point(|x| x.haplotype_pair_int() < (i1, j1));
+            .partition_point(|x| x.genome_id_pair() < (i1, j1));
         let b = ibd
             .as_slice()
-            .partition_point(|x| x.haplotype_pair_int() < (i2, j2));
+            .partition_point(|x| x.genome_id_pair() < (i2, j2));
         &ibd[a..b]
     };
 
-    let ibdblk_iter = ibdslice.linear_group_by_key(|seg| seg.haplotype_pair_int());
+    let ibdblk_iter = ibdslice.linear_group_by_key(|seg| seg.genome_id_pair());
 
-    let merged_iter = pair_iter.merge_join_by(ibdblk_iter, |a, b| a.cmp(&(b[0].s, b[0].e)));
+    let merged_iter = pair_iter.merge_join_by(ibdblk_iter, |a, b| a.cmp(&b[0].genome_id_pair()));
 
     for item in merged_iter {
         match item {
-            itertools::EitherOrBoth::Both(_pair, blk) => {
-                // add ibd seg to tree
+            itertools::EitherOrBoth::Both(pair, blk) => {
+                // add ibd seg to for a given genome pair to an interval tree
                 let it = blk.iter().map(|seg| (seg.s..seg.e, ()));
                 tree.clear_and_fill_with_iter(it);
 
-                let (i, j) = blk[0].haplotype_pair_int();
+                let (i, j) = pair;
                 for (pos, a, b) in records.iter_genome_pair_genotypes(i, j) {
+                    // whehter genome a has rv
                     let a = a.is_some();
+                    // whether genome b has rv
                     let b = b.is_some();
+                    // whether genome a and b share ibd over this rv
                     let c = tree.query_point(pos).next().is_some();
                     match (a, b, c) {
                         (true, false, false) => counter[0] += 1,
@@ -325,7 +345,9 @@ fn pairwise_compare_chunk(
                 }
             }
             itertools::EitherOrBoth::Left(pair) => {
-                for (_pos, a, b) in records.iter_genome_pair_genotypes(pair.0, pair.1) {
+                // println!("left");
+                let (i, j) = pair;
+                for (_pos, a, b) in records.iter_genome_pair_genotypes(i, j) {
                     let a = a.is_some();
                     let b = b.is_some();
                     let c = false;
