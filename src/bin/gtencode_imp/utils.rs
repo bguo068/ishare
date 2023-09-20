@@ -1,6 +1,7 @@
 use ahash::AHashMap;
 use ishare::genotype::rare::GenotypeRecords;
 use itertools::Itertools;
+use slice_group_by::GroupBy;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -154,27 +155,13 @@ pub fn calc_allele_frequency(
     freq_map
 }
 
-#[allow(dead_code)]
-pub fn calc_allele_count(rec: &mut GenotypeRecords, num_sites: usize) -> AHashMap<u32, u32> {
+pub fn calc_allele_count(rec: &mut GenotypeRecords) -> AHashMap<u32, u32> {
     rec.sort_by_position();
-    let mut count_map = AHashMap::<u32, u32>::with_capacity(num_sites);
-    let mut target_pos = u32::MAX;
-    let mut cnt = 0u32;
-    for r in rec.records() {
-        let front_poistion = r.get_position();
-        if front_poistion != target_pos {
-            if target_pos != u32::MAX {
-                // allele cnt
-                count_map.insert(target_pos, cnt);
-            }
-            target_pos = front_poistion;
-            cnt = 1;
-        } else {
-            cnt += 1;
-        }
-        if target_pos != u32::MAX {
-            count_map.insert(target_pos, cnt);
-        }
+    let mut count_map = AHashMap::<u32, u32>::new();
+    for set in rec.records().linear_group_by_key(|x| x.get_position()) {
+        let pos = set[0].get_position();
+        let ac = set.len() as u32;
+        count_map.insert(pos, ac);
     }
     count_map
 }
