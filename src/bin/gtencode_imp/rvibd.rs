@@ -38,7 +38,7 @@ pub fn main_rvibd(args: &Commands) {
         which,
     } = args
     {
-        let valid_which = [0, 1];
+        let valid_which = [0, 1, 2];
         if !valid_which.iter().any(|x| x == which) {
             eprintln!("please specify the correct which!");
             std::process::exit(-1);
@@ -52,7 +52,7 @@ pub fn main_rvibd(args: &Commands) {
         let gmap = GeneticMap::from_genome_info(&ginfo);
 
         info!("read rv records");
-        let records = GenotypeRecords::from_parquet_file(rec);
+        let mut records = GenotypeRecords::from_parquet_file(rec);
 
         info!("read individuals");
         let ind_file = rec.with_extension("ind");
@@ -63,11 +63,18 @@ pub fn main_rvibd(args: &Commands) {
 
         info!("read ibd");
         // ibd interval trees
-        let ibd = read_ibdseg_vec(eibd);
+        let mut ibd = read_ibdseg_vec(eibd);
 
         match *which {
             0 => position_scan(records, ibd, &ginfo, out_prefix),
             1 => pairwise_compare(records, ibd, &gmap, inds.v().len() * 2, out_prefix),
+            2 => cmp_rv_and_ibd_similarity(
+                &mut ibd,
+                &mut records,
+                inds.v().len() as u32 * 2,
+                &gmap,
+                out_prefix,
+            ),
             _ => panic!("Not implemented"),
         }
     }
@@ -436,4 +443,175 @@ fn pairwise_compare_chunk(
 
     info!("leaving: {} - {}", tri_idx1, tri_idx2);
     counter
+}
+
+fn subsample(ibd: &mut Vec<IbdSeg>, rvgt: &mut GenotypeRecords, factor: u32) {
+    // mark for removal only keep those with genome ids are multiples of factor
+    ibd.iter_mut()
+        .filter(|seg| {
+            let (i, j) = seg.genome_id_pair();
+            (i % factor > 0) || (j % factor > 0)
+        })
+        .for_each(|seg| {
+            seg.i = u32::MAX;
+        });
+    ibd.retain(|seg| seg.i != u32::MAX);
+
+    // dbg!(&ibd[0..50].iter().map(|x| x.genome_id_pair()).collect_vec());
+    rvgt.records_mut()
+        .iter_mut()
+        .filter(|r| r.get_genome() % factor != 0)
+        .for_each(|r| r.set_sentinel());
+    rvgt.records_mut().retain(|r| !r.is_sentinel());
+    // dbg!(&rvgt.records().iter().map(|x| x.get_genome()).collect_vec());
+}
+
+struct MetricRecord {
+    ibd_prop: f32,
+    cosine: f32,
+    jaccard: f32,
+}
+
+fn cmp_rv_and_ibd_similarity_chunks(
+    ibd: &Vec<IbdSeg>,
+    rvgt: &GenotypeRecords,
+    pair_chunk: &[(u32, u32)],
+    gmap: &GeneticMap,
+    genome_span: f32,
+    file: Arc<RwLock<BufWriter<File>>>,
+) {
+    let mut tree = IntervalTree::new(100);
+    let ibdblk_iter = ibd.linear_group_by_key(|seg| seg.genome_id_pair());
+    let merged_iter = pair_chunk
+        .iter()
+        .merge_join_by(ibdblk_iter, |&a, b| a.cmp(&b[0].genome_id_pair()));
+
+    let mut v = vec![];
+    // go over each pair of genomes
+    for item in merged_iter {
+        // dbg!(&item);
+        let mut totibd = 0.0;
+        let mut a = 0; // number of rare variants that g1 has
+        let mut b = 0; // number of rare variatnts that g2 has
+        let mut ab = 0; // number of rare variants that both g1 and g2 has
+
+        let mut process_rare_variant_for_pair = |pair| {
+            let (i, j) = pair;
+            for (_pos, left, right) in rvgt.iter_genome_pair_genotypes(i, j) {
+                match (left, right) {
+                    (Some(_), Some(_)) => {
+                        ab += 1;
+                        a += 1;
+                        b += 1;
+                    }
+                    (None, Some(_)) => b += 1,
+                    (Some(_), None) => a += 1,
+                    _ => {}
+                }
+            }
+        };
+
+        match item {
+            itertools::EitherOrBoth::Both(pair, blk) => {
+                // add ibd seg to for a given genome pair to an interval tree
+                let it = blk.iter().map(|seg| (seg.s..seg.e, ()));
+                tree.clear_and_fill_with_iter(it);
+
+                println!("both");
+                // calculate total ibd
+                blk.iter()
+                    .for_each(|seg| totibd += seg.get_seg_len_cm(gmap));
+
+                process_rare_variant_for_pair(*pair);
+            }
+            itertools::EitherOrBoth::Left(pair) => {
+                process_rare_variant_for_pair(*pair);
+            }
+            _ => {}
+        }
+
+        let ibd_prop = totibd / genome_span;
+        let cosine = ab as f32 / ((a * b) as f32).sqrt();
+        let jaccard = ab as f32 / (a + b - ab) as f32;
+
+        v.push(MetricRecord {
+            ibd_prop,
+            cosine,
+            jaccard,
+        });
+    }
+    // write to file
+    let mut file = file.write().unwrap();
+    for r in v {
+        write!(file, "{}\t{}\t{}\n", r.ibd_prop, r.cosine, r.jaccard).unwrap();
+    }
+}
+fn cmp_rv_and_ibd_similarity(
+    ibd: &mut Vec<IbdSeg>,
+    rvgt: &mut GenotypeRecords,
+    nhap: u32,
+    gmap: &GeneticMap,
+    out_prefix: impl AsRef<Path>,
+) {
+    let factor = 64;
+
+    dbg!(nhap);
+
+    // subsampling ibd and rv
+    subsample(ibd, rvgt, factor);
+
+    // sortting
+    ibd.sort();
+    rvgt.sort_by_genome();
+
+    // prepare output file
+    let file = {
+        let filename = format!(
+            "{}_pairwise_metrics.txt",
+            out_prefix.as_ref().to_str().unwrap()
+        );
+        File::create(&filename)
+            .map(std::io::BufWriter::new)
+            .map(RwLock::new)
+            .map(Arc::new)
+            .unwrap()
+    };
+
+    // some constant
+    let genome_span = {
+        let minmax = rvgt.records().iter().map(|x| x.get_position()).minmax();
+        let (min, max) = minmax.into_option().unwrap();
+        gmap.get_cm_len(min, max)
+    };
+
+    // iterators
+    // let npairs = nhap as usize * (nhap - 1) as usize;
+    let pairs = (factor..nhap)
+        .into_iter()
+        .step_by(factor as usize)
+        .flat_map(|i| {
+            (0..i)
+                .into_iter()
+                .step_by(factor as usize)
+                .map(move |j| (i, j))
+        })
+        .filter(|(i, j)| (i % factor == 0) && (j % factor == 0) && (i > j))
+        .collect_vec();
+
+    pairs
+        .chunks(200000)
+        .par_bridge()
+        .into_par_iter()
+        .for_each(|pair_chunks| {
+            cmp_rv_and_ibd_similarity_chunks(
+                &ibd,
+                &rvgt,
+                pair_chunks,
+                gmap,
+                genome_span,
+                file.clone(),
+            );
+        });
+
+    eprintln!("genome_span = {genome_span}");
 }

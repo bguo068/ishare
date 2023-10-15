@@ -17,7 +17,8 @@ fn main() {
             args @ Commands::Jaccard { .. } => jaccard::main_jaccard(args),
             args @ Commands::Cosine { .. } => cosine::main_cosine(args),
             args @ Commands::Grm { .. } => grm::main_grm(args),
-            args @ Commands::Skato { .. } => skato::main_skato(args),
+            args @ Commands::Skato { .. } => { //skato::main_skato(args)
+            }
             args @ Commands::RvIBD { .. } => rvibd::main_rvibd(args),
         },
         None => {

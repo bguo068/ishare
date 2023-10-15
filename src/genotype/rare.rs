@@ -41,6 +41,12 @@ impl GenotypeRecord {
             data: BitArray::<u64, Lsb0>::new(value),
         }
     }
+    pub fn set_sentinel(&mut self) {
+        self.data.data = u64::MAX;
+    }
+    pub fn is_sentinel(&self) -> bool {
+        self.data.data == u64::MAX
+    }
     pub fn set_position(&mut self, value: u32) {
         // assert!((value >> 32) == 0);
         self.data[0..32].store(value);
@@ -179,7 +185,7 @@ impl GenotypeRecords {
     pub fn records(&self) -> &[GenotypeRecord] {
         &self.data
     }
-    pub fn records_mut(&mut self) -> &mut [GenotypeRecord] {
+    pub fn records_mut(&mut self) -> &mut Vec<GenotypeRecord> {
         &mut self.data
     }
 
