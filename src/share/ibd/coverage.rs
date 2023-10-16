@@ -6,7 +6,7 @@ pub struct CovCounter {
     counts: Vec<usize>,
 }
 impl CovCounter {
-    pub fn new<'a>(intervals: impl Iterator<Item = &'a Range<u32>>) -> Self {
+    pub fn new(intervals: impl Iterator<Item = Range<u32>>) -> Self {
         let tree = IntervalTree::from_iter(
             intervals
                 .enumerate()
@@ -38,6 +38,17 @@ impl CovCounter {
     pub fn get_intervals(&self) -> impl IntoIterator<Item = Range<u32>> + '_ {
         self.tree.iter_sorted().map(|x| x.range.start..x.range.end)
     }
+
+    pub fn get_n_interval(&self) -> usize {
+        self.tree.iter().count()
+    }
+
+    pub fn iter_sorted_start_end_count(&self) -> impl IntoIterator<Item = (u32, u32, usize)> + '_ {
+        self.tree
+            .iter_sorted()
+            .map(|e| (e.range.start, e.range.end, self.counts[e.value]))
+    }
+
     pub fn get_median_count(&self) -> f64 {
         let mut v = self.counts.clone();
         v.sort_unstable();
@@ -71,7 +82,14 @@ impl CovCounter {
         let ends: Vec<u32> = self.tree.iter_sorted().map(|x| x.range.end).collect();
         let ends = Arc::new(UInt32Array::from(ends)) as ArrayRef;
 
-        let coverage: Vec<u64> = self.counts.iter().map(|x| *x as u64).collect();
+        // when intervals used to construct CovCounter is not sorted
+        // the counts need to be sorted by position
+        let coverage: Vec<u64> = self
+            .tree
+            .iter_sorted()
+            .map(|e| self.counts[e.value] as u64)
+            .collect();
+
         let coverage = Arc::new(UInt64Array::from(coverage)) as ArrayRef;
 
         let batch = RecordBatch::try_from_iter(vec![
@@ -93,7 +111,7 @@ impl CovCounter {
 #[test]
 fn test_cov_counter() {
     let i = vec![10u32..11, 20..21, 30..31, 40..41];
-    let mut counter = CovCounter::new(i.iter());
+    let mut counter = CovCounter::new(i.iter().map(|r| r.clone()));
 
     let j = vec![10u32..22, 10..21, 1..34];
 
