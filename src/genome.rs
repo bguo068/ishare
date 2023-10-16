@@ -52,6 +52,26 @@ impl GenomeInfo {
         }
     }
 
+    /// build genomeInfo from exisitng components
+    ///
+    /// This avoid write to file and then loaded it again to memory
+    pub fn new_from_parts(
+        name: String,
+        chromsize: Vec<u32>,
+        chromnames: Vec<String>,
+        idx: HashMap<String, usize>,
+        gwstarts: Vec<u32>,
+    ) -> Self {
+        Self {
+            name,
+            chromsize,
+            chromnames,
+            idx,
+            gwstarts,
+            gmaps: vec![],
+        }
+    }
+
     pub fn from_toml_file<P>(path: P) -> Self
     where
         P: AsRef<Path>,
