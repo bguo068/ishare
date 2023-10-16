@@ -32,6 +32,44 @@ impl GeneticMap {
         Self(v)
     }
 
+    /// This method can be used to merge gmaps of all chromosomal gmap into
+    /// one for the whole genome
+    pub fn from_gmap_vec(gmap_vec: &Vec<Vec<(u32, f32)>>, chromsizes: &Vec<u32>) -> Self {
+        let mut gw_chr_start_bp = 0u32;
+        let mut gw_chr_start_cm = 0.0f32;
+        let mut v = Vec::new(); // out for a genome
+        let mut v_o_chr = Vec::new(); // out for a chromosome
+
+        for (chrlen, gmap_chr) in chromsizes.iter().zip(gmap_vec.iter()) {
+            v_o_chr.clear();
+            // add left end
+            if gmap_chr[0].0 != 0 {
+                v_o_chr.push((0, 0.0));
+            }
+            // add all points
+            v_o_chr.extend(gmap_chr.iter());
+            // trim on the right size
+            v_o_chr.retain(|(bp, _cm)| bp < chrlen);
+            // add right end
+            let (last_bp, last_cm) = v_o_chr.last().unwrap();
+            if *last_bp != chrlen - 1 {
+                let avg_rate = last_cm / *last_bp as f32;
+                v_o_chr.push((chrlen - 1, avg_rate * (chrlen - 1) as f32));
+            }
+
+            let mut chrmap = GeneticMap(v_o_chr.clone());
+            let chrlen_cm = chrmap.get_size_cm();
+
+            chrmap.update_to_genome_wide_coords(gw_chr_start_bp, gw_chr_start_cm);
+
+            v.extend(chrmap.0);
+
+            gw_chr_start_bp += *chrlen;
+            gw_chr_start_cm += chrlen_cm;
+        }
+        Self(v)
+    }
+
     pub fn get_gw_chr_start_cm_from_chrid(&self, chrid: usize, ginfo: &GenomeInfo) -> f32 {
         let gw_ch_start_bp = ginfo.gwstarts[chrid];
         self.get_cm(gw_ch_start_bp)
