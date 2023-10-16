@@ -58,6 +58,24 @@ impl<'a> IbdSet<'a> {
         }
     }
 
+    /// Create IBD set from parts
+    pub fn update_parts(
+        &mut self,
+        ibd: Vec<IbdSeg>,
+        ploidy_status: IbdSetPloidyStatus,
+        sort_status: IbdSetSortStatus,
+    ) {
+        self.ibd = ibd;
+        self.ploidy_status = ploidy_status;
+        self.sort_status = sort_status;
+    }
+
+    pub fn into_parts(&mut self) -> (Vec<IbdSeg>, IbdSetPloidyStatus, IbdSetSortStatus) {
+        let mut v = vec![];
+        std::mem::swap(&mut self.ibd, &mut v);
+        (v, self.ploidy_status, self.sort_status)
+    }
+
     pub fn into_vec(self) -> Vec<IbdSeg> {
         self.ibd
     }
