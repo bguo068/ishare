@@ -9,7 +9,7 @@ use ishare::{
         ibdseg::IbdSeg,
         ibdset::{IbdSet, IbdSetPloidyStatus, IbdSetSortStatus},
     },
-    stat::xirs::XirsBuilder2,
+    stat::xirs::{XirsBuilder, XirsBuilder2},
 };
 use numpy::IntoPyArray;
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyDict};
@@ -137,15 +137,16 @@ impl PyIbdSet {
         py: Python<'py>,
         vcf_files: Vec<String>,
         min_maf: f32,
+        method: u32,
     ) -> PyResult<&'py PyDict> {
         // get allele frequency and site postion vectors from the vec files
         use ishare::genotype::afreq::get_afreq_from_vcf_genome_wide;
         let mut pos_afreq_vec = get_afreq_from_vcf_genome_wide(&vcf_files, &self.ginfo);
-        eprintln!("pos_len = {}", pos_afreq_vec.len());
+        // eprintln!("pos_len = {}", pos_afreq_vec.len());
         // remove sites of low minor allele frequency
         pos_afreq_vec.retain(|x| (x.1 >= min_maf) && (x.1 <= 1.0 - min_maf));
 
-        eprintln!("pos_len = {}", pos_afreq_vec.len());
+        // eprintln!("pos_len = {}", pos_afreq_vec.len());
         let afrq: Vec<_> = pos_afreq_vec
             .iter()
             .map(|(_pos, afreq)| *afreq as f64)
@@ -159,7 +160,16 @@ impl PyIbdSet {
         dbg!(self.ploidy_status);
 
         // calculate xirs stats
-        let xirs_res = XirsBuilder2::new(afrq, site_pos, &ibdset).finish();
+        // let xirs_res = XirsBuilder::new(afrq, site_pos, &ibdset).finish();
+        let xirs_res = match method {
+            1 => XirsBuilder::new(afrq, site_pos, &ibdset).finish(),
+            2 => XirsBuilder2::new(afrq, site_pos, &ibdset).finish(),
+            _ => {
+                return Err(PyErr::new::<PyValueError, _>(format!(
+                    "method: {method} is not implemented"
+                )));
+            }
+        };
 
         // return ibd vec back to PyIbdSet
         self.ibd = ibdset.into_parts().0;
@@ -168,6 +178,7 @@ impl PyIbdSet {
         res_dict.set_item("ChrId", xirs_res.chr_id.into_pyarray(py))?;
         res_dict.set_item("ChrPos", xirs_res.chr_pos.into_pyarray(py))?;
         res_dict.set_item("GwPos", xirs_res.gw_pos.into_pyarray(py))?;
+        res_dict.set_item("Raw", xirs_res.raw.into_pyarray(py))?;
         res_dict.set_item("Xirs", xirs_res.xirs.into_pyarray(py))?;
         res_dict.set_item("Pvalue", xirs_res.pval.into_pyarray(py))?;
 
