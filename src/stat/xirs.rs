@@ -298,29 +298,29 @@ impl<'a> XirsBuilder<'a> {
     }
 
     pub fn finish(&mut self) -> XirsResult {
-        println!("calculate 1. cm");
+        // println!("calculate 1. cm");
         self.calculate_cm_xs();
-        println!("calculate 2. rm");
+        // println!("calculate 2. rm");
         self.calculate_rm();
-        println!("calculate 3. rs");
+        // println!("calculate 3. rs");
         self.calculate_rs();
-        println!("calculate 4. raw");
+        // println!("calculate 4. raw");
         self.calculate_raw();
-        println!("calculate 5. norm");
+        // println!("calculate 5. norm");
         self.calculate_norm();
-        println!("calculate 6. xirs");
+        // println!("calculate 6. xirs");
         self.calculate_xirs();
-        println!("calculate 7. xirs");
+        // println!("calculate 7. xirs");
         self.calculate_pval();
-        println!("calculate 8. writing");
+        // println!("calculate 8. writing");
 
-        println!("cm: {}, {:?}..", self.cm_j.len(), &self.rm_i[1..5]);
-        println!("rm: {}, {:?}..", self.rm_i.len(), &self.rm_i[1..5]);
-        println!("rs: {}, {:?}..", self.rs_i.len(), &self.rs_i[1..5]);
-        println!("xs: {}, {:?}..", self.xs_i.len(), &self.xs_i[1..5]);
-        println!("raw: {}, {:?}..", self.raw_i.len(), &self.raw_i[1..5]);
-        println!("afreq: {}, {:?}..", self.afrq_i.len(), &self.afrq_i[1..5]);
-        println!("xris: {}, {:?}..", self.xirs_i.len(), &self.xirs_i[1..5]);
+        // println!("cm: {}, {:?}..", self.cm_j.len(), &self.rm_i[1..5]);
+        // println!("rm: {}, {:?}..", self.rm_i.len(), &self.rm_i[1..5]);
+        // println!("rs: {}, {:?}..", self.rs_i.len(), &self.rs_i[1..5]);
+        // println!("xs: {}, {:?}..", self.xs_i.len(), &self.xs_i[1..5]);
+        // println!("raw: {}, {:?}..", self.raw_i.len(), &self.raw_i[1..5]);
+        // println!("afreq: {}, {:?}..", self.afrq_i.len(), &self.afrq_i[1..5]);
+        // println!("xris: {}, {:?}..", self.xirs_i.len(), &self.xirs_i[1..5]);
 
         let m = self.nsites;
         let mut chr_id = Vec::<u32>::with_capacity(m);
@@ -334,11 +334,13 @@ impl<'a> XirsBuilder<'a> {
         }
         let xirs = self.xirs_i.clone();
         let pval = self.pval_i.clone();
+        let raw = self.raw_i.clone();
 
         XirsResult {
             chr_id,
             chr_pos,
             gw_pos,
+            raw,
             xirs,
             pval,
         }
@@ -349,6 +351,7 @@ pub struct XirsResult {
     pub chr_id: Vec<u32>,
     pub chr_pos: Vec<u32>,
     pub gw_pos: Vec<u32>,
+    pub raw: Vec<f64>,
     pub xirs: Vec<f64>,
     pub pval: Vec<f64>,
 }
@@ -478,6 +481,7 @@ impl<'a> XirsBuilder2<'a> {
             out -= 2.0 * xc_rs_i[i];
             out -= 2.0 * r_i[i] * x_rs_i[i];
             out += 2.0 * r_i[i] * cj_sum;
+            out /= self.afrq_i[i] * (1.0 - self.afrq_i[i]);
             self.raw_i.push(out);
         }
     }
@@ -590,15 +594,15 @@ impl<'a> XirsBuilder2<'a> {
     }
 
     pub fn finish(&mut self) -> XirsResult {
-        println!("calculate 4. raw");
+        // println!("calculate 4. raw");
         self.calculate_raw();
-        println!("calculate 5. norm");
+        // println!("calculate 5. norm");
         self.calculate_norm();
-        println!("calculate 6. xirs");
+        // println!("calculate 6. xirs");
         self.calculate_xirs();
-        println!("calculate 7. xirs");
+        // println!("calculate 7. xirs");
         self.calculate_pval();
-        println!("calculate 8. writing");
+        // println!("calculate 8. writing");
 
         // println!("cm: {}, {:?}..", self.cm_j.len(), &self.rm_i[1..5]);
         // println!("rm: {}, {:?}..", self.rm_i.len(), &self.rm_i[1..5]);
@@ -620,11 +624,13 @@ impl<'a> XirsBuilder2<'a> {
         }
         let xirs = self.xirs_i.clone();
         let pval = self.pval_i.clone();
+        let raw = self.raw_i.clone();
 
         XirsResult {
             chr_id,
             chr_pos,
             gw_pos,
+            raw,
             xirs,
             pval,
         }
@@ -643,6 +649,7 @@ impl IntoParquet for XirsResult {
             ("ChrId", take(&mut self.chr_id).into_arrow_array()),
             ("ChrPos", take(&mut self.chr_pos).into_arrow_array()),
             ("GwPos", take(&mut self.gw_pos).into_arrow_array()),
+            ("Raw", take(&mut self.raw).into_arrow_array()),
             ("Xirs", take(&mut self.xirs).into_arrow_array()),
             ("Pval", take(&mut self.pval).into_arrow_array()),
         ])
