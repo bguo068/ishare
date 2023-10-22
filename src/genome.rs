@@ -157,4 +157,40 @@ impl GenomeInfo {
             gmaps,
         }
     }
+
+    /// return a vector of non-overlapping genome intervals that covers the
+    /// whole genomes. This can be use to divide large indexed bcf/vcf files
+    /// into smaller chunks for reading in parallel.  
+    ///
+    /// Each vector element is a 3-tuple, Some(chrid, start_gw_bp,
+    /// Option<end_gw_bp>) the end position is can be which means to end of the
+    /// correponding chromosome.  if the 3-tuple is a None, it means there is
+    /// not segmentation for the the whole genome.
+    pub fn partition_genome(
+        &self,
+        max_len_bp: Option<u32>,
+    ) -> Vec<Option<(u32, u64, Option<u64>)>> {
+        let mut regions = Vec::new();
+        match max_len_bp {
+            Some(parallel_chunksize_bp) => {
+                for (chrid, chrlen) in self.chromsize.iter().enumerate() {
+                    let chrid = chrid as u32;
+                    let chrlen = *chrlen;
+                    let mut s = 0u32;
+                    while s < chrlen {
+                        let mut e = s + parallel_chunksize_bp as u32;
+                        if e > chrlen {
+                            e = chrlen;
+                        }
+                        regions.push(Some((chrid as u32, s as u64, Some(e as u64))));
+                        s = e + 1;
+                    }
+                }
+            }
+            None => {
+                regions.push(None);
+            }
+        };
+        regions
+    }
 }

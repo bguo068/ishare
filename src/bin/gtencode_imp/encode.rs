@@ -53,27 +53,7 @@ pub fn main_encode(args: &Commands) {
     let ginfo = GenomeInfo::from_toml_file(genome_info);
 
     // divide genome into 10Mb chunks
-    let mut regions = Vec::new();
-    match *parallel_chunksize_bp {
-        Some(parallel_chunksize_bp) => {
-            for (chrid, chrlen) in ginfo.chromsize.iter().enumerate() {
-                let chrid = chrid as u32;
-                let chrlen = *chrlen;
-                let mut s = 0u32;
-                while s < chrlen {
-                    let mut e = s + parallel_chunksize_bp as u32;
-                    if e > chrlen {
-                        e = chrlen;
-                    }
-                    regions.push(Some((chrid as u32, s as u64, Some(e as u64))));
-                    s = e + 1;
-                }
-            }
-        }
-        None => {
-            regions.push(None);
-        }
-    };
+    let regions = ginfo.partition_genome(parallel_chunksize_bp.map(|x| x as u32));
 
     // construct output file names
     let dir = out.parent().unwrap().to_str().unwrap();
