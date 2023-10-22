@@ -1,4 +1,4 @@
-use std::ops::{Deref, Div};
+use std::ops::Div;
 
 use crate::container::intervals::Intervals;
 use crate::container::intervaltree::IntervalTree;
@@ -156,7 +156,7 @@ pub fn filter_peaks(peaks: &Intervals<u32>, xirs: &XirsResult) -> Intervals<u32>
 
     peaks
         .iter()
-        .filter(|r| tree.query(r.deref().to_owned()).count() > 0)
+        .filter(|r| tree.query((*r).clone()).count() > 0)
         .for_each(|r| filt_peaks.push(r.to_owned()));
 
     filt_peaks
