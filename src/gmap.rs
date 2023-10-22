@@ -12,6 +12,13 @@ impl GeneticMap {
         let v = it.collect();
         Self(v)
     }
+    pub fn from_vec(v: Vec<(u32, f32)>) -> Self {
+        Self(v)
+    }
+
+    pub fn from_constant_rate(rate: f32, chrlen: u32) -> Self {
+        Self(vec![(0, 0.0), (chrlen - 1, (chrlen - 1) as f32 / rate)])
+    }
 
     pub fn from_genome_info(ginfo: &GenomeInfo) -> Self {
         let mut gw_chr_start_bp = 0u32;
@@ -30,6 +37,10 @@ impl GeneticMap {
             gw_chr_start_cm += chrlen_cm;
         }
         Self(v)
+    }
+
+    pub fn as_slice(&self) -> &[(u32, f32)] {
+        &self.0[..]
     }
 
     /// This method can be used to merge gmaps of all chromosomal gmap into
