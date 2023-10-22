@@ -1,10 +1,10 @@
 use super::super::Commands;
 use ishare::{
     genome::GenomeInfo,
+    utils::path::from_prefix,
     vcf::{read_vcf, read_vcf_for_genotype_matrix},
 };
 use rayon::prelude::*;
-use std::path::{Path, PathBuf};
 
 pub fn main_encode(args: &Commands) {
     // unpack cli args
@@ -56,27 +56,13 @@ pub fn main_encode(args: &Commands) {
     let regions = ginfo.partition_genome(parallel_chunksize_bp.map(|x| x as u32));
 
     // construct output file names
-    let dir = out.parent().unwrap().to_str().unwrap();
-    if !Path::new(dir).exists() {
-        std::fs::create_dir_all(dir).unwrap();
-    }
-    let mut prefix = out.file_name().unwrap().to_owned().into_string().unwrap();
-    if prefix.ends_with(".rec") {
-        prefix = prefix.strip_suffix(".rec").unwrap().to_string();
-    }
-    if prefix.ends_with(".mat") {
-        prefix = prefix.strip_suffix(".mat").unwrap().to_string();
-    }
-    let mut gt_file = PathBuf::from(dir);
-    if *matrix {
-        gt_file.push(PathBuf::from(format!("{prefix}.mat")));
+    let gt_file = if *matrix {
+        from_prefix(out, "mat").unwrap()
     } else {
-        gt_file.push(PathBuf::from(format!("{prefix}.rec")));
-    }
-    let mut sites_file = PathBuf::from(dir);
-    sites_file.push(PathBuf::from(format!("{prefix}.sit")));
-    let mut ind_file = PathBuf::from(dir);
-    ind_file.push(PathBuf::from(format!("{prefix}.ind")));
+        from_prefix(out, "rec").unwrap()
+    };
+    let sites_file = from_prefix(out, "sit").unwrap();
+    let ind_file = from_prefix(out, "ind").unwrap();
 
     if *matrix {
         // parallel running
