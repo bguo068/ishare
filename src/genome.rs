@@ -1,10 +1,10 @@
 use crate::container::intervals::Intervals;
 use ahash::{HashMap, HashMapExt};
-use serde::Deserialize;
-use std::io::Read;
+use serde::{Deserialize, Serialize};
+use std::io::{BufWriter, Read, Write};
 use std::path::Path;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 struct GenomeFile {
     name: String,
     chromsize: Vec<u32>,
@@ -31,6 +31,7 @@ fn test_genome() {
     let _: GenomeFile = toml::from_str(&s).unwrap();
 }
 
+#[derive(Deserialize, Debug)]
 pub struct GenomeInfo {
     pub name: String,
     pub chromsize: Vec<u32>,
@@ -70,6 +71,22 @@ impl GenomeInfo {
             gwstarts,
             gmaps: vec![],
         }
+    }
+
+    pub fn to_toml_file(&self, p: impl AsRef<Path>) {
+        let gf = GenomeFile {
+            name: self.name.clone(),
+            chromnames: self.chromnames.clone(),
+            chromsize: self.chromsize.clone(),
+            gmaps: self.gmaps.clone(),
+            idx: self.idx.clone(),
+        };
+        let s = toml::to_string(&gf).unwrap();
+
+        let mut f = std::fs::File::create(p.as_ref())
+            .map(BufWriter::new)
+            .expect("fail to create file for writing ginfo file");
+        f.write_all(s.as_bytes()).unwrap();
     }
 
     pub fn from_toml_file<P>(path: P) -> Self
