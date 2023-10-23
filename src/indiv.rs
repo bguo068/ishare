@@ -11,7 +11,7 @@ use parquet::file::properties::WriterProperties;
 use std::fmt::Debug;
 use std::sync::Arc;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Individuals {
     vec: Vec<String>,
     map: HashMap<String, usize>,

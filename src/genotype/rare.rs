@@ -16,7 +16,7 @@ use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct GenotypeRecord {
     data: BitArray<u64, Lsb0>,
     // pos: 32 bits, max value: 4,294,967,296 - 1 (4.2 billion)
@@ -87,7 +87,7 @@ impl GenotypeRecord {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GenotypeRecords {
     data: Vec<GenotypeRecord>,
     sort_status: u8, // 0: unsorted, 1: sorted by position, 2: sorted_by_genome

@@ -12,7 +12,7 @@ use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Sites {
     gw_pos: Vec<u32>,    // gw_pos
     buf: Vec<u8>,        // alele string
