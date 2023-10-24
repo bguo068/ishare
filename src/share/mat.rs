@@ -169,6 +169,14 @@ where
         let e = (row_idx + 1) as usize * self.col_names.len();
         &self.data[s..e]
     }
+
+    pub fn into_parts(mut self) -> (Vec<u32>, Vec<u32>, Vec<T>) {
+        use std::mem::take;
+        let row_names = take(&mut self.row_names);
+        let col_names = take(&mut self.col_names);
+        let data = take(&mut self.data);
+        (row_names, col_names, data)
+    }
 }
 
 impl<T> IntoParquet for NamedMatrix<T>
