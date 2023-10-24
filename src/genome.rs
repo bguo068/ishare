@@ -31,7 +31,7 @@ fn test_genome() {
     let _: GenomeFile = toml::from_str(&s).unwrap();
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct GenomeInfo {
     pub name: String,
     pub chromsize: Vec<u32>,
@@ -53,7 +53,7 @@ impl GenomeInfo {
         }
     }
 
-    /// build genomeInfo from exisitng components
+    /// build genomeInfo from exisiting components
     ///
     /// This avoid write to file and then loaded it again to memory
     pub fn new_from_parts(

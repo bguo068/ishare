@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GeneticMap(Vec<(u32, f32)>);
 use crate::genome::GenomeInfo;
 use csv;
