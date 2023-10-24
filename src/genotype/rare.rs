@@ -3,7 +3,7 @@ use arrow::array::*;
 use arrow::record_batch::RecordBatch;
 use bitvec::prelude::*;
 use itertools::{
-    EitherOrBoth::{Both, Left, Right},
+    EitherOrBoth::{self, Both, Left, Right},
     Itertools,
 };
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
@@ -11,6 +11,7 @@ use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use slice_group_by::GroupBy;
 use std::fmt::Debug;
 use std::fs::File;
 use std::path::Path;
@@ -256,5 +257,39 @@ impl GenotypeRecords {
             data: records,
             sort_status,
         }
+    }
+
+    pub fn subset_by_genomes(&self, sorted_genome_ids: &[u32]) -> Result<Self, &'static str> {
+        if !sorted_genome_ids
+            .iter()
+            .zip(sorted_genome_ids.iter().skip(1))
+            .all(|(a, b)| *a <= *b)
+        {
+            return Err("the genome ids in `sorted_genome_ids` are not sorted ");
+        }
+        if !self.is_sorted_by_genome() {
+            return Err("genotype are not sorted by genomes");
+        }
+
+        let mut v = vec![];
+        for e in self
+            .data
+            .linear_group_by_key(|r| r.get_genome())
+            .merge_join_by(sorted_genome_ids.linear_group(), |a, b| {
+                a[0].get_genome().cmp(&b[0])
+            })
+        {
+            match e {
+                EitherOrBoth::Left(_) => {}
+                EitherOrBoth::Right(_) => {}
+                EitherOrBoth::Both(left, _right) => {
+                    v.extend_from_slice(left);
+                }
+            }
+        }
+        Ok(GenotypeRecords {
+            data: v,
+            sort_status: self.sort_status,
+        })
     }
 }
