@@ -56,8 +56,9 @@ where
     }
 
     /// this ensure the pair chunk contains at most self.sz genomes
-    pub fn next_pair_chunks(&mut self, pairs: &mut Vec<(T, T)>) -> bool {
+    pub fn next_pair_chunks(&mut self, pairs: &mut Vec<(T, T)>, related: &mut Vec<T>) -> bool {
         pairs.clear();
+        related.clear();
         if self.idx < self.nsteps[0] * self.nsteps[1] {
             let i = self.idx / self.nsteps[1];
             let j = self.idx % self.nsteps[1];
@@ -66,6 +67,9 @@ where
                     pairs.push((*a, *b));
                 }
             }
+            related.extend(self.v1[(i * self.sz)..].iter().take(self.sz));
+            related.extend(self.v2[(j * self.sz)..].iter().take(self.sz));
+            related.sort();
             self.idx += 1;
             return true;
         }
@@ -80,6 +84,16 @@ where
                     }
                 }
             }
+            if pairs.len() > 0 {
+                if i == j {
+                    related.extend(self.v12[(i * self.sz)..].iter().take(self.sz));
+                } else if i < j {
+                    related.extend(self.v12[(i * self.sz)..].iter().take(self.sz));
+                    related.extend(self.v12[(j * self.sz)..].iter().take(self.sz));
+                } else {
+                }
+            }
+            related.sort();
             self.idx += 1;
             return true;
         }
@@ -94,22 +108,31 @@ fn test_pair_chuk_iter() {
     let sz = 2;
     let mut pc_iter = PairChunkIter::new(&a, &b, sz);
     let mut pairs = vec![];
-    pc_iter.next_pair_chunks(&mut pairs);
+    let mut related = vec![];
+    pc_iter.next_pair_chunks(&mut pairs, &mut related);
     assert_eq!(pairs, vec![(0, 6), (0, 7), (1, 6), (1, 7)]);
-    pc_iter.next_pair_chunks(&mut pairs);
+    assert_eq!(related, vec![0, 1, 6, 7]);
+    pc_iter.next_pair_chunks(&mut pairs, &mut related);
     assert_eq!(pairs, vec![(0, 8), (1, 8)]);
-    pc_iter.next_pair_chunks(&mut pairs);
+    assert_eq!(related, vec![0, 1, 8]);
+    pc_iter.next_pair_chunks(&mut pairs, &mut related);
     assert_eq!(pairs, vec![(2, 6), (2, 7)]);
-    pc_iter.next_pair_chunks(&mut pairs);
+    assert_eq!(related, vec![2, 6, 7]);
+    pc_iter.next_pair_chunks(&mut pairs, &mut related);
     assert_eq!(pairs, vec![(2, 8)]);
-    pc_iter.next_pair_chunks(&mut pairs);
+    assert_eq!(related, vec![2, 8]);
+    pc_iter.next_pair_chunks(&mut pairs, &mut related);
     assert_eq!(pairs, vec![(3, 4)]);
-    pc_iter.next_pair_chunks(&mut pairs);
+    assert_eq!(related, vec![3, 4]);
+    pc_iter.next_pair_chunks(&mut pairs, &mut related);
     assert_eq!(pairs, vec![(3, 5), (4, 5)]);
-    pc_iter.next_pair_chunks(&mut pairs);
+    assert_eq!(related, vec![3, 4, 5]);
+    pc_iter.next_pair_chunks(&mut pairs, &mut related);
     assert_eq!(pairs, vec![]);
-    pc_iter.next_pair_chunks(&mut pairs);
+    assert_eq!(related, Vec::<i32>::new());
+    pc_iter.next_pair_chunks(&mut pairs, &mut related);
     assert_eq!(pairs, vec![]);
-    let ret = pc_iter.next_pair_chunks(&mut pairs);
+    assert_eq!(related, Vec::<i32>::new());
+    let ret = pc_iter.next_pair_chunks(&mut pairs, &mut related);
     assert_eq!(ret, false);
 }
