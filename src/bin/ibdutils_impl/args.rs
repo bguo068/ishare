@@ -81,7 +81,7 @@ pub enum Commands {
         #[arg(short = 'o', long, default_value = "ibd_cmp_res.txt")]
         out: PathBuf,
     },
-
+    #[cfg(feature = "plotibd")]
     PlotIBD {
         /// Path to genome info toml file (input)
         #[arg(short = 'g', long, default_value = "genome.toml")]
