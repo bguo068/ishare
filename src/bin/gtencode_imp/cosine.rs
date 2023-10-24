@@ -18,18 +18,9 @@ pub fn main_cosine(args: &Commands) {
         output,
     } = args
     {
-        let min_cosine = match min_cosine {
-            Some(x) => *x,
-            None => -0.001f64,
-        };
-        let min_magnitude = match min_magnitude {
-            Some(x) => *x,
-            None => -0.001f64,
-        };
-        let min_dot_prod = match min_dot_prod {
-            Some(x) => *x,
-            None => 0i32,
-        };
+        let min_cosine = min_cosine.unwrap_or(-0.001f64);
+        let min_magnitude = min_magnitude.unwrap_or(-0.001f64);
+        let min_dot_prod = min_dot_prod.unwrap_or(0i32);
 
         let records = GenotypeRecords::from_parquet_file(rec);
         assert!(records.is_sorted_by_genome());

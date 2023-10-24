@@ -1,34 +1,96 @@
-use ahash::AHashSet;
-use ahash::HashMap;
-use ahash::HashMapExt;
+use ahash::{AHashSet, HashMap, HashMapExt};
 
-use ishare::vcf::read_vcf;
 use ishare::{
     genome::GenomeInfo,
     genotype::{afreq::get_afreq_from_vcf_genome_wide, rare::GenotypeRecords},
     gmap::GeneticMap,
     indiv::Individuals,
-    share::ibd::{
-        coverage::CovCounter,
-        ibdseg::IbdSeg,
-        ibdset::{IbdSet, IbdSetPloidyStatus, IbdSetSortStatus},
+    share::{
+        ibd::{
+            coverage::CovCounter,
+            ibdseg::IbdSeg,
+            ibdset::{IbdSet, IbdSetPloidyStatus, IbdSetSortStatus},
+        },
+        mat::NamedMatrix,
+        pairs::PairChunkIter,
     },
     site::Sites,
     stat::xirs::{XirsBuilder, XirsBuilder2},
+    utils::path::from_prefix,
+    vcf::read_vcf,
 };
-use numpy::IntoPyArray;
+use numpy::{IntoPyArray, ToPyArray};
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
     types::{PyDict, PyList},
 };
+use rayon::prelude::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
 #[pyclass]
-struct PyGeneticMap {
+struct GInfo {
+    ginfo: GenomeInfo,
+}
+
+#[pymethods]
+impl GInfo {
+    #[new]
+    fn new(
+        name: String,
+        chromsizes: Vec<u32>,
+        chromnames: Vec<String>,
+        additional_chromname_2_id_map: HashMap<String, usize>,
+    ) -> PyResult<Self> {
+        let errm = |m| Err(PyErr::new::<PyValueError, _>(m));
+        if chromsizes.len() != chromnames.len() {
+            return errm("chromsizes length not equal to chrnames length");
+        }
+        // add chromnames and its order into idx map
+        let mut idx: HashMap<String, usize> = chromnames
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (n.to_owned(), i))
+            .collect();
+        // validate the length of chromnames
+        if idx.len() != chromsizes.len() {
+            return errm("the chromnames should be unique and has the same length as chromsizes");
+        }
+        // add additional name to id mappings
+        for (k, v) in additional_chromname_2_id_map.iter() {
+            match idx.get(k) {
+                Some(v2) => {
+                    if v != v2 {
+                        return errm("chromname conflicts between chromnames and additional_chromname_2_id_map");
+                    }
+                }
+                None => {
+                    idx.insert(k.to_owned(), *v);
+                }
+            }
+        }
+
+        // calculate cumsum for gw_starts
+        let gwstarts = {
+            let mut s = 0;
+            let mut v = vec![0u32];
+            for x in chromsizes.iter().take(chromsizes.len() - 1) {
+                s += *x;
+                v.push(s);
+            }
+            v
+        };
+        let ginfo = GenomeInfo::new_from_parts(name, chromsizes, chromnames, idx, gwstarts);
+
+        Ok(GInfo { ginfo })
+    }
+}
+
+#[pyclass]
+struct GMap {
     gmap: GeneticMap,
 }
 #[pymethods]
-impl PyGeneticMap {
+impl GMap {
     #[staticmethod]
     /// position is 0-based, position indicate the left bound of a base-pair
     fn from_list(mut lst: Vec<(u32, f32)>, chrlen: u32) -> PyResult<Self> {
@@ -74,7 +136,7 @@ impl PyGeneticMap {
         let (mut bp_offset, mut cm_offset) = (0, 0.0);
         let mut out = vec![];
         for gmap in lst_gmap.into_iter() {
-            let gmap: &PyCell<PyGeneticMap> = gmap.extract()?;
+            let gmap: &PyCell<GMap> = gmap.extract()?;
             let gmap = gmap.borrow();
             let v = gmap.gmap.as_slice();
             // add data
@@ -91,7 +153,7 @@ impl PyGeneticMap {
             bp_offset += bp_len;
             cm_offset += cm_len;
         }
-        Ok(PyGeneticMap {
+        Ok(GMap {
             gmap: GeneticMap::from_vec(out),
         })
     }
@@ -99,7 +161,7 @@ impl PyGeneticMap {
 
 /// a version of IbdSet to construct pyclass (no references)
 #[pyclass]
-struct PyIbdSet {
+struct IBD {
     gmap: GeneticMap,
     ginfo: GenomeInfo,
     inds: Individuals,
@@ -109,51 +171,24 @@ struct PyIbdSet {
 }
 
 #[pymethods]
-impl PyIbdSet {
+impl IBD {
     #[new]
     fn new(
-        chromsizes: Vec<u32>,
-        chromnames: Vec<String>,
-        samples: Vec<String>,
-        gmaps: Vec<Vec<(u32, f32)>>,
+        ginfo: &GInfo,
+        gmap: &GMap,
         ibd_files: Vec<String>,
         ibd_format: String,
+        samples: Vec<String>,
     ) -> PyResult<Self> {
-        let errm = |m| Err(PyErr::new::<PyValueError, _>(m));
-        if chromsizes.len() != chromnames.len() {
-            return errm("chromsizes length not equal to chrnames length");
-        }
-        if chromsizes.len() != gmaps.len() {
-            return errm("chromsizes length not equal to gmaps length");
-        }
-        if !((chromsizes.len() == ibd_files.len()) || (ibd_files.len() == 1)) {
-            return errm("ibd_files length is neither 1 nor chromsizes length");
-        }
-        // genetic maps
-        let gmaps = GeneticMap::from_gmap_vec(&gmaps, &chromsizes);
-
-        // genome info
-        let name = "".to_owned();
-        let idx: HashMap<String, usize> = chromnames
-            .iter()
-            .enumerate()
-            .map(|(i, n)| (n.to_owned(), i))
-            .collect();
-        let mut r: u32 = 0;
-        let mut gwstarts = Vec::<u32>::with_capacity(chromsizes.len());
-        for l in chromsizes.iter() {
-            gwstarts.push(r);
-            r += l;
-        }
-        let ginfo = GenomeInfo::new_from_parts(name, chromsizes, chromnames.clone(), idx, gwstarts);
-
         // individuals
         let inds = Individuals::from_iter(samples.iter().map(|s| s.as_str()));
+        let ginfo = ginfo.ginfo.clone();
+        let gmap = gmap.gmap.clone();
 
         // Ibdset
-        let mut ibdset = IbdSet::new(&gmaps, &ginfo, &inds);
+        let mut ibdset = IbdSet::new(&gmap, &ginfo, &inds);
 
-        for (fname, chrname) in ibd_files.iter().zip(chromnames.iter()) {
+        for (fname, chrname) in ibd_files.iter().zip(ginfo.chromnames.iter()) {
             if ibd_format == "hapibd" {
                 ibdset.read_hapibd_file(fname, None);
             } else if ibd_format == "tskibd" {
@@ -172,8 +207,8 @@ impl PyIbdSet {
 
         let (ibd, ps, ss) = ibdset.into_parts();
 
-        Ok(PyIbdSet {
-            gmap: gmaps,
+        Ok(IBD {
+            gmap,
             ginfo,
             inds,
             ibd,
@@ -264,15 +299,14 @@ impl PyIbdSet {
 }
 
 #[pyclass]
-struct RareVariants {
-    records: GenotypeRecords,
-    sort_status: u8,
+struct RVar {
+    records: Option<GenotypeRecords>,
     inds: Option<Individuals>,
     sits: Option<Sites>,
 }
 
 #[pymethods]
-impl RareVariants {
+impl RVar {
     #[staticmethod]
     fn from_vcf<'py>(
         chrnames: Vec<String>,
@@ -328,9 +362,8 @@ impl RareVariants {
         _ = sites.sort_by_position_then_allele();
         records.sort_by_genome();
 
-        Ok(RareVariants {
-            records,
-            sort_status: 1u8,
+        Ok(RVar {
+            records: Some(records),
             inds: Some(individuals),
             sits: Some(sites),
         })
@@ -343,19 +376,72 @@ impl RareVariants {
         let sites_file = from_prefix(&prefix, "sit").unwrap();
         let ind_file = from_prefix(&prefix, "ind").unwrap();
 
-        self.records.clone().into_parquet_file(&gt_file);
-        self.sits.clone().unwrap().into_parquet_file(&sites_file);
-        self.inds.clone().unwrap().into_parquet_file(&ind_file);
+        match self.records.as_ref() {
+            Some(records) => {
+                records.clone().into_parquet_file(&gt_file);
+            }
+            None => {}
+        }
+        match self.sits.as_ref() {
+            Some(sits) => {
+                sits.clone().into_parquet_file(&sites_file);
+            }
+            None => {}
+        }
+        match self.inds.as_ref() {
+            Some(inds) => {
+                inds.clone().into_parquet_file(&ind_file);
+            }
+            None => {}
+        }
+        Ok(())
+    }
+
+    #[new]
+    fn new() -> Self {
+        Self {
+            records: None,
+            inds: None,
+            sits: None,
+        }
+    }
+
+    fn read_genotype(&mut self, prefix: String) -> PyResult<()> {
+        let gt_file = from_prefix(&prefix, "rec")
+            .map_err(|_e| PyErr::new::<PyValueError, _>("err in path to genotype file"))?;
+        self.records = Some(GenotypeRecords::from_parquet_file(gt_file));
+        Ok(())
+    }
+
+    fn read_sites(&mut self, prefix: String) -> PyResult<()> {
+        let sites_file = from_prefix(&prefix, "sit")
+            .map_err(|_e| PyErr::new::<PyValueError, _>("err in path to sites file"))?;
+        self.sits = Some(Sites::from_parquet_file(sites_file));
+        Ok(())
+    }
+
+    fn read_inds(&mut self, prefix: String) -> PyResult<()> {
+        let inds_file = from_prefix(&prefix, "ind")
+            .map_err(|_e| PyErr::new::<PyValueError, _>("err in path to sites file"))?;
+        self.inds = Some(Individuals::from_parquet_file(inds_file));
         Ok(())
     }
 
     #[staticmethod]
-    fn from_files(prefix: String, read_sites: bool, read_individuals: bool) -> PyResult<Self> {
-        use ishare::utils::path::from_prefix;
+    fn from_files(
+        prefix: String,
+        read_genotype: bool,
+        read_sites: bool,
+        read_individuals: bool,
+    ) -> PyResult<Self> {
         let gt_file = from_prefix(&prefix, "rec").unwrap();
         let sites_file = from_prefix(&prefix, "sit").unwrap();
         let ind_file = from_prefix(&prefix, "ind").unwrap();
-        let records = GenotypeRecords::from_parquet_file(&gt_file);
+        let records = if read_genotype {
+            Some(GenotypeRecords::from_parquet_file(&gt_file))
+        } else {
+            None
+        };
         let sits = if read_sites {
             let sites = Sites::from_parquet_file(sites_file);
             Some(sites)
@@ -368,19 +454,194 @@ impl RareVariants {
         } else {
             None
         };
-        Ok(RareVariants {
+        Ok(RVar {
             records,
-            sort_status: 0, // TODO: need check
             inds,
             sits,
         })
+    }
+
+    fn check_genotype(&self) -> PyResult<()> {
+        if let Some(_recs) = self.records.as_ref() {
+            Ok(())
+        } else {
+            return Err(PyErr::new::<PyValueError, _>(
+                "genotype is empty - have you loaded it?",
+            ));
+        }
+    }
+    fn check_sites(&self) -> PyResult<()> {
+        if let Some(_) = self.sits.as_ref() {
+            Ok(())
+        } else {
+            return Err(PyErr::new::<PyValueError, _>(
+                "sites is empty - have you loaded it?",
+            ));
+        }
+    }
+    fn check_individuals(&self) -> PyResult<()> {
+        if let Some(_) = self.inds.as_ref() {
+            Ok(())
+        } else {
+            return Err(PyErr::new::<PyValueError, _>(
+                "individuals is empty - have you loaded it?",
+            ));
+        }
+    }
+
+    fn get_genotype_table<'py>(&self, py: Python<'py>) -> PyResult<&'py PyDict> {
+        self.check_genotype()?;
+        let d = PyDict::new(py);
+        let recs = self.records.as_ref().unwrap();
+        let n = recs.records().len();
+        let mut gid = Vec::with_capacity(n);
+        let mut gt = Vec::with_capacity(n);
+        let mut pos = Vec::with_capacity(n);
+        for r in recs.records() {
+            let (p, g, a) = r.get();
+            gid.push(g);
+            gt.push(a);
+            pos.push(p);
+        }
+        d.set_item("GenomeId", gid.into_pyarray(py))?;
+        d.set_item("GenomeWidePosition", pos.into_pyarray(py))?;
+        d.set_item("AlleleID", gt.into_pyarray(py))?;
+        Ok(d)
+    }
+    fn get_individuals_lst(&self) -> PyResult<Vec<String>> {
+        self.check_individuals()?;
+        Ok(self.inds.as_ref().unwrap().v().clone())
+    }
+    fn get_sites_table<'py>(&self, py: Python<'py>) -> PyResult<&'py PyDict> {
+        self.check_sites()?;
+        let sites = self.sits.as_ref().unwrap();
+        let d = PyDict::new(py);
+        let p = sites.get_gw_pos_slice();
+        let n = p.len();
+        let mut alleles_v = vec![];
+        for i in 0..n {
+            let alleles_str = std::str::from_utf8(sites.get_alleles_by_idx(i))?;
+            alleles_v.push(alleles_str.to_owned())
+        }
+        d.set_item("GenomeWidePosition", p.to_pyarray(py))?;
+        d.set_item("Alleles", alleles_v)?;
+        Ok(d)
+    }
+
+    fn calculate_jaccard_matrix<'py>(
+        &self,
+        ids1: Option<Vec<u32>>,
+        ids2: Option<Vec<u32>>,
+        chunksize: Option<u32>,
+        copy_chunk: Option<bool>,
+        py: Python<'py>,
+    ) -> PyResult<&'py PyDict> {
+        // check
+        self.check_genotype()?;
+        self.check_individuals()?;
+
+        // normalized ids lists
+        // eprintln!("normalized ids list");
+        let (ids1, ids2) = match (ids1, ids2) {
+            (Some(ids1), Some(ids2)) => (ids1, ids2),
+            (Some(ids), None) | (None, Some(ids)) => (ids.clone(), ids),
+            (None, None) => {
+                let n = self.inds.as_ref().unwrap().v().len() * 2;
+                let ids = (0..n as u32).collect::<Vec<u32>>();
+                (ids.clone(), ids)
+            }
+        };
+        let chunksize = chunksize.unwrap_or(10000);
+        let copy_chunk = copy_chunk.unwrap_or(false);
+        // chunks preparation
+        let mut pair_chunk_iter =
+            PairChunkIter::new(ids1.as_slice(), ids2.as_slice(), chunksize as usize);
+
+        let nchunk = pair_chunk_iter.get_n_chunks();
+        let mut ichunk = 0usize;
+        // eprintln!("chunksize={} and there are {} chunks", chunksize, nchunk);
+
+        // chunk temporary buffers
+        let mut pairs = vec![];
+        let mut related = vec![];
+        let mut res_vec = vec![];
+        let mut is_within = false;
+
+        // result matrix to store results
+        let mut res_matrix = NamedMatrix::new(ids1.clone(), ids2.clone());
+
+        // iterate over pair chunks
+        while pair_chunk_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within) {
+            // make a copy of a subset of records to better take advantage cache-locality
+            let mut gt = self.records.as_ref().unwrap();
+            let store: Option<GenotypeRecords>;
+            // use copy_chunk to control whether to copy chunks of genotypes or directly use the genotype
+            // from self
+            if copy_chunk {
+                store = self
+                    .records
+                    .as_ref()
+                    .unwrap()
+                    .subset_by_genomes(&related)
+                    .ok();
+                gt = store.as_ref().unwrap();
+            }
+            // parallelization over pairs within each pair-chunks
+            pairs
+                .as_slice()
+                .into_par_iter()
+                .map(|(i, j)| {
+                    let (genome1, genome2) = (*i, *j);
+                    let (mut total, mut shared) = (0u32, 0u32);
+
+                    if is_within && genome1 < genome2 {
+                        for (_pos, a, b) in gt.iter_genome_pair_genotypes(genome1, genome2) {
+                            match (a, b) {
+                                (Some(a), Some(b)) if a == b => {
+                                    shared += 1;
+                                    total += 1
+                                }
+                                (None, None) => {}
+                                (_, _) => total += 1,
+                            }
+                        }
+                        (genome1, genome2, total, shared)
+                    } else {
+                        // skip calculation to avoid duplication
+                        (0, 0, 0, 0)
+                    }
+                })
+                .collect_into_vec(&mut res_vec);
+
+            // save results from vector to matrix
+            for (g1, g2, total, shared) in res_vec.iter() {
+                if !((*g1 == 0) && (*g2 == 0)) {
+                    // if *shared > 10 {
+                    //     eprintln!("{} {} {} {}", *g1, *g2, *shared, *total);
+                    // }
+                    res_matrix.set_by_names(*g1, *g2, (*shared as f32) / (*total as f32));
+                }
+            }
+            ichunk += 1;
+            eprint!("\r {:.3} %", (ichunk * 100) as f32 / nchunk as f32);
+        }
+        let (row_ids, col_ids, data) = res_matrix.into_parts();
+        let d = PyDict::new(py);
+        let data = numpy::ndarray::Array2::from_shape_vec([row_ids.len(), col_ids.len()], data)
+            .map_err(|x| PyErr::new::<PyValueError, _>(x.to_string()))?;
+        d.set_item("RowIds", row_ids.into_pyarray(py))?;
+        d.set_item("ColumnIds", col_ids.into_pyarray(py))?;
+        d.set_item("Matrix", data.into_pyarray(py))?;
+        Ok(d)
     }
 }
 
 /// A Python module implemented in Rust.
 #[pymodule]
 fn isharepy(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<PyIbdSet>()?;
-    m.add_class::<PyGeneticMap>()?;
+    m.add_class::<IBD>()?;
+    m.add_class::<GMap>()?;
+    m.add_class::<GInfo>()?;
+    m.add_class::<RVar>()?;
     Ok(())
 }
