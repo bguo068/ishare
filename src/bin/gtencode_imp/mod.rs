@@ -9,5 +9,6 @@ pub mod rvibd;
 pub mod samples;
 pub mod share;
 pub mod sites;
+#[cfg(feature = "skato")]
 pub mod skato;
 pub mod utils;
