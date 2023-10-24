@@ -55,8 +55,19 @@ where
         }
     }
 
+    pub fn get_n_chunks(&self) -> usize {
+        self.nsteps[0] * self.nsteps[1] + self.nsteps[2] * self.nsteps[2]
+    }
+
     /// this ensure the pair chunk contains at most self.sz genomes
-    pub fn next_pair_chunks(&mut self, pairs: &mut Vec<(T, T)>, related: &mut Vec<T>) -> bool {
+    ///
+    /// Note: pairs include both (a, b) and (b, a) if a != b
+    pub fn next_pair_chunks(
+        &mut self,
+        pairs: &mut Vec<(T, T)>,
+        related: &mut Vec<T>,
+        is_within: &mut bool,
+    ) -> bool {
         pairs.clear();
         related.clear();
         if self.idx < self.nsteps[0] * self.nsteps[1] {
@@ -71,30 +82,29 @@ where
             related.extend(self.v2[(j * self.sz)..].iter().take(self.sz));
             related.sort();
             self.idx += 1;
+            *is_within = false;
             return true;
         }
         let mn = self.nsteps[0] * self.nsteps[1];
         if self.idx < mn + self.nsteps[2] * self.nsteps[2] {
-            let i = (self.idx - mn) / self.sz;
-            let j = (self.idx - mn) % self.sz;
+            let i = (self.idx - mn) / self.nsteps[2];
+            let j = (self.idx - mn) % self.nsteps[2];
             for a in self.v12[(i * self.sz)..].iter().take(self.sz) {
                 for b in self.v12[(j * self.sz)..].iter().take(self.sz) {
-                    if a < b {
-                        pairs.push((*a, *b));
-                    }
+                    pairs.push((*a, *b));
                 }
             }
             if pairs.len() > 0 {
                 if i == j {
                     related.extend(self.v12[(i * self.sz)..].iter().take(self.sz));
-                } else if i < j {
+                } else {
                     related.extend(self.v12[(i * self.sz)..].iter().take(self.sz));
                     related.extend(self.v12[(j * self.sz)..].iter().take(self.sz));
-                } else {
                 }
             }
             related.sort();
             self.idx += 1;
+            *is_within = true;
             return true;
         }
         false
@@ -109,30 +119,39 @@ fn test_pair_chuk_iter() {
     let mut pc_iter = PairChunkIter::new(&a, &b, sz);
     let mut pairs = vec![];
     let mut related = vec![];
-    pc_iter.next_pair_chunks(&mut pairs, &mut related);
+    let mut is_within = false;
+    pc_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within);
     assert_eq!(pairs, vec![(0, 6), (0, 7), (1, 6), (1, 7)]);
     assert_eq!(related, vec![0, 1, 6, 7]);
-    pc_iter.next_pair_chunks(&mut pairs, &mut related);
+    assert_eq!(is_within, false);
+    pc_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within);
     assert_eq!(pairs, vec![(0, 8), (1, 8)]);
     assert_eq!(related, vec![0, 1, 8]);
-    pc_iter.next_pair_chunks(&mut pairs, &mut related);
+    assert_eq!(is_within, false);
+    pc_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within);
     assert_eq!(pairs, vec![(2, 6), (2, 7)]);
     assert_eq!(related, vec![2, 6, 7]);
-    pc_iter.next_pair_chunks(&mut pairs, &mut related);
+    assert_eq!(is_within, false);
+    pc_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within);
     assert_eq!(pairs, vec![(2, 8)]);
     assert_eq!(related, vec![2, 8]);
-    pc_iter.next_pair_chunks(&mut pairs, &mut related);
-    assert_eq!(pairs, vec![(3, 4)]);
+    assert_eq!(is_within, false);
+    pc_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within);
+    assert_eq!(pairs, vec![(3, 3), (3, 4), (4, 3), (4, 4)]);
     assert_eq!(related, vec![3, 4]);
-    pc_iter.next_pair_chunks(&mut pairs, &mut related);
+    assert_eq!(is_within, true);
+    pc_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within);
     assert_eq!(pairs, vec![(3, 5), (4, 5)]);
     assert_eq!(related, vec![3, 4, 5]);
-    pc_iter.next_pair_chunks(&mut pairs, &mut related);
-    assert_eq!(pairs, vec![]);
-    assert_eq!(related, Vec::<i32>::new());
-    pc_iter.next_pair_chunks(&mut pairs, &mut related);
-    assert_eq!(pairs, vec![]);
-    assert_eq!(related, Vec::<i32>::new());
-    let ret = pc_iter.next_pair_chunks(&mut pairs, &mut related);
+    assert_eq!(is_within, true);
+    pc_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within);
+    assert_eq!(pairs, vec![(5, 3), (5, 4)]);
+    assert_eq!(related, vec![3, 4, 5]);
+    assert_eq!(is_within, true);
+    pc_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within);
+    assert_eq!(pairs, vec![(5, 5)]);
+    assert_eq!(is_within, true);
+    assert_eq!(related, vec![5]);
+    let ret = pc_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within);
     assert_eq!(ret, false);
 }
