@@ -5,6 +5,7 @@ use ishare::{
     vcf::{read_vcf, read_vcf_for_genotype_matrix},
 };
 use rayon::prelude::*;
+use rust_htslib::bcf::Read;
 
 pub fn main_encode(args: &Commands) {
     // unpack cli args
@@ -53,7 +54,23 @@ pub fn main_encode(args: &Commands) {
     let ginfo = GenomeInfo::from_toml_file(genome_info);
 
     // divide genome into 10Mb chunks
-    let regions = ginfo.partition_genome(parallel_chunksize_bp.map(|x| x as u32));
+    let mut regions = ginfo.partition_genome(parallel_chunksize_bp.map(|x| x as u32));
+    // filter region with no records
+    use rust_htslib::bcf::IndexedReader;
+    let mut ireader = IndexedReader::from_path(vcf).unwrap();
+    let mut rec = ireader.empty_record();
+    regions.retain(|r| match r.as_ref() {
+        None => true,
+        Some(r) => {
+            let chrname = &ginfo.chromnames[r.0 as usize];
+            let rid2 = ireader.header().name2rid(chrname.as_bytes()).unwrap();
+            ireader.fetch(rid2, r.1, r.2).unwrap();
+            match ireader.read(&mut rec) {
+                None => false,
+                Some(_) => true,
+            }
+        }
+    });
 
     // construct output file names
     let gt_file = if *matrix {
