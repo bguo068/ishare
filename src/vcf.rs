@@ -150,18 +150,16 @@ pub fn read_vcf(
                 ab.push_to_data_only(*allele);
             }
         }
-        // println!(
-        // "line: {i}, pos: {pos}, start_allele: {start_allele}, ab: {:?}",
-        // ab
-        // );
-
         let fmt = record.format(b"GT");
         let bcf_fmt = fmt.inner();
-        assert_eq!(bcf_fmt.type_, 1); // uint8_t
+        // about bcf genotype encoding
+        // see https://github.com/samtools/htslib/blob/99415e2a2ce26bdbf4e910954330ea769de2c3f0/htslib/vcf.h#L156
+        // https://samtools.github.io/hts-specs/VCFv4.2.pdf
+        // assert_eq!(bcf_fmt.type_, 1);
         assert_eq!(bcf_fmt.n, 2);
         assert_eq!(bcf_fmt.p_len, 2 * nsam);
 
-        let raw_gt_slice = unsafe { std::slice::from_raw_parts(bcf_fmt.p, bcf_fmt.p_len as usize) };
+        let raw_gt_bytes = unsafe { std::slice::from_raw_parts(bcf_fmt.p, bcf_fmt.p_len as usize) };
 
         // make a vector allele idx
         let mut hap_mask = vec![];
@@ -170,13 +168,19 @@ pub fn read_vcf(
             hap_mask.push(*sm);
         }
 
-        let gt_iter = raw_gt_slice
-            .iter()
+        let gt_iter = raw_gt_bytes
+            .chunks(bcf_fmt.type_ as usize) // each chunk is an integer
             .zip(hap_mask.iter())
             // skip 'no' haplotypes
             .filter(|(_, &m)| m)
             .map(|(x, _)| {
-                let mut i = match ((*x) as i32).into() {
+                // bytes to integr
+                let mut y: u32 = 0;
+                for (ibyte, byte) in x.iter().enumerate() {
+                    y |= (*byte as u32) << (ibyte * 8);
+                }
+                // interger to genotype
+                let mut i = match (y as i32).into() {
                     GenotypeAllele::Unphased(i) => i as u8,
                     GenotypeAllele::Phased(i) => i as u8,
                     _ => {
@@ -341,7 +345,7 @@ pub fn read_vcf_for_genotype_matrix(
 
         let fmt = record.format(b"GT");
         let bcf_fmt = fmt.inner();
-        assert_eq!(bcf_fmt.type_, 1); // uint8_t
+        // assert_eq!(bcf_fmt.type_, 1); // uint8_t
         assert!(bcf_fmt.n == 2);
         assert_eq!(bcf_fmt.p_len, 2 * nsam);
 
@@ -354,12 +358,17 @@ pub fn read_vcf_for_genotype_matrix(
             hap_mask.push(*sm);
         }
         let gt_iter = raw_gt_slice
-            .iter()
+            .chunks(bcf_fmt.type_ as usize)
             .zip(hap_mask.iter())
             // skip 'no' haplotypes
             .filter(|(_, &m)| m)
             .map(|(x, _)| {
-                let i = match (*x as i32).into() {
+                // bytes to integr
+                let mut y: u32 = 0;
+                for (ibyte, byte) in x.iter().enumerate() {
+                    y |= (*byte as u32) << (ibyte * 8);
+                }
+                let i = match (y as i32).into() {
                     GenotypeAllele::Unphased(i) => i as u8,
                     GenotypeAllele::Phased(i) => i as u8,
                     _ => {
