@@ -46,7 +46,13 @@ pub enum Commands {
         genome: Option<u32>,
         /// optional genome-wide position, if not specified, show all positions
         #[arg(short, long)]
+        samples: Option<String>,
+
+        #[arg(short, long)]
         pos: Option<u32>,
+
+        #[arg(short, long)]
+        out: Option<String>,
     },
     /// View encoded matrix contents
     Matrix {
