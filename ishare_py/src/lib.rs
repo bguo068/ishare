@@ -557,8 +557,8 @@ impl RVar {
         let mut pair_chunk_iter =
             PairChunkIter::new(ids1.as_slice(), ids2.as_slice(), chunksize as usize);
 
-        let nchunk = pair_chunk_iter.get_n_chunks();
-        let mut ichunk = 0usize;
+        // let nchunk = pair_chunk_iter.get_n_chunks();
+        // let mut ichunk = 0usize;
         // eprintln!("chunksize={} and there are {} chunks", chunksize, nchunk);
 
         // chunk temporary buffers
@@ -622,8 +622,8 @@ impl RVar {
                     res_matrix.set_by_names(*g1, *g2, (*shared as f32) / (*total as f32));
                 }
             }
-            ichunk += 1;
-            eprint!("\r {:.3} %", (ichunk * 100) as f32 / nchunk as f32);
+            // ichunk += 1;
+            // eprint!("\r {:.3} %", (ichunk * 100) as f32 / nchunk as f32);
         }
         let (row_ids, col_ids, data) = res_matrix.into_parts();
         let d = PyDict::new(py);
