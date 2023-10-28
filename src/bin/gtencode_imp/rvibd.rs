@@ -166,6 +166,8 @@ fn position_scan(
     });
 }
 
+/// Note on the tree argument: the range are IBD segment start/end (genome-wide
+/// coordinates) the value is the genome-pair ids
 fn position_scan_chunk(
     start: usize,
     end: usize,
@@ -372,7 +374,7 @@ fn pairwise_compare_chunk(
     for item in merged_iter {
         match item {
             itertools::EitherOrBoth::Both(pair, blk) => {
-                // add ibd seg to for a given genome pair to an interval tree
+                // add ibd segs for a given genome pair to an interval tree
                 let it = blk.iter().map(|seg| (seg.s..seg.e, ()));
                 tree.clear_and_fill_with_iter(it);
 

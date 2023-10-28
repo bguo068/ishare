@@ -217,6 +217,17 @@ pub enum Commands {
         /// Path to Genotype record table (output)
         #[arg(short = 'o', long, default_value = "rvibd_out")]
         out_prefix: PathBuf,
+        /// Analysis modes:|| 0 => position-scan, the result is a table with
+        /// following columns (chrid, chrpos, mac, within, between, outside)
+        /// of which the last 3 columns being counts of pair sharing IBD
+        /// at the given position/site. || 1 => pairwise-compare,iterate
+        /// each genome-pair and then site by site to count sites for all
+        /// combinations of carrier state and IBD state. The results include
+        /// a table with of matched RV-vs-IBD (g1, g2, s, e, pos, cm, mac),
+        /// and a list of counts of different states for all genome pairs and
+        /// all sites; || 2 => cmp RV and IBD similarity, is used to compare
+        /// different metrics of genome-pair similarity, including pairwise
+        /// totalibd, cosine and jaccard values.
         #[arg(short = 'w', long, default_value_t = 0)]
         which: u32,
     },
