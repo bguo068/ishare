@@ -15,6 +15,7 @@ fn main() {
             args @ Commands::Samples { .. } => samples::main_samples(args),
             args @ Commands::Share { .. } => share::main_share(args),
             args @ Commands::Jaccard { .. } => jaccard::main_jaccard(args),
+            args @ Commands::SampleDiff { .. } => samplediff::main_samplediff(args),
             args @ Commands::Cosine { .. } => cosine::main_cosine(args),
             args @ Commands::Grm { .. } => grm::main_grm(args),
             #[cfg(feature = "skato")]

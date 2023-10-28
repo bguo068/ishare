@@ -37,6 +37,18 @@ pub enum Commands {
         threshold_maf: f64,
     },
 
+    /// calculate sample pair discordance
+    SampleDiff {
+        /// Path to Genotype record table (input)
+        rec: PathBuf,
+        /// Path to list of sample pairs separated by tab
+        #[arg(short, long)]
+        pairs: Option<PathBuf>,
+        /// Path to output matrix in parquet format
+        #[arg(short, long)]
+        out: Option<String>,
+    },
+
     /// View encoded table records
     Records {
         /// Path to Genotype record table (input)

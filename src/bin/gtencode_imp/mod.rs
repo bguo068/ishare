@@ -6,6 +6,7 @@ pub mod jaccard;
 pub mod matrix;
 pub mod records;
 pub mod rvibd;
+pub mod samplediff;
 pub mod samples;
 pub mod share;
 pub mod sites;
