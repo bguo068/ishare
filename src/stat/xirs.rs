@@ -28,7 +28,7 @@ use statrs::distribution::{ChiSquared, ContinuousCDF};
 ///
 /// Reference:
 ///
-/// Henden et al 2018 [https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1007279]
+/// Henden et al 2018 <https://journals.plos.org/plosgenetics/article?id=10.1371/journal.pgen.1007279>
 pub struct XirsBuilder<'a> {
     afrq_i: Vec<f64>,
     pos_i: Vec<u32>,

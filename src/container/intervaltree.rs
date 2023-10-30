@@ -1,7 +1,7 @@
 //! A simple and generic implementation of an immutable interval tree.
 //!
 //! Original version is from
-//! https://github.com/main--/rust-intervaltree/blob/master/src/lib.rs
+//! <https://github.com/main--/rust-intervaltree/blob/master/src/lib.rs>
 //!
 //! Modifications by Bing Guo:
 //! 23-April-3: allow reusing interval vector (add method `new` and `clear_and_fill_with_iter`)
