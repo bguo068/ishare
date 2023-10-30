@@ -40,11 +40,5 @@ Cargo.lock
 #/target
 /Cargo.lock
 
-testdata/
-testdata/bcf
-testdata/ibd1
-testdata/ibd2
-testdata/map
-testdata/vcf_filt
-testdata/samples.txt
+testdata2
 tmp*

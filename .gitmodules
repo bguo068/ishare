@@ -1,0 +1,3 @@
+[submodule "testdata"]
+	path = testdata
+	url = git@github.com:bguo068/testdata.git
