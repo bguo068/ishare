@@ -1,11 +1,14 @@
-#[derive(Debug, Clone)]
-pub struct GeneticMap(Vec<(u32, f32)>);
 use crate::genome::GenomeInfo;
 use csv;
 use std::{
     io::{BufWriter, Write},
     path::Path,
 };
+
+/// Genetic Map represented as vector of 2-tuple: 0-based bp position and the
+/// corresponding cM coordinatesg
+#[derive(Debug, Clone)]
+pub struct GeneticMap(Vec<(u32, f32)>);
 
 impl GeneticMap {
     pub fn from_iter(it: impl Iterator<Item = (u32, f32)>) -> Self {
@@ -81,11 +84,13 @@ impl GeneticMap {
         Self(v)
     }
 
+    /// Get chromosome starting cM (in genome-wide space) for a given chromosome
     pub fn get_gw_chr_start_cm_from_chrid(&self, chrid: usize, ginfo: &GenomeInfo) -> f32 {
         let gw_ch_start_bp = ginfo.gwstarts[chrid];
         self.get_cm(gw_ch_start_bp)
     }
 
+    /// Get a vector of chromosome starting cM (in genome-wide space) for all chromosomes
     pub fn get_gw_chr_start_cm_vec(&self, ginfo: &GenomeInfo) -> Vec<f32> {
         let mut v = Vec::new();
         for chrname in ginfo.chromnames.iter() {
@@ -98,6 +103,9 @@ impl GeneticMap {
         v
     }
 
+    /// Turn a plink map file into GeneticMap
+    ///
+    /// Note: currently we require that each plink map should only contain one chromosome
     pub fn from_plink_map(p: impl AsRef<Path>, chrlen: u32) -> Self {
         let mut v = vec![(0, 0.0)];
         let mut record = csv::StringRecord::new();
@@ -106,7 +114,10 @@ impl GeneticMap {
             .has_headers(false)
             .delimiter(b' ')
             .from_path(&p)
-            .unwrap();
+            .expect(&format!(
+                "can not open file {}",
+                p.as_ref().to_str().unwrap()
+            ));
 
         while reader.read_record(&mut record).unwrap() {
             // println!("{:?}", record);
@@ -123,23 +134,33 @@ impl GeneticMap {
             );
             v.push((bp, cm));
         }
+        v.sort_by_key(|x| x.0);
 
-        let (x1, y1) = v[v.len() - 2];
-        let (x2, y2) = v[v.len() - 1];
-        if x2 != chrlen {
-            let slope = (y2 - y1) / ((x2 - x1) as f32);
-            // println!("slope={slope}");
-            let mut end_cm = ((chrlen - x2) as f32) * slope + y2;
-            if end_cm < y2 {
-                end_cm = y2;
-            }
-            v.push((chrlen, end_cm));
+        // use average rate for interpolation for the right end; right end
+        // should be chrlen-1 not chrlen. Otherwise, there might be collision of
+        // bp between end bp of current chromosome with the starting bp of the
+        // next chromosome
+        let (bp, cm) = v[v.len() - 1];
+        let avg_rate = cm / bp as f32;
+        assert!(bp <= chrlen, "illegal chromosome end bp in the genetic map");
+
+        let end_bp = chrlen - 1;
+        let mut end_cm = ((end_bp - bp) as f32) * avg_rate + cm;
+        if end_cm < cm {
+            end_cm = cm;
         }
-        // println!("the third last pair: {:?}", v[v.len() - 3]);
-        // println!("the second last pair: {:?}", v[v.len() - 2]);
-        // println!("last pair: {:?}", v.last().unwrap());
+        // fix end bp if the map happend to use chrlen
+        if bp == chrlen {
+            v.pop();
+        }
+
+        // add ends if needed
+        if bp != chrlen - 1 {
+            v.push((end_bp, end_cm));
+        }
         Self(v)
     }
+
     pub fn get_cm(&self, bp: u32) -> f32 {
         let idx = self.0.partition_point(|e| e.0 <= bp) - 1;
         let (x1, y1) = self.0[idx];
