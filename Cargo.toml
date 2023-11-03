@@ -29,11 +29,12 @@ plotters = { version = "0.3.5", default-features = false, features = [
 axum = {version = "0.6.20",  optional = true}
 tokio = { version = "1.32.0", features = ["rt-multi-thread"], optional = true }
 rand = "0.8.5"
-skato-rs = { path = "../skato-rs", optional = true}
+skato-rs = { path = "skato-rs", optional = true}
 log = "0.4.20"
 env_logger = "0.10.0"
 slice-group-by = "0.3.1"
 
 [features]
+# need to fix this so can build binary with skato functionality
 skato = ["dep:skato-rs"]
 plotibd = ["dep:plotters", "dep:tokio", "dep:tokio"]
