@@ -201,7 +201,7 @@ pub enum Commands {
         #[arg(short, long, group = "genome_selection")]
         genomes: Option<Vec<u32>>,
     },
-    /// Encode genotype data from VCF file to tables or matrix (-m)
+    /// analyze concordance/discordance of rare variant sharing and IBD sharing  
     RvIBD {
         /// Path to encoded ibd (input)
         eibd: PathBuf,
