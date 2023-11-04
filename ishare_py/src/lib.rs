@@ -309,26 +309,14 @@ struct RVar {
 impl RVar {
     #[staticmethod]
     fn from_vcf<'py>(
-        chrnames: Vec<String>,
-        chrsizes: Vec<u32>,
+        ginfo: &GInfo,
         samples: Vec<String>,
         vcf: &str,
         chunksize: usize,
         max_maf: f64,
         _py: Python<'py>,
     ) -> PyResult<Self> {
-        // create ginfo
-        let mut gwstarts = vec![0];
-        let mut idx = HashMap::<String, usize>::new();
-        for (i, chrlen) in chrsizes.iter().enumerate() {
-            idx.insert(chrnames[i].to_owned(), i);
-            if gwstarts.len() < chrsizes.len() {
-                let last = gwstarts.last().unwrap();
-                gwstarts.push(last + chrlen);
-            }
-        }
-        let ginfo =
-            GenomeInfo::new_from_parts("genome".to_owned(), chrsizes, chrnames, idx, gwstarts);
+        let ginfo = &ginfo.ginfo;
 
         // split chromosome into regions for parallele reading
         // divide genome into 10Mb chunks
