@@ -3,6 +3,8 @@
 `ishare` is a Rust crate designed to facilitate the analysis of rare-variant
 sharing and identity-by-descent (IBD) sharing.
 
+Currently, it's in pre-alpha stage.
+
 ## Rare Variant Sharing Analysis
 
 This crate introduces a data structure and its corresponding algorithm for the
@@ -57,6 +59,19 @@ cargo build --release --bin asibd
 ```
 
 Post-compilation, binaries are located in the target/release/ directory.
+
+## Install the python package
+1. make sure `cargo`, the necessary toolchain, c compilerare, python 3 are installed
+2. use `pip` to install `maturin`, `numpy` and `pyarrow`
+```
+pip install maturin numpy pyarrow
+```
+3. install `isharepy` 
+```
+cd ishare_py
+maturin develop --release
+cd ..
+```
 
 # Usage
 Instructions for each command line tool are as follows:
