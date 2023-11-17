@@ -21,6 +21,7 @@ fn main() {
             #[cfg(feature = "skato")]
             args @ Commands::Skato { .. } => skato::main_skato(args),
             args @ Commands::RvIBD { .. } => rvibd::main_rvibd(args),
+            args @ Commands::Export { .. } => export::main_export(args),
         },
         None => {
             println!("\nUse '-h  or [subcommand] -h' to show help message");

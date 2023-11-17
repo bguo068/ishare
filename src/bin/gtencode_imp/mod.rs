@@ -1,6 +1,7 @@
 pub mod args;
 pub mod cosine;
 pub mod encode;
+pub mod export;
 pub mod grm;
 pub mod jaccard;
 pub mod matrix;

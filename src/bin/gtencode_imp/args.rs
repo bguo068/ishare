@@ -231,4 +231,26 @@ pub enum Commands {
         #[arg(short = 'w', long, default_value_t = 0)]
         which: u32,
     },
+
+    /// Export rare genotype data from tabular format to other format, such as BCF
+    Export {
+        /// Path to encode rare vairant genotype records(input)
+        rec: PathBuf,
+
+        /// Ouput file format. Currently, it can be (1) "b": compressed bcf format;
+        /// (2) "u": uncompressed bcf format;  (3) "z": compressed vcf format; and
+        /// (4) "v": uncompressed vcf format
+        #[arg(short = 'O', long)]
+        output_fmt: String,
+
+        /// Path to genome info toml file (input)
+        #[arg(short = 'I', long, default_value = "genome.toml")]
+        genome_info: PathBuf,
+
+        /// Path to output file. if not provided, the output will dump to stdout
+        #[arg(short = 'o', long)]
+        out_prefix: Option<PathBuf>,
+        #[arg(long, default_value_t = false)]
+        keep_sites_with_multi_common_alleles: bool,
+    },
 }
