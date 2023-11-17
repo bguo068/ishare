@@ -68,6 +68,7 @@ pub fn read_vcf(
     let mut gt = Vec::<u8>::new();
 
     let mut allele_counts = Vec::new();
+    let mut allele_is_rare = Vec::<bool>::new();
     for (_i, record_result) in bcf.records().enumerate() {
         let record = record_result.unwrap();
 
@@ -123,6 +124,7 @@ pub fn read_vcf(
                     &mut records,
                     &mut ab,
                     &mut allele_counts,
+                    &mut allele_is_rare,
                     &gt,
                     pos_last,
                     ac_thres,
@@ -131,22 +133,24 @@ pub fn read_vcf(
 
             ab.clear();
             start_allele = 0;
-            ab.push(b" REF");
+            ab.push(alleles[0]);
             for allele in alleles.iter().skip(1) {
                 ab.push(b" ");
-                ab.push_to_data_only(alleles[0]);
-                ab.push_to_data_only(b">");
                 ab.push_to_data_only(*allele);
             }
         } else {
             // Minus 1 as only non ref are added
             start_allele = ab.len() as u8 - 1;
-            // skip the ref allele as it has been added
+            // assert different lines of the same position have a consistent REF allele
             let alleles = record.alleles();
-            for allele in record.alleles().iter().skip(1) {
+            assert_eq!(
+                ab.get(0),
+                alleles[0],
+                "REF alleles are consistent for variants with the same position"
+            );
+            // skip the ref allele as it has been added
+            for allele in alleles.iter().skip(1) {
                 ab.push(b" ");
-                ab.push_to_data_only(alleles[0]);
-                ab.push_to_data_only(b">");
                 ab.push_to_data_only(*allele);
             }
         }
@@ -207,9 +211,8 @@ pub fn read_vcf(
             }
         }
 
-        // save to ab_last in case some vcf file are normalized into biallelic lines
-        // where each multi-allelic sites are encodes multiple biallelic lines
-        // ab_last allows to refer alleles the previous lines
+        // save to ab_last in case some multiallelic sites are normalized into multiple lines of biallelic variant.
+        // ab_last allows to refer alleles the previous lines that has the same position
         rid_last = Some(chrid);
         pos_last = Some(pos);
     }
@@ -222,6 +225,7 @@ pub fn read_vcf(
             &mut records,
             &mut ab,
             &mut allele_counts,
+            &mut allele_is_rare,
             &gt,
             pos_last,
             ac_thres,
@@ -334,7 +338,7 @@ pub fn read_vcf_for_genotype_matrix(
             let rid_last = rid_last.unwrap();
             let pos_last = pos_last.unwrap();
             if rid_last == chrid {
-                assert!(pos_last <= pos);
+                assert!(pos_last <= pos, "VCF is not sorted by position");
             }
             if (pos_last == pos) && (rid_last == chrid) {
                 _is_new_pos = false;
@@ -385,7 +389,7 @@ pub fn read_vcf_for_genotype_matrix(
         }
         gm.extend_gt_calls(gt_iter);
         sites.add_site_with_bytes(pos, alleles[0]);
-        sites.append_bytes_to_last_allele(b">");
+        sites.append_bytes_to_last_allele(b" ");
         sites.append_bytes_to_last_allele(alleles[1]);
 
         rid_last = Some(chrid);
@@ -400,6 +404,7 @@ fn output_rare_allele_records(
     records: &mut Vec<GenotypeRecord>,
     ab: &mut AlleleBuffer,
     allele_counts: &mut Vec<usize>,
+    allele_is_rare: &mut Vec<bool>,
     gt: &Vec<u8>,
     pos: u32,
     ac_thres: usize,
@@ -407,6 +412,7 @@ fn output_rare_allele_records(
     // Get allele counts
     // init
     allele_counts.clear();
+    allele_is_rare.clear();
     for _ in 0..ab.len() {
         allele_counts.push(0);
     }
@@ -418,19 +424,26 @@ fn output_rare_allele_records(
         allele_counts[*a as usize] += 1;
     }
 
-    // Set new allele encoding according the allele counts
-    // new enc of rare variants  starts from 1
+    // encode the REF and all ALT alleles with non-zero allele counts
     let mut new_encode = 1u8;
     for (i, ac) in allele_counts.iter().enumerate() {
-        assert!(i < u8::MAX as usize - 1);
-        // for rare alleles
-        if *ac <= ac_thres {
+        if *ac < ac_thres {
+            allele_is_rare.push(true);
+        } else {
+            allele_is_rare.push(false);
+        }
+        assert!(
+            i < u8::MAX as usize - 1,
+            "allele index should be less than 255"
+        );
+        // for ALT allele with allele count > 0
+        if *ac > 0 {
             ab.set_enc(i as u8, new_encode);
             new_encode += 1;
         }
-        // for common alleles
+        // for ALT allele with allele count == 0
         else {
-            ab.set_enc(i as u8, 0);
+            ab.set_enc(i as u8, u8::MAX); // mark for cleaning up
         }
     }
 
@@ -439,14 +452,14 @@ fn output_rare_allele_records(
         return;
     }
 
-    // Remap alleleic encodings and generate rare variants records
-    // all commmon alleles are encoded zeros
-    // all rare allele are encoded nonzeros
+    // Remap allelic encodings and generate rare variants records:
     for (i, old_enc) in gt.iter().enumerate() {
-        let new_enc = ab.get_enc(*old_enc as u8);
-        if new_enc == 0 {
+        // skip encoding common variants for genotype records
+        if !allele_is_rare[*old_enc as usize] {
             continue;
         }
+        // encode rare variants
+        let new_enc = ab.get_enc(*old_enc as u8);
         let mut rec = GenotypeRecord::new(0);
         rec.set(pos as u32, i as u32, new_enc as u8);
         records.push(rec);
@@ -454,14 +467,4 @@ fn output_rare_allele_records(
 
     // add sites info
     sites.add_site(pos, ab);
-
-    // if pos == 35702311 {
-    //     println!(
-    //         "pos={pos}, alllee={:?}, ab={:?}, ac={:?}",
-    //         sites.get_site_by_position(pos),
-    //         ab,
-    //         allele_counts,
-    //     );
-    //     std::process::exit(-1);
-    // }
 }

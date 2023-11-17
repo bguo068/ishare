@@ -72,22 +72,18 @@ impl Sites {
 
     pub fn add_site(&mut self, pos: u32, ab: &AlleleBuffer) {
         self.offsets.push(self.buf.len());
-        let mut last_enc = 0;
         for i in 0..ab.len() {
             let bytes = ab.get(i);
             let enc = ab.get_enc(i as u8);
-            // skip encs for common variants
-            if enc == 0 {
+            // skip encs that are marked for cleaning up (ALT with AC=0)
+            if enc == u8::MAX {
                 continue;
             }
-            // assert encs are added from 1 to n in order
-            assert!(last_enc < enc);
             self.buf.extend_from_slice(bytes);
-            last_enc = enc;
         }
-        //  site added in order
+        // ensure site added in order
         if let Some(last_pos) = self.gw_pos.last() {
-            assert!(*last_pos < pos);
+            assert!(*last_pos < pos, "positions are not in order");
         }
         self.gw_pos.push(pos);
     }
