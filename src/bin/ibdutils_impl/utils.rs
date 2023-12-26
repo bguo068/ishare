@@ -1,6 +1,8 @@
 pub fn write_pair_total(
     pairtotal1: impl Iterator<Item = f32>,
     pairtotal2: impl Iterator<Item = f32>,
+    colname1: &str,
+    colname2: &str,
     p: impl AsRef<std::path::Path>,
 ) {
     use arrow::array::{ArrayRef, Float32Array};
@@ -13,8 +15,8 @@ pub fn write_pair_total(
     let t1 = Float32Array::from_iter_values(pairtotal1);
     let t2 = Float32Array::from_iter_values(pairtotal2);
     let batch = RecordBatch::try_from_iter(vec![
-        ("gt", Arc::new(t1) as ArrayRef),
-        ("ph", Arc::new(t2) as ArrayRef),
+        (colname1.to_owned(), Arc::new(t1) as ArrayRef),
+        (colname2.to_owned(), Arc::new(t2) as ArrayRef),
     ])
     .unwrap();
 

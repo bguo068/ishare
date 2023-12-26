@@ -125,7 +125,62 @@ pub fn main_compare(args: &Commands) {
                 .clone()
                 .map(|(i, j)| mat2.get_by_positions(i as u32, j as u32));
 
-            write_pair_total(it1, it2, out.with_extension("totibd"));
+            write_pair_total(
+                it1,
+                it2,
+                "PairTotIbdA",
+                "PairTotIbdB",
+                out.with_extension("pairtotibdpq"),
+            );
+        }
+
+        {
+            // population-level total ibd
+            let binwidth = 0.05f32;
+            let mut bincenters = vec![];
+            let mut totals1 = vec![];
+            let mut totals2 = vec![];
+
+            for seg in ibd1.as_slice() {
+                let cm = seg.get_seg_len_cm(&gmap);
+                let idx = (cm / binwidth) as usize;
+                if idx >= totals1.len() {
+                    totals1.resize(idx + 1, 0.0f32);
+                }
+                totals1[idx] += cm;
+            }
+
+            for seg in ibd2.as_slice() {
+                let cm = seg.get_seg_len_cm(&gmap);
+                let idx = (cm / binwidth) as usize;
+                if idx >= totals2.len() {
+                    totals2.resize(idx + 1, 0.0f32);
+                }
+                totals2[idx] += cm;
+            }
+
+            // keep two vector same size
+            let mut sz = totals1.len();
+            if sz < totals2.len() {
+                sz = totals2.len();
+            }
+
+            totals1.resize(sz, 0.0);
+            totals2.resize(sz, 0.0);
+
+            // make bin center vector
+            for idx in 1..sz {
+                let c = (idx as f32 + 0.5) * binwidth;
+                bincenters.push(c);
+            }
+
+            // write csv file
+            let mut f = std::fs::File::create(out.with_extension("poptotibdcsv")).unwrap();
+            use std::io::Write;
+            write!(f, "BinCenter,PopTotIbdA,PopTotIbdB\n").unwrap();
+            for ((bc, tot1), tot2) in bincenters.iter().zip(totals1.iter()).zip(totals2.iter()) {
+                write!(f, "{bc},{tot1},{tot2}\n").unwrap();
+            }
         }
     }
 }
