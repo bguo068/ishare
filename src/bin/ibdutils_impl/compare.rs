@@ -15,6 +15,7 @@ pub fn main_compare(args: &Commands) {
         fmt2,
         ibd1_dir,
         ibd2_dir,
+        min_cm,
         use_hap_overlap,
         use_hap_totibd,
         write_details,
@@ -54,6 +55,14 @@ pub fn main_compare(args: &Commands) {
             } else {
                 panic!("format {} is not supported.", fmt);
             }
+
+            // remove short IBD segment to prevent unfair genome-wide overlapping analysis
+            // for instance, original hmmIBD output all short IBD segments without filtering;
+            // while other ibd caller such hap-IBD by default only output cm >= 2.0.
+            // Directly filtering IBD segments by cm length take additonal bp to cM mapping.
+            // Adding it here seems to be convenient
+            ibd.filter_segments_by_min_cm(*min_cm);
+
             match inds_opt.as_ref() {
                 Some((converter, ind_, PloidConvertDirection::Diploid2Haploid)) => {
                     ibd.covert_to_haploid(ind_, converter);

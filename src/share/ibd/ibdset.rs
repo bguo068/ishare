@@ -708,6 +708,19 @@ impl<'a> IbdSet<'a> {
         self.ibd.iter().any(|x| x.is_from_merge())
     }
 
+    pub fn filter_segments_by_min_cm(&mut self, min_cm: f64) {
+        // mark short ibd segments for deletion
+        for seg in self.ibd.as_mut_slice() {
+            let cm = seg.get_seg_len_cm(self.gmap);
+            if (cm as f64) < min_cm {
+                seg.i = 0;
+                seg.j = 0;
+            }
+        }
+        // remove marked segments (retain unmarked segments)
+        self.ibd.retain(|seg| (seg.i != 0) || (seg.j != 0))
+    }
+
     /// Remove regions from each IBD segment
     ///
     /// if an IBD segment is contained with a region, the whole IBD segment

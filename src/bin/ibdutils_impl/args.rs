@@ -67,6 +67,10 @@ pub enum Commands {
         /// IBD directory 2
         #[arg(short = 'I', long, required = true)]
         ibd2_dir: PathBuf,
+        /// by default no segments will be filterred out. By setting to a positive number
+        /// any segment with length less than this positive number will be removed.
+        #[arg(long, default_value_t = -0.1)]
+        min_cm: f64,
         /// Use (Do not Ignore) haplotype information (i.e. not flattening before overlapping analysis) if true
         #[arg(long, default_value_t = false)]
         use_hap_overlap: bool,
