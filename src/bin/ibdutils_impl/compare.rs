@@ -16,6 +16,7 @@ pub fn main_compare(args: &Commands) {
         ibd1_dir,
         ibd2_dir,
         min_cm,
+        length_bin_starts,
         use_hap_overlap,
         use_hap_totibd,
         write_details,
@@ -77,6 +78,14 @@ pub fn main_compare(args: &Commands) {
         assert_eq!(ibd1.get_inds().v(), ibd2.get_inds().v());
 
         {
+            // convert from string to vector of float
+            let mut length_bin_starts: Vec<f32> = length_bin_starts
+                .split(",")
+                .map(|s| s.parse().unwrap())
+                .collect();
+            // sort
+            length_bin_starts.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
             let ignore_hap = if *use_hap_overlap { false } else { true };
             // overlapping analysis
             let prefix_for_details = match *write_details {
@@ -89,7 +98,7 @@ pub fn main_compare(args: &Commands) {
                 ignore_hap,
                 prefix_for_details,
             );
-            let res = oa.analzyze(Some(&[3.0f32, 4.0, 6.0, 10.0, 18.0]));
+            let res = oa.analzyze(Some(length_bin_starts.as_slice()));
             res.to_csv(out);
         }
         {

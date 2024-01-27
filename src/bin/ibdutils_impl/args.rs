@@ -71,6 +71,9 @@ pub enum Commands {
         /// any segment with length less than this positive number will be removed.
         #[arg(long, default_value_t = -0.1)]
         min_cm: f64,
+        // length bin starts. example: "3,4,6,10,18"
+        #[arg(long, default_value = "3,4,6,10,18")]
+        length_bin_starts: String,
         /// Use (Do not Ignore) haplotype information (i.e. not flattening before overlapping analysis) if true
         #[arg(long, default_value_t = false)]
         use_hap_overlap: bool,
