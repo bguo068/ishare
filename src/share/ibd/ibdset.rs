@@ -303,6 +303,7 @@ impl<'a> IbdSet<'a> {
         assert_eq!(&header[5], "Tmrca");
         assert_eq!(&header[6], "HasMutation");
 
+        let mut counter_invalid_ibd = 0usize;
         while reader.read_record(&mut record).unwrap() {
             // haploid genome
             let m = 3;
@@ -329,9 +330,13 @@ impl<'a> IbdSet<'a> {
             }
             let mut ibd = IbdSeg::new(i, m, j, n, s, e, pos_shift);
             ibd.normalized();
-            assert!(ibd.is_valid(), "ibd: {:?}", &ibd);
-            self.ibd.push(ibd);
+            if ibd.is_valid() {
+                self.ibd.push(ibd);
+            } else {
+                counter_invalid_ibd += 1;
+            }
         }
+        eprintln!("WARN: there are {counter_invalid_ibd} invalid records removed");
     }
 
     /// read all `{chrname}.ibd` file (in hap-IBD format) into the IBD set
