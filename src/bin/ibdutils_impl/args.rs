@@ -147,6 +147,39 @@ pub enum Commands {
         #[arg(short = 'o', long, default_value = "unrelated.txt")]
         out: PathBuf,
     },
+    /// Calculate IBD coverage for given sampling points
+    Coverage {
+        /// Path to genome info toml file (input)
+        #[arg(short = 'g', long, default_value = "genome.toml")]
+        genome_info: PathBuf,
+        /// Path to sample list file for ibd set
+        #[arg(short = 's', long, required = true)]
+        sample_lst: PathBuf,
+        /// fmt of ibd set1, supported format 'hapibd', 'tskibd' and 'hmmibd'
+        #[arg(short = 'f', long, required = true)]
+        fmt: String,
+        /// IBD directory
+        #[arg(short = 'i', long, required = true)]
+        ibd_dir: PathBuf,
+        /// by default no segments will be filterred out. By setting to a
+        /// positive number any segment with length less than this positive
+        /// number will be removed.
+        #[arg(long, default_value_t = -0.1)]
+        min_cm: f64,
+        /// position in CM of the most left sampling point
+        #[arg(long, default_value_t = 0.01)]
+        start_cm: f64,
+        /// step size between adjacent sampling points
+        #[arg(long, default_value_t = 0.01)]
+        step_cm: f64,
+        /// Use (Do not Ignore) haplotype information (i.e. not flattening
+        /// before coverage analysis) if true
+        #[arg(long, default_value_t = false)]
+        prevent_flatten: bool,
+        /// Path to output file in CSV format
+        #[arg(short = 'o', long, default_value = "ibdcov_res.csv")]
+        out: PathBuf,
+    },
 }
 
 #[derive(Args)]

@@ -14,6 +14,7 @@ fn main() {
             #[cfg(feature = "plotibd")]
             args @ Commands::PlotIBD { .. } => plotibd::main_plotibd(args),
             args @ Commands::GetUnrelated { .. } => unrelated::main_unrelated(args),
+            args @ Commands::Coverage {.. } => coverage::main_coverage(args),
         },
 
         None => {
