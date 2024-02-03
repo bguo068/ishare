@@ -334,9 +334,15 @@ impl<'a> IbdSet<'a> {
                 self.ibd.push(ibd);
             } else {
                 counter_invalid_ibd += 1;
+                println!("{:?}", ibd);
             }
         }
-        eprintln!("WARN: there are {counter_invalid_ibd} invalid records removed");
+        if counter_invalid_ibd > 0 {
+            eprintln!(
+                "WARN: there are {counter_invalid_ibd} invalid records removed in file: {}",
+                p.as_ref().to_str().unwrap()
+            );
+        }
     }
 
     /// read all `{chrname}.ibd` file (in hap-IBD format) into the IBD set

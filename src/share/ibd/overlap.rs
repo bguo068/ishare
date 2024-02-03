@@ -1,6 +1,8 @@
 use super::ibdset::*;
 use crate::container::intervals::Intervals;
 use crate::container::intervaltree::IntervalTree;
+use crate::genome::GenomeInfo;
+use crate::gmap::GeneticMap;
 use std::io::BufWriter;
 use std::path::PathBuf;
 
@@ -34,7 +36,13 @@ impl<'a> IbdOverlapAnalyzer<'a> {
         }
     }
 
-    fn calc_overlap_rates(&self, len_ranges: Option<&[f32]>, swap12: bool) -> (Vec<f32>, f32) {
+    fn calc_overlap_rates<'b>(
+        &self,
+        ibd1: &'b IbdSet<'a>,
+        ibd2: &'b IbdSet<'a>,
+        len_ranges: Option<&[f32]>,
+        swap12: bool,
+    ) -> (Vec<f32>, f32) {
         let gmap = self.ibd1.get_gmap();
         let ginfo = self.ibd1.get_ginfo();
         let sample_names = self.ibd1.get_inds().v();
@@ -63,9 +71,9 @@ impl<'a> IbdOverlapAnalyzer<'a> {
         };
 
         let blkpair_iter = if swap12 {
-            IbdSetBlockPairIter::new(&self.ibd2, &self.ibd1, self.ignore_hap)
+            IbdSetBlockPairIter::new(ibd2, ibd1, self.ignore_hap)
         } else {
-            IbdSetBlockPairIter::new(&self.ibd1, &self.ibd2, self.ignore_hap)
+            IbdSetBlockPairIter::new(ibd1, ibd2, self.ignore_hap)
         };
 
         for (blk1, blk2) in blkpair_iter {
@@ -247,11 +255,59 @@ impl<'a> IbdOverlapAnalyzer<'a> {
         (ratio_sums, gw_ratio_sums / gw_counters as f32)
     }
 
-    pub fn analzyze(&self, len_ranges: Option<&[f32]>) -> IbdOverlapResult {
+    pub fn analzyze(
+        &self,
+        len_ranges: Option<&[f32]>,
+        window_gw_bp: Option<(u32, u32)>,
+    ) -> IbdOverlapResult {
+        let mut ibd1 = self.ibd1;
+        let mut ibd2 = self.ibd2;
+
+        // empty
+        let mut ibd1_win = IbdSet::new(
+            self.ibd1.get_gmap(),
+            self.ibd1.get_ginfo(),
+            self.ibd1.get_inds(),
+        );
+        let mut ibd2_win = IbdSet::new(
+            self.ibd2.get_gmap(),
+            self.ibd2.get_ginfo(),
+            self.ibd2.get_inds(),
+        );
+
+        if let Some((win_start, win_end)) = window_gw_bp {
+            for seg_orig in self.ibd1.as_slice() {
+                let mut seg = *seg_orig;
+                if win_start > seg.s {
+                    seg.s = win_start;
+                }
+                if win_end < seg.e {
+                    seg.e = win_end;
+                }
+                if seg.s < seg.e {
+                    ibd1_win.add(seg);
+                }
+            }
+            for seg_orig in self.ibd2.as_slice() {
+                let mut seg = *seg_orig;
+                if win_start > seg.s {
+                    seg.s = win_start;
+                }
+                if win_end < seg.e {
+                    seg.e = win_end;
+                }
+                if seg.s < seg.e {
+                    ibd2_win.add(seg);
+                }
+            }
+            ibd1 = &ibd1_win;
+            ibd2 = &ibd2_win;
+        }
+
         let swap = false;
-        let (a_by_b, a_by_b_gw) = self.calc_overlap_rates(len_ranges, swap);
+        let (a_by_b, a_by_b_gw) = self.calc_overlap_rates(ibd1, ibd2, len_ranges, swap);
         let swap = true;
-        let (b_by_a, b_by_a_gw) = self.calc_overlap_rates(len_ranges, swap);
+        let (b_by_a, b_by_a_gw) = self.calc_overlap_rates(ibd1, ibd2, len_ranges, swap);
         let len_ranges = match len_ranges {
             Some(x) => x,
             None => &[0.0f32],
@@ -293,5 +349,45 @@ impl IbdOverlapResult {
             write!(file, "{bin},{ab},{ba}\n").unwrap();
         }
         write!(file, "genome_wide,{},{}\n", self.a_by_b_gw, self.b_by_a_gw).unwrap();
+    }
+}
+
+pub fn write_per_winddow_overlap_res(
+    windows: &[(u32, u32)],
+    ov_res_slice: &[IbdOverlapResult],
+    ginfo: &GenomeInfo,
+    gmap: &GeneticMap,
+    p: impl AsRef<std::path::Path>,
+) {
+    use std::io::Write;
+    let mut file = std::fs::File::create(p.as_ref())
+        .map(BufWriter::new)
+        .unwrap();
+
+    // write csv header
+    write!(file, "Chrom,StartBp,EndBp,StartCm,EndCm,GwStartBp,GwEndBp,GwStartCm,GwEndCm,LenBinStart,AOvByB,BOvByA\n").unwrap();
+    for (&(win_start, win_end), ov_res) in windows.iter().zip(ov_res_slice.iter()) {
+        let (idx_s, chr_s, chr_pos_s) = ginfo.to_chr_pos(win_start);
+        let gwcm_s = gmap.get_cm(win_start);
+        let chrcm_s = gwcm_s - gmap.get_cm(ginfo.gwstarts[idx_s]);
+        let (idx_e, _chr_e, chr_pos_e) = ginfo.to_chr_pos(win_end);
+        let gwcm_e = gmap.get_cm(win_end - 1);
+        let chrcm_e = gwcm_e - gmap.get_cm(ginfo.gwstarts[idx_e]);
+        assert_eq!(idx_s, idx_e);
+
+        for ((bin, ab), ba) in ov_res
+            .bins
+            .iter()
+            .zip(ov_res.a_by_b.iter())
+            .zip(ov_res.b_by_a.iter())
+        {
+            write!(file, "{chr_s},{chr_pos_s},{chr_pos_e},{chrcm_s},{chrcm_e},{win_start},{win_end},{gwcm_s},{gwcm_e},{bin},{ab},{ba}\n").unwrap();
+        }
+        write!(
+            file,
+            "{chr_s},{chr_pos_s},{chr_pos_e},{chrcm_s},{chrcm_e},{win_start},{win_end},{gwcm_s},{gwcm_e},genome_wide,{},{}\n",
+            ov_res.a_by_b_gw, ov_res.b_by_a_gw
+        )
+        .unwrap();
     }
 }

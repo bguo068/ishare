@@ -2,7 +2,10 @@ use super::utils::*;
 use ishare::{
     genome, gmap,
     indiv::*,
-    share::ibd::{ibdset::*, overlap},
+    share::ibd::{
+        ibdset::*,
+        overlap::{self, write_per_winddow_overlap_res, IbdOverlapResult},
+    },
 };
 
 use super::super::Commands;
@@ -17,6 +20,7 @@ pub fn main_compare(args: &Commands) {
         ibd2_dir,
         min_cm,
         length_bin_starts,
+        window_size_bp,
         use_hap_overlap,
         use_hap_totibd,
         write_details,
@@ -87,7 +91,8 @@ pub fn main_compare(args: &Commands) {
             length_bin_starts.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
             let ignore_hap = if *use_hap_overlap { false } else { true };
-            // overlapping analysis
+
+            // 1. overlapping analysis
             let prefix_for_details = match *write_details {
                 true => Some(out),
                 false => None,
@@ -98,11 +103,49 @@ pub fn main_compare(args: &Commands) {
                 ignore_hap,
                 prefix_for_details,
             );
-            let res = oa.analzyze(Some(length_bin_starts.as_slice()));
+
+            // 1.1 overlapping analysis all together
+            let res = oa.analzyze(Some(length_bin_starts.as_slice()), None);
             res.to_csv(out);
+
+            // 1.2 overlapping analysis per window of each chromosome
+            if let Some(window_size_bp) = window_size_bp {
+                let nchrom = ginfo.gwstarts.len();
+                let mut windows = Vec::<(u32, u32)>::new();
+                let mut ov_res_windows = Vec::<IbdOverlapResult>::new();
+                for idx in 0..nchrom {
+                    let chr_gw_start = ginfo.gwstarts[idx];
+                    let chr_gw_end = if idx == nchrom - 1 {
+                        ginfo.chromsize[nchrom - 1] + ginfo.gwstarts[nchrom - 1]
+                    } else {
+                        ginfo.gwstarts[idx + 1]
+                    };
+                    let mut winstart = chr_gw_start;
+                    while winstart < chr_gw_end {
+                        let mut winend = winstart + window_size_bp - 1;
+                        if winend > chr_gw_end {
+                            winend = chr_gw_end - 1;
+                        }
+                        windows.push((winstart, winend));
+                        let ov_res = oa
+                            .analzyze(Some(length_bin_starts.as_slice()), Some((winstart, winend)));
+                        ov_res_windows.push(ov_res);
+                        winstart += window_size_bp;
+                    }
+                }
+                // write to file
+                let out_win_ov = out.with_extension("winovcsv");
+                write_per_winddow_overlap_res(
+                    &windows,
+                    &ov_res_windows,
+                    &ginfo,
+                    &gmap,
+                    &out_win_ov,
+                );
+            }
         }
         {
-            // total IBD analysis
+            // 2. total IBD analysis
             let ignore_hap = if *use_hap_totibd { false } else { true };
 
             // re-sort ibd
@@ -153,7 +196,7 @@ pub fn main_compare(args: &Commands) {
         }
 
         {
-            // population-level total ibd
+            // 3. population-level total ibd
             let binwidth = 0.05f32;
             let mut bincenters = vec![];
             let mut totals1 = vec![];

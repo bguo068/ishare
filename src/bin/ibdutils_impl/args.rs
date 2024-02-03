@@ -74,6 +74,10 @@ pub enum Commands {
         // length bin starts. example: "3,4,6,10,18"
         #[arg(long, default_value = "3,4,6,10,18")]
         length_bin_starts: String,
+        // If specified, additional overlapping analysis will be done
+        // for each window of the given size along the genome.
+        #[arg(long)]
+        window_size_bp: Option<u32>,
         /// Use (Do not Ignore) haplotype information (i.e. not flattening before overlapping analysis) if true
         #[arg(long, default_value_t = false)]
         use_hap_overlap: bool,
