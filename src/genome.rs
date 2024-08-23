@@ -1,5 +1,8 @@
 use crate::container::intervals::Intervals;
+use crate::gmap::GeneticMap;
 use ahash::{HashMap, HashMapExt};
+use clap::ValueEnum;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::io::{BufWriter, Read, Write};
 use std::path::Path;
@@ -31,7 +34,7 @@ fn test_genome() {
     let _: GenomeFile = toml::from_str(&s).unwrap();
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct GenomeInfo {
     pub name: String,
     pub chromsize: Vec<u32>,
@@ -210,4 +213,195 @@ impl GenomeInfo {
         };
         regions
     }
+}
+
+/// A struct that contains both genome info and genetic map
+///
+/// used to save and read both of genome info and genetic map from from binary or text files
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct Genome {
+    ginfo: GenomeInfo,
+    gmap: GeneticMap,
+}
+
+impl Genome {
+    pub fn new_from_name(builtgenome: BuiltinGenome) -> Self {
+        match builtgenome {
+            BuiltinGenome::Pf3d7Const15k => Self::new_from_constant_recombination_rate(
+                "pf3d7_const15k",
+                PF3D7CHRLENS,
+                &((1..=14).map(|i| format!("Pf3D7_{i:02}_v3")).collect_vec()),
+                0.01 / 15000.0,
+            ),
+            BuiltinGenome::Sim14chr100cmConst15k => Self::new_from_constant_recombination_rate(
+                "sim14chr100cm_const15k",
+                &[15000_00u32; 14],
+                &((1..=14).map(|i| i.to_string()).collect_vec()),
+                0.01 / 15000.0,
+            ),
+        }
+    }
+
+    pub fn new_from_constant_recombination_rate(
+        genome_name: &str,
+        chromsizes: &[u32],
+        chromnames: &[String],
+        const_recom_rate: f32,
+    ) -> Self {
+        let m: HashMap<_, _> = chromnames
+            .iter()
+            .enumerate()
+            .map(|(index, chrname)| (chrname.to_owned(), index))
+            .collect();
+
+        let mut gw_starts = Vec::with_capacity(chromsizes.len());
+        gw_starts.push(0);
+
+        gw_starts.extend(
+            chromsizes
+                .iter()
+                .take(chromsizes.len() - 1)
+                .scan(0, |state, &chrlen| {
+                    *state += chrlen;
+                    Some(*state)
+                }),
+        );
+        let ginfo = GenomeInfo::new_from_parts(
+            genome_name.to_owned(),
+            chromsizes.to_vec(),
+            chromnames.to_vec(),
+            m,
+            gw_starts.clone(),
+        );
+
+        let gmap_vec = chromsizes
+            .iter()
+            .map(|chrlen| {
+                vec![
+                    (0, 0.0),
+                    (*chrlen - 1, (*chrlen - 1) as f32 * 100.0 * const_recom_rate),
+                ]
+            })
+            .collect();
+        let gmap = GeneticMap::from_gmap_vec(&gmap_vec, &chromsizes.to_vec());
+
+        Self { ginfo, gmap }
+    }
+
+    pub fn new_from_plink_gmaps(
+        genome_name: &str,
+        chromsizes: &[u32],
+        chromnames: &[String],
+        plink_files: &[String],
+    ) -> Self {
+        let mut gfile = GenomeFile {
+            name: genome_name.to_owned(),
+            chromsize: chromsizes.to_owned(),
+            idx: chromnames
+                .iter()
+                .enumerate()
+                .map(|(index, chrname)| (chrname.to_owned(), index))
+                .collect(),
+            chromnames: chromnames.to_vec(),
+            gmaps: plink_files.to_owned(),
+        };
+        gfile.check();
+        let mut ginfo = GenomeInfo::new();
+        use std::mem::swap;
+        swap(&mut gfile.name, &mut ginfo.name);
+        swap(&mut gfile.chromsize, &mut ginfo.chromsize);
+        swap(&mut gfile.chromnames, &mut ginfo.chromnames);
+        swap(&mut gfile.idx, &mut ginfo.idx);
+        swap(&mut gfile.gmaps, &mut ginfo.gmaps);
+        ginfo.gwstarts.push(0u32);
+        for chrlen in &ginfo.chromsize[0..(ginfo.chromsize.len() - 1)] {
+            let last = ginfo.gwstarts.last().unwrap();
+            ginfo.gwstarts.push(*chrlen + *last);
+        }
+        let gmap = GeneticMap::from_genome_info(&ginfo);
+        Self { ginfo, gmap }
+    }
+
+    /// load genome (ginfo and gmap) from a single bincode file, for ease of use
+    pub fn load_from_bincode_file(p: &str) -> Self {
+        let mut reader = std::fs::File::open(p).map(std::io::BufReader::new).unwrap();
+        bincode::deserialize_from(&mut reader).unwrap()
+    }
+
+    /// save to single bincode file, for ease of use
+    pub fn save_to_bincode_file(&self, p: &str) {
+        if let Some(parent) = Path::new(p).parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        let reader = std::fs::File::create(p)
+            .map(std::io::BufWriter::new)
+            .unwrap();
+        bincode::serialize_into(reader, &self).unwrap();
+    }
+
+    /// save to readable text file,  including the genome info toml file and a list of per chr recombinaton rate in plink map format
+    pub fn save_to_text_files(&self, ginfo_path: &str) {
+        if let Some(parent) = std::path::Path::new(ginfo_path).parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        self.ginfo.to_toml_file(ginfo_path);
+        let gmap_path_prefix = self.ginfo.gmaps[0]
+            .strip_suffix(".map")
+            .unwrap()
+            .strip_suffix(&self.ginfo.chromnames[0])
+            .unwrap()
+            .strip_suffix("_")
+            .unwrap();
+        self.gmap.to_plink_map_files(&self.ginfo, gmap_path_prefix);
+    }
+
+    pub fn load_from_text_file(ginfo_path: &str) -> Self {
+        let ginfo = GenomeInfo::from_toml_file(ginfo_path);
+        let gmap = GeneticMap::from_genome_info(&ginfo);
+        Self { ginfo, gmap }
+    }
+
+    pub fn ginfo(&self) -> &GenomeInfo {
+        &self.ginfo
+    }
+
+    pub fn gmap(&self) -> &GeneticMap {
+        &self.gmap
+    }
+
+    pub fn set_gmap_path_prefix(&mut self, new_gmap_path_prefix: &str) {
+        self.ginfo.gmaps = self
+            .ginfo
+            .chromnames
+            .iter()
+            .map(|chrname| format!("{new_gmap_path_prefix}_{chrname}.map"))
+            .collect::<Vec<_>>();
+    }
+}
+
+#[derive(Clone, ValueEnum)]
+pub enum BuiltinGenome {
+    Pf3d7Const15k,
+    Sim14chr100cmConst15k,
+}
+
+pub const PF3D7CHRLENS: &[u32] = &[
+    640851, 947102, 1067971, 1200490, 1343557, 1418242, 1445207, 1472805, 1541735, 1687656,
+    2038340, 2271494, 2925236, 3291936,
+];
+
+#[test]
+fn test_genome_io() {
+    let mut genome = Genome::new_from_name(BuiltinGenome::Pf3d7Const15k);
+    genome.set_gmap_path_prefix("tmp_gmap/map");
+
+    genome.save_to_bincode_file("tmp.bincode");
+    let genome2 = Genome::load_from_bincode_file("tmp.bincode");
+    assert_eq!(&genome, &genome2);
+
+    genome.save_to_text_files("tmp_genome.toml");
+    let genome3 = Genome::load_from_text_file("tmp_genome.toml");
+
+    assert_eq!(&genome, &genome3);
 }

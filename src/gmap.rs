@@ -1,5 +1,6 @@
 use crate::genome::GenomeInfo;
 use csv;
+use serde::{Deserialize, Serialize};
 use std::{
     io::{BufWriter, Write},
     path::Path,
@@ -7,7 +8,7 @@ use std::{
 
 /// Genetic Map represented as vector of 2-tuple: 0-based bp position and the
 /// corresponding cM coordinatesg
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GeneticMap(Vec<(u32, f32)>);
 
 impl GeneticMap {
@@ -218,7 +219,8 @@ impl GeneticMap {
         let filename = prefix.as_ref().file_name().unwrap().to_str().unwrap();
         for (i, chrname) in ginfo.chromnames.iter().enumerate() {
             // make a file name per chromosome
-            let path = parent.with_file_name(format!("{}_{}.map", filename, chrname));
+            let mut path = parent.to_path_buf();
+            path.push(format!("{}_{}.map", filename, chrname));
             let mut f = std::fs::File::create(&path).map(BufWriter::new).unwrap();
             // find the first end record for each chromosome
             let gwstart = ginfo.gwstarts[i];
