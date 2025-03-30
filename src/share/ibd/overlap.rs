@@ -42,7 +42,7 @@ impl<'a> IbdOverlapAnalyzer<'a> {
         ibd2: &'b IbdSet<'a>,
         len_ranges: Option<&[f32]>,
         swap12: bool,
-    ) -> (Vec<f32>, f32) {
+    ) -> (Vec<f64>, Vec<f64>, f64, f64) {
         let gmap = self.ibd1.get_gmap();
         let ginfo = self.ibd1.get_ginfo();
         let sample_names = self.ibd1.get_inds().v();
@@ -51,9 +51,16 @@ impl<'a> IbdOverlapAnalyzer<'a> {
             None => &[0.0f32],
         };
         let mut counters = vec![0usize; len_ranges.len()];
-        let mut ratio_sums: Vec<f32> = vec![0.0f32; len_ranges.len()];
+
+        // define variance in terms of moments expression
+        // mean = sum(x)/n
+        // sd = sqrt(var)
+        // var = sum(x^2)/n - (sum(x)/n)^
+        let mut ratio_sums: Vec<f64> = vec![0.0f64; len_ranges.len()];
+        let mut ratio_square_sums: Vec<f64> = vec![0.0f64; len_ranges.len()];
         let mut gw_counters = 0usize;
-        let mut gw_ratio_sums = 0.0f32;
+        let mut gw_ratio_sum = 0.0f64;
+        let mut gw_ratio_square_sum = 0.0f64;
         let mut tree = IntervalTree::<u32, ()>::new(100);
         let mut itvs = Intervals::new();
         let mut detail_file = match (self.prefix_for_details, swap12) {
@@ -153,7 +160,9 @@ impl<'a> IbdOverlapAnalyzer<'a> {
                         let which = len_ranges.partition_point(|x| *x <= cm) - 1;
                         // update the summary vectors
                         counters[which] += 1;
-                        ratio_sums[which] += intersect / cm;
+                        let ratio = (intersect / cm) as f64;
+                        ratio_sums[which] += ratio;
+                        ratio_square_sums[which] += ratio * ratio;
 
                         // Write a record to the detail file for each subject segment
                         // s1,h1,s2,h2,chr,astart, aend, overlap_ratio, interval_lwr
@@ -215,7 +224,9 @@ impl<'a> IbdOverlapAnalyzer<'a> {
                         // update the summary vectors
                         counters[which] += 1;
 
-                        ratio_sums[which] += intersect / cm;
+                        let ratio = (intersect / cm) as f64;
+                        ratio_sums[which] += ratio;
+                        ratio_square_sums[which] += ratio * ratio;
                         // Write a record to the detail file for each subject segment
                         // s1,h1,s2,h2,chr,astart, aend, overlap_ratio, interval_lwr
                         if let Some(detail_file) = detail_file.as_mut() {
@@ -232,7 +243,9 @@ impl<'a> IbdOverlapAnalyzer<'a> {
             };
             if let Some((sample1, hapid1, sample2, hapid2)) = pair_info {
                 gw_counters += 1;
-                gw_ratio_sums += gw_total_intersect / gw_total_a;
+                let gw_ratio = (gw_total_intersect / gw_total_a) as f64;
+                gw_ratio_sum += gw_ratio;
+                gw_ratio_square_sum += gw_ratio * gw_ratio;
                 // Write a record to the detail file for a sample-pair with non-zero IBD sharig in
                 // ibd1
                 if let Some(detail_file) = detail_file.as_mut() {
@@ -248,11 +261,33 @@ impl<'a> IbdOverlapAnalyzer<'a> {
         }
 
         // average out
+        //
+        // ratio means
         for (n, tot) in counters.iter().zip(ratio_sums.iter_mut()) {
-            *tot /= *n as f32;
+            *tot /= *n as f64;
         }
+        let ratio_means = ratio_sums; // average above        let ratio_square_means = ratio_square_sums; // average above
 
-        (ratio_sums, gw_ratio_sums / gw_counters as f32)
+        // ratio stds
+        for ((n, mean), tot) in counters
+            .iter()
+            .zip(ratio_means.iter())
+            .zip(ratio_square_sums.iter_mut())
+        {
+            *tot /= *n as f64; // sq mean
+            *tot -= mean * mean; // var
+            *tot = tot.sqrt(); // std
+        }
+        let ratio_square_stds = ratio_square_sums;
+
+        // gw mean
+        let gw_ratio_mean = gw_ratio_sum / gw_counters as f64;
+        // gw std
+        gw_ratio_square_sum /= gw_counters as f64; // sq mean
+        gw_ratio_square_sum -= gw_ratio_mean * gw_ratio_mean; // var
+        let gw_ratio_std = gw_ratio_square_sum.sqrt();
+
+        (ratio_means, ratio_square_stds, gw_ratio_mean, gw_ratio_std)
     }
 
     pub fn analzyze(
@@ -305,19 +340,25 @@ impl<'a> IbdOverlapAnalyzer<'a> {
         }
 
         let swap = false;
-        let (a_by_b, a_by_b_gw) = self.calc_overlap_rates(ibd1, ibd2, len_ranges, swap);
+        let (a_by_b_means, a_by_b_stds, a_by_b_gw_mean, a_by_b_gw_std) =
+            self.calc_overlap_rates(ibd1, ibd2, len_ranges, swap);
         let swap = true;
-        let (b_by_a, b_by_a_gw) = self.calc_overlap_rates(ibd1, ibd2, len_ranges, swap);
+        let (b_by_a_means, b_by_a_stds, b_by_a_gw_mean, b_by_a_gw_std) =
+            self.calc_overlap_rates(ibd1, ibd2, len_ranges, swap);
         let len_ranges = match len_ranges {
             Some(x) => x,
             None => &[0.0f32],
         };
         IbdOverlapResult {
             bins: len_ranges.into(),
-            a_by_b,
-            a_by_b_gw,
-            b_by_a,
-            b_by_a_gw,
+            a_by_b_means,
+            a_by_b_stds,
+            a_by_b_gw_mean,
+            a_by_b_gw_std,
+            b_by_a_means,
+            b_by_a_stds,
+            b_by_a_gw_mean,
+            b_by_a_gw_std,
         }
     }
 
@@ -326,10 +367,14 @@ impl<'a> IbdOverlapAnalyzer<'a> {
 
 pub struct IbdOverlapResult {
     bins: Vec<f32>,
-    a_by_b: Vec<f32>,
-    a_by_b_gw: f32,
-    b_by_a: Vec<f32>,
-    b_by_a_gw: f32,
+    a_by_b_means: Vec<f64>,
+    a_by_b_stds: Vec<f64>,
+    a_by_b_gw_mean: f64,
+    a_by_b_gw_std: f64,
+    b_by_a_means: Vec<f64>,
+    b_by_a_stds: Vec<f64>,
+    b_by_a_gw_mean: f64,
+    b_by_a_gw_std: f64,
 }
 
 impl IbdOverlapResult {
@@ -339,16 +384,23 @@ impl IbdOverlapResult {
             .map(BufWriter::new)
             .unwrap();
 
-        write!(file, "LenBinStart,RateAOverlapByB,RateBOverlapByA\n").unwrap();
-        for ((bin, ab), ba) in self
+        write!(file, "LenBinStart,RateAOverlapByBMean,RateAOverlapByBStd,RateBOverlapByAMean,RateBOverlapByAStd\n").unwrap();
+        for ((((bin, ab_mean), ab_std), ba_mean), ba_std) in self
             .bins
             .iter()
-            .zip(self.a_by_b.iter())
-            .zip(self.b_by_a.iter())
+            .zip(self.a_by_b_means.iter())
+            .zip(self.a_by_b_stds.iter())
+            .zip(self.b_by_a_means.iter())
+            .zip(self.b_by_a_stds.iter())
         {
-            write!(file, "{bin},{ab},{ba}\n").unwrap();
+            write!(file, "{bin},{ab_mean},{ab_std},{ba_mean},{ba_std}\n").unwrap();
         }
-        write!(file, "genome_wide,{},{}\n", self.a_by_b_gw, self.b_by_a_gw).unwrap();
+        write!(
+            file,
+            "genome_wide,{},{},{},{}\n",
+            self.a_by_b_gw_mean, self.a_by_b_gw_std, self.b_by_a_gw_mean, self.b_by_a_gw_std
+        )
+        .unwrap();
     }
 }
 
@@ -378,15 +430,15 @@ pub fn write_per_winddow_overlap_res(
         for ((bin, ab), ba) in ov_res
             .bins
             .iter()
-            .zip(ov_res.a_by_b.iter())
-            .zip(ov_res.b_by_a.iter())
+            .zip(ov_res.a_by_b_means.iter())
+            .zip(ov_res.b_by_a_means.iter())
         {
             write!(file, "{chr_s},{chr_pos_s},{chr_pos_e},{chrcm_s},{chrcm_e},{win_start},{win_end},{gwcm_s},{gwcm_e},{bin},{ab},{ba}\n").unwrap();
         }
         write!(
             file,
             "{chr_s},{chr_pos_s},{chr_pos_e},{chrcm_s},{chrcm_e},{win_start},{win_end},{gwcm_s},{gwcm_e},genome_wide,{},{}\n",
-            ov_res.a_by_b_gw, ov_res.b_by_a_gw
+            ov_res.a_by_b_gw_mean, ov_res.b_by_a_gw_mean
         )
         .unwrap();
     }
