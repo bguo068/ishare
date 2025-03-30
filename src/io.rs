@@ -36,21 +36,21 @@ impl IntoArrowArray for Vec<f64> {
 }
 
 pub trait FromArrowArray {
-    fn from_array_array<'a>(arr: &'a dyn Array) -> &Self;
+    fn from_array_array<'a>(arr: &'a dyn Array) -> &'a Self;
 }
 
 impl FromArrowArray for [u8] {
-    fn from_array_array<'a>(arr: &'a dyn Array) -> &Self {
+    fn from_array_array<'a>(arr: &'a dyn Array) -> &'a Self {
         arr.as_any().downcast_ref::<UInt8Array>().unwrap().values()
     }
 }
 impl FromArrowArray for [u32] {
-    fn from_array_array<'a>(arr: &'a dyn Array) -> &Self {
+    fn from_array_array<'a>(arr: &'a dyn Array) -> &'a Self {
         arr.as_any().downcast_ref::<UInt32Array>().unwrap().values()
     }
 }
 impl FromArrowArray for [f32] {
-    fn from_array_array<'a>(arr: &'a dyn Array) -> &Self {
+    fn from_array_array<'a>(arr: &'a dyn Array) -> &'a Self {
         let x = arr
             .as_any()
             .downcast_ref::<Float32Array>()
@@ -60,7 +60,7 @@ impl FromArrowArray for [f32] {
     }
 }
 impl FromArrowArray for [f64] {
-    fn from_array_array<'a>(arr: &'a dyn Array) -> &Self {
+    fn from_array_array<'a>(arr: &'a dyn Array) -> &'a Self {
         let x = arr
             .as_any()
             .downcast_ref::<Float64Array>()
