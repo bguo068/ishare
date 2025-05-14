@@ -13,13 +13,13 @@ where
     T: PartialEq + PartialOrd + Copy + 'a,
 {
     pub fn new(bin_iter: impl Iterator<Item = &'a T>) -> Self {
-        let mut bins: Vec<T> = bin_iter.map(|x| *x).collect();
+        let mut bins: Vec<T> = bin_iter.copied().collect();
         bins.sort_by(|a, b| a.partial_cmp(b).unwrap());
         assert!(
             bins.iter().zip(bins.iter().skip(1)).all(|(a, b)| *a < *b),
             "boundaries should be sorted and unique"
         );
-        assert!(bins.len() >= 1, "min length of boundaries is 1");
+        assert!(!bins.is_empty(), "min length of boundaries is 1");
         let n = bins.len();
         Self {
             bins,
@@ -52,7 +52,7 @@ where
 #[test]
 fn test_histogram() {
     let bins = [1, 2, 3];
-    let val = vec![0, 1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4];
+    let val = [0, 1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4];
     let mut hist = Histogram::new(bins.iter());
     hist.analyze(val.iter());
 

@@ -185,7 +185,7 @@ where
     Vec<T>: IntoArrowArray,
     [T]: FromArrowArray,
 {
-    fn into_parquet(&mut self, p: impl AsRef<Path>) {
+    fn into_parquet(mut self, p: impl AsRef<Path>) {
         use std::mem::take;
         // build array from genotype matrix
         let mat = take(&mut self.data).into_arrow_array();

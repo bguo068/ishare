@@ -34,7 +34,7 @@ fn test_genome() {
     let _: GenomeFile = toml::from_str(&s).unwrap();
 }
 
-#[derive(Deserialize, Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct GenomeInfo {
     pub name: String,
     pub chromsize: Vec<u32>,
@@ -46,14 +46,7 @@ pub struct GenomeInfo {
 
 impl GenomeInfo {
     pub fn new() -> Self {
-        Self {
-            name: String::new(),
-            chromsize: vec![],
-            chromnames: Vec::new(),
-            idx: HashMap::new(),
-            gwstarts: vec![],
-            gmaps: vec![],
-        }
+        Self::default()
     }
 
     /// build genomeInfo from exisiting components
@@ -119,11 +112,11 @@ impl GenomeInfo {
         ginfo
     }
     pub fn to_gw_pos(&self, chrid: usize, pos: u32) -> u32 {
-        self.gwstarts[chrid] as u32 + pos
+        self.gwstarts[chrid] + pos
     }
     pub fn to_chr_pos(&self, gw_pos: u32) -> (usize, &str, u32) {
         let chrid = self.gwstarts.partition_point(|x| *x <= (gw_pos)) - 1;
-        let pos = gw_pos - self.gwstarts[chrid] as u32;
+        let pos = gw_pos - self.gwstarts[chrid];
         let chrname = &self.chromnames[chrid];
         (chrid, chrname, pos)
     }
@@ -198,11 +191,11 @@ impl GenomeInfo {
                     let chrlen = *chrlen;
                     let mut s = 0u32;
                     while s < chrlen {
-                        let mut e = s + parallel_chunksize_bp as u32;
+                        let mut e = s + parallel_chunksize_bp;
                         if e > chrlen {
                             e = chrlen;
                         }
-                        regions.push(Some((chrid as u32, s as u64, Some(e as u64))));
+                        regions.push(Some((chrid, s as u64, Some(e as u64))));
                         s = e + 1;
                     }
                 }
@@ -236,7 +229,7 @@ impl Genome {
             ),
             BuiltinGenome::Sim14chr100cmConst15k => Self::new_from_constant_recombination_rate(
                 "sim14chr100cm_const15k",
-                &[15000_00u32; 14],
+                &[1_500_000_u32; 14],
                 &((1..=14).map(|i| i.to_string()).collect_vec()),
                 0.01 / 15000.0,
             ),
@@ -275,7 +268,7 @@ impl Genome {
             gw_starts.clone(),
         );
 
-        let gmap_vec = chromsizes
+        let gmap_vec: Vec<_> = chromsizes
             .iter()
             .map(|chrlen| {
                 vec![
@@ -284,7 +277,7 @@ impl Genome {
                 ]
             })
             .collect();
-        let gmap = GeneticMap::from_gmap_vec(&gmap_vec, &chromsizes.to_vec());
+        let gmap = GeneticMap::from_gmap_vec(&gmap_vec, chromsizes);
 
         Self { ginfo, gmap }
     }

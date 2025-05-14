@@ -12,7 +12,7 @@ use std::{
 pub struct GeneticMap(Vec<(u32, f32)>);
 
 impl GeneticMap {
-    pub fn from_iter(it: impl Iterator<Item = (u32, f32)>) -> Self {
+    pub fn from_bp_cm_pair_iter(it: impl Iterator<Item = (u32, f32)>) -> Self {
         let v = it.collect();
         Self(v)
     }
@@ -49,7 +49,7 @@ impl GeneticMap {
 
     /// This method can be used to merge gmaps of all chromosomal gmap into
     /// one for the whole genome
-    pub fn from_gmap_vec(gmap_vec: &Vec<Vec<(u32, f32)>>, chromsizes: &Vec<u32>) -> Self {
+    pub fn from_gmap_vec(gmap_vec: &[Vec<(u32, f32)>], chromsizes: &[u32]) -> Self {
         let mut gw_chr_start_bp = 0u32;
         let mut gw_chr_start_cm = 0.0f32;
         let mut v = Vec::new(); // out for a genome
@@ -115,10 +115,7 @@ impl GeneticMap {
             .has_headers(false)
             .delimiter(b' ')
             .from_path(&p)
-            .expect(&format!(
-                "can not open file {}",
-                p.as_ref().to_str().unwrap()
-            ));
+            .unwrap_or_else(|_| panic!("can not open file {}", p.as_ref().to_str().unwrap()));
 
         while reader.read_record(&mut record).unwrap() {
             // println!("{:?}", record);
@@ -175,7 +172,6 @@ impl GeneticMap {
             cm = y1;
         } else if cm > y2 {
             cm = y2;
-        } else {
         }
         cm
     }
@@ -214,7 +210,7 @@ impl GeneticMap {
         let parent = prefix.as_ref().parent().unwrap();
         if !parent.exists() {
             std::fs::create_dir_all(parent)
-                .expect(&format!("can't creat folder {}", parent.to_string_lossy()));
+                .unwrap_or_else(|_| panic!("can't creat folder {}", parent.to_string_lossy()));
         }
         let filename = prefix.as_ref().file_name().unwrap().to_str().unwrap();
         for (i, chrname) in ginfo.chromnames.iter().enumerate() {
@@ -236,7 +232,7 @@ impl GeneticMap {
                 let pos = *pos - pos_offset + 1; // 1-based position
                 let cm = *cm - cm_offset;
 
-                write!(f, "{} . {} {}\n", chrname, cm, pos).unwrap();
+                writeln!(f, "{} . {} {}", chrname, cm, pos).unwrap();
             }
         }
     }

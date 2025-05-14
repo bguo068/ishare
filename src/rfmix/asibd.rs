@@ -87,9 +87,9 @@ impl<'a> ASIBDSet<'a> {
             let (i, m, j, n) = ibd.haplotype_pair();
             let (_chrid, chrname, s) = self.ginfo.to_chr_pos(ibd.s);
             let e = s + (ibd.e - ibd.s);
-            write!(
+            writeln!(
                 w,
-                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
                 self.inds.v()[i as usize],
                 m + 1,
                 self.inds.v()[j as usize],

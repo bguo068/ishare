@@ -49,12 +49,9 @@ pub fn main_grm(args: &Commands) {
                         (None, Some(_)) => (2.0, 0.0),
                         (None, None) => continue,
                     };
-                    match freq_map.get(&_pos) {
-                        Some(p) => {
-                            sum -= (2.0 - 2.0 * p) * (2.0 - 2.0 * p) / 2.0 / p / (1.0 - p);
-                            sum += (a - 2.0 * p) * (b - 2.0 * p) / 2.0 / p / (1.0 - p);
-                        }
-                        None => {}
+                    if let Some(p) = freq_map.get(&_pos) {
+                        sum -= (2.0 - 2.0 * p) * (2.0 - 2.0 * p) / 2.0 / p / (1.0 - p);
+                        sum += (a - 2.0 * p) * (b - 2.0 * p) / 2.0 / p / (1.0 - p);
                     }
                 }
 
@@ -91,22 +88,19 @@ pub fn main_grm(args: &Commands) {
         }
 
         // write matrix to files
-        match output.as_ref() {
-            Some(output) => {
-                let dir = output.parent().unwrap().to_str().unwrap();
-                let mut filename = output.file_name().unwrap().to_str().unwrap().to_owned();
-                if !filename.ends_with(".grm") {
-                    filename.push_str(".grm");
-                }
-                let mut p = PathBuf::from(dir);
-                p.push(filename);
-
-                // let resmat0 = resmat.clone();
-                println!("WARN: output option is specified, results are not printed on the screen, check file {:?}", p);
-                // println!("\n writing...");
-                resmat.into_parquet(&p)
+        if let Some(output) = output.as_ref() {
+            let dir = output.parent().unwrap().to_str().unwrap();
+            let mut filename = output.file_name().unwrap().to_str().unwrap().to_owned();
+            if !filename.ends_with(".grm") {
+                filename.push_str(".grm");
             }
-            None => {}
+            let mut p = PathBuf::from(dir);
+            p.push(filename);
+
+            // let resmat0 = resmat.clone();
+            println!("WARN: output option is specified, results are not printed on the screen, check file {:?}", p);
+            // println!("\n writing...");
+            resmat.into_parquet(&p)
         }
     }
 }

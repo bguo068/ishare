@@ -162,7 +162,7 @@ fn position_scan(
 
     chunks.par_iter().for_each(|&(start, end)| {
         println!("=> {start} - {end}");
-        position_scan_chunk(start, end, &records, &ginfo, &tree, rwlock_file.clone())
+        position_scan_chunk(start, end, &records, ginfo, &tree, rwlock_file.clone())
     });
 }
 
@@ -213,9 +213,9 @@ fn position_scan_chunk(
     }
     let mut file = rwlock_file.write().unwrap();
     for r in res {
-        write!(
+        writeln!(
             file,
-            "{}\t{}\t{}\t{}\t{}\t{}\n",
+            "{}\t{}\t{}\t{}\t{}\t{}",
             r.chrid, r.chrpos, r.ac, r.within, r.between, r.out,
         )
         .unwrap();
@@ -279,7 +279,7 @@ fn pairwise_compare(
                 *tri_idx1,
                 *tri_idx2,
                 rwlock_file.clone(),
-                &gmap,
+                gmap,
                 &ac_map,
             )
         })
@@ -295,9 +295,9 @@ fn pairwise_compare(
 
     let out = format!("{}_rvibd.pair", out_prefix.as_ref().to_str().unwrap());
     let mut file = File::create(&out).map(BufWriter::new).unwrap();
-    write!(
+    writeln!(
         file,
-        "{}\t{}\t{}\t{}\t{}\t{}\n",
+        "{}\t{}\t{}\t{}\t{}\t{}",
         acc_counters[0],
         acc_counters[1],
         acc_counters[2],
@@ -351,7 +351,7 @@ fn pairwise_compare_chunk(
 
     let mut counter = [0usize; 6];
 
-    let pair_iter = (tri_idx1..tri_idx2).into_iter().map(|idx| idx_to_i_j(idx));
+    let pair_iter = (tri_idx1..tri_idx2).map(idx_to_i_j);
 
     // find ibd slice
     let ibdslice = {
@@ -475,7 +475,7 @@ struct MetricRecord {
 }
 
 fn cmp_rv_and_ibd_similarity_chunks(
-    ibd: &Vec<IbdSeg>,
+    ibd: &[IbdSeg],
     rvgt: &GenotypeRecords,
     pair_chunk: &[(u32, u32)],
     gmap: &GeneticMap,
@@ -545,7 +545,7 @@ fn cmp_rv_and_ibd_similarity_chunks(
     // write to file
     let mut file = file.write().unwrap();
     for r in v {
-        write!(file, "{}\t{}\t{}\n", r.ibd_prop, r.cosine, r.jaccard).unwrap();
+        writeln!(file, "{}\t{}\t{}", r.ibd_prop, r.cosine, r.jaccard).unwrap();
     }
 }
 fn cmp_rv_and_ibd_similarity(
@@ -589,14 +589,8 @@ fn cmp_rv_and_ibd_similarity(
     // iterators
     // let npairs = nhap as usize * (nhap - 1) as usize;
     let pairs = (factor..nhap)
-        .into_iter()
         .step_by(factor as usize)
-        .flat_map(|i| {
-            (0..i)
-                .into_iter()
-                .step_by(factor as usize)
-                .map(move |j| (i, j))
-        })
+        .flat_map(|i| (0..i).step_by(factor as usize).map(move |j| (i, j)))
         .filter(|(i, j)| (i % factor == 0) && (j % factor == 0) && (i > j))
         .collect_vec();
 
@@ -606,8 +600,8 @@ fn cmp_rv_and_ibd_similarity(
         .into_par_iter()
         .for_each(|pair_chunks| {
             cmp_rv_and_ibd_similarity_chunks(
-                &ibd,
-                &rvgt,
+                ibd,
+                rvgt,
                 pair_chunks,
                 gmap,
                 genome_span,

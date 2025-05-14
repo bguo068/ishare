@@ -25,11 +25,11 @@ pub fn main_unrelated(args: &Commands) {
             .format_module_path(false)
             .init();
         info!("read genome toml file");
-        let ginfo = GenomeInfo::from_toml_file(&genome_info);
+        let ginfo = GenomeInfo::from_toml_file(genome_info);
         info!("read genetic map files");
         let gmap = gmap::GeneticMap::from_genome_info(&ginfo);
         info!("read samples list file");
-        let (inds, _inds_opt) = Individuals::from_txt_file(&sample_lst);
+        let (inds, _inds_opt) = Individuals::from_txt_file(sample_lst);
         // read ibd
         let ibd = read_ibd(&ginfo, &gmap, &inds, ibd_dir, fmt);
         info!("total IBD segment counts: {}", ibd.as_slice().len());
@@ -52,7 +52,7 @@ fn read_ibd<'a>(
     ibd_dir: &PathBuf,
     fmt: &String,
 ) -> IbdSet<'a> {
-    let mut ibd = IbdSet::new(&gmap, &ginfo, &inds);
+    let mut ibd = IbdSet::new(gmap, ginfo, inds);
 
     info!("read ibd list file");
     if fmt.as_str() == "hapibd" {
@@ -82,7 +82,7 @@ fn get_related_pairs(ibd: &IbdSet, threshold: f64) -> Vec<(u32, u32)> {
 
     let mut v = vec![];
     for blk in IbdSetBlockIter::new(ibd, true) {
-        let totibd: f32 = blk.iter().map(|seg| seg.get_seg_len_cm(&gmap)).sum();
+        let totibd: f32 = blk.iter().map(|seg| seg.get_seg_len_cm(gmap)).sum();
         if totibd <= min_totibd_related {
             continue;
         }
@@ -97,7 +97,7 @@ fn get_samples_to_remove(mut related_pairs: Vec<(u32, u32)>) -> HashSet<u32> {
     let mut hashset = HashSet::new();
     let mut degree = HashMap::<u32, u32>::with_capacity(related_pairs.len() * 2);
 
-    while related_pairs.len() > 0 {
+    while !related_pairs.is_empty() {
         calc_degrees(&related_pairs, &mut degree);
         let sample_with_max_degree = get_sample_with_largest_degree(&degree);
         remove_pairs_with_sample(&mut related_pairs, sample_with_max_degree);
@@ -107,7 +107,7 @@ fn get_samples_to_remove(mut related_pairs: Vec<(u32, u32)>) -> HashSet<u32> {
     hashset
 }
 
-fn calc_degrees(related_paris: &Vec<(u32, u32)>, degree: &mut HashMap<u32, u32>) {
+fn calc_degrees(related_paris: &[(u32, u32)], degree: &mut HashMap<u32, u32>) {
     // clear degree
     degree.clear();
     for (i, j) in related_paris.iter() {
@@ -149,7 +149,7 @@ fn write_sample_to_keep(out: &PathBuf, inds: &Individuals, samples_to_rm: HashSe
         .unwrap();
     for (i, name) in inds.v().iter().enumerate() {
         if !samples_to_rm.contains(&(i as u32)) {
-            write!(file, "{}\n", name).expect("faile to write sample name to file");
+            writeln!(file, "{}", name).expect("faile to write sample name to file");
         }
     }
 }

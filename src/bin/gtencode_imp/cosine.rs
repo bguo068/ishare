@@ -92,22 +92,19 @@ pub fn main_cosine(args: &Commands) {
         }
 
         // write matrix to files
-        match output.as_ref() {
-            Some(output) => {
-                let dir = output.parent().unwrap().to_str().unwrap();
-                let mut filename = output.file_name().unwrap().to_str().unwrap().to_owned();
-                if !filename.ends_with(".cos") {
-                    filename.push_str(".cos");
-                }
-                let mut p = PathBuf::from(dir);
-                p.push(filename);
-
-                // let resmat0 = resmat.clone();
-                println!("WARN: output option is specified, results are not printed on the screen, check file {:?}", p);
-                // println!("\n writing...");
-                resmat.into_parquet(&p)
+        if let Some(output) = output.as_ref() {
+            let dir = output.parent().unwrap().to_str().unwrap();
+            let mut filename = output.file_name().unwrap().to_str().unwrap().to_owned();
+            if !filename.ends_with(".cos") {
+                filename.push_str(".cos");
             }
-            None => {}
+            let mut p = PathBuf::from(dir);
+            p.push(filename);
+
+            // let resmat0 = resmat.clone();
+            println!("WARN: output option is specified, results are not printed on the screen, check file {:?}", p);
+            // println!("\n writing...");
+            resmat.into_parquet(&p)
         }
     }
 }

@@ -60,14 +60,14 @@ impl GenotypeMatrix {
 
     pub fn has_too_many_discod_sites(
         &self,
-        row1: usize,
-        row2: usize,
-        row3: usize,
-        row4: usize,
+        pair1: (usize, usize),
+        pair2: (usize, usize),
         col1: usize,
         col2: usize,
         max_ndiscord: u32,
     ) -> bool {
+        let (row1, row2) = pair1;
+        let (row3, row4) = pair2;
         let s1 = self.get_slice(row1, col1, col2);
         let s2 = self.get_slice(row2, col1, col2);
         let s3 = self.get_slice(row3, col1, col2);
@@ -84,7 +84,7 @@ impl GenotypeMatrix {
             }
         }
 
-        return false;
+        false
     }
 
     pub fn transpose(&self) -> Self {
@@ -132,15 +132,11 @@ impl GenotypeMatrix {
             false
         } else {
             match allele {
-                b"REF" => (s..e)
-                    .map(|pos_idx| self.get_at(pos_idx, gid as usize) == false)
-                    .all(|x| x),
-                _ => (s..e)
-                    .map(|pos_idx| {
-                        (sites.get_alleles_by_idx(pos_idx) == allele)
-                            && (self.get_at(pos_idx, gid as usize) == true)
-                    })
-                    .any(|x| x),
+                b"REF" => (s..e).all(|pos_idx| !self.get_at(pos_idx, gid as usize)),
+                _ => (s..e).any(|pos_idx| {
+                    (sites.get_alleles_by_idx(pos_idx) == allele)
+                        && (self.get_at(pos_idx, gid as usize))
+                }),
             }
         }
     }

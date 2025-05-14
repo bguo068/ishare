@@ -179,7 +179,7 @@ fn output(out: &Option<String>, res_vec: &[(u32, u32, u32)], inds: &Individuals)
     match out.as_ref() {
         Some(output) => {
             println!("WARN: output option is specified, results are not printed on the screen");
-            let out_path = from_prefix(&output, "pq").unwrap();
+            let out_path = from_prefix(output, "pq").unwrap();
             let sample1 = UInt32Array::from(res_vec.iter().map(|item| item.0).collect_vec());
             let sample2 = UInt32Array::from(res_vec.iter().map(|item| item.1).collect_vec());
             let discord = UInt32Array::from(res_vec.iter().map(|item| item.2).collect_vec());
@@ -203,8 +203,8 @@ fn output(out: &Option<String>, res_vec: &[(u32, u32, u32)], inds: &Individuals)
         }
         None => {
             for (s1, s2, discordance) in res_vec {
-                print!(
-                    "{}\t{}\t{}\n",
+                println!(
+                    "{}\t{}\t{}",
                     inds.v()[*s1 as usize].as_str(),
                     inds.v()[*s2 as usize].as_str(),
                     *discordance

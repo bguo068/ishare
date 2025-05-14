@@ -12,6 +12,7 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use rust_htslib::bgzf;
 use rust_htslib::tpool::ThreadPool;
+use std::cmp::Ordering;
 use std::path::Path;
 use IbdSetPloidyStatus::*;
 use IbdSetSortStatus::*;
@@ -159,16 +160,14 @@ impl<'a> IbdSet<'a> {
     /// read all `*.ibd.gz` file (in hap-IBD format) into the IBD set
     /// by globing the folder and calling [IbdSet::read_hapibd_file]
     pub fn read_hapibd_dir(&mut self, p: impl AsRef<Path>) {
-        for entry in p.as_ref().read_dir().unwrap() {
-            if let Ok(entry) = entry {
-                let filename = entry.file_name();
-                let filename = filename.as_os_str().to_str().unwrap();
-                if !filename.ends_with("ibd.gz") {
-                    continue;
-                }
-                let p = entry.path();
-                self.read_hapibd_file(&p, None);
+        for entry in p.as_ref().read_dir().unwrap().flatten() {
+            let filename = entry.file_name();
+            let filename = filename.as_os_str().to_str().unwrap();
+            if !filename.ends_with("ibd.gz") {
+                continue;
             }
+            let p = entry.path();
+            self.read_hapibd_file(&p, None);
         }
     }
 
@@ -348,33 +347,29 @@ impl<'a> IbdSet<'a> {
     /// read all `{chrname}.ibd` file (in hap-IBD format) into the IBD set
     /// by globing the folder and calling [IbdSet::read_hapibd_file]
     pub fn read_tskibd_dir(&mut self, p: impl AsRef<Path>) {
-        for entry in p.as_ref().read_dir().unwrap() {
-            if let Ok(entry) = entry {
-                let filename = entry.file_name();
-                let filename = filename.as_os_str().to_str().unwrap();
-                if !filename.ends_with("ibd") {
-                    continue;
-                }
-                let p = entry.path();
-                let chrname = p.file_stem().unwrap().to_str().unwrap();
-                self.read_tskibd_file(&p, chrname);
+        for entry in p.as_ref().read_dir().unwrap().flatten() {
+            let filename = entry.file_name();
+            let filename = filename.as_os_str().to_str().unwrap();
+            if !filename.ends_with("ibd") {
+                continue;
             }
+            let p = entry.path();
+            let chrname = p.file_stem().unwrap().to_str().unwrap();
+            self.read_tskibd_file(&p, chrname);
         }
     }
 
     /// read all `*.ibd.gz` file (in hap-IBD format) into the IBD set
     /// by globing the folder and calling [IbdSet::read_hapibd_file]
     pub fn read_hmmibd_dir(&mut self, p: impl AsRef<Path>) {
-        for entry in p.as_ref().read_dir().unwrap() {
-            if let Ok(entry) = entry {
-                let filename = entry.file_name();
-                let filename = filename.as_os_str().to_str().unwrap();
-                if !filename.ends_with(".hmm.txt") {
-                    continue;
-                }
-                let p = entry.path();
-                self.read_hmmibd_file(&p, Some(2.0));
+        for entry in p.as_ref().read_dir().unwrap().flatten() {
+            let filename = entry.file_name();
+            let filename = filename.as_os_str().to_str().unwrap();
+            if !filename.ends_with(".hmm.txt") {
+                continue;
             }
+            let p = entry.path();
+            self.read_hmmibd_file(&p, Some(2.0));
         }
     }
 
@@ -477,7 +472,7 @@ impl<'a> IbdSet<'a> {
     /// This is to make sure individual indices between the two sets are
     /// comparatible.
     pub fn has_same_individuals(&self, other: &Self) -> bool {
-        &self.inds.v() == &other.inds.v()
+        self.inds.v() == other.inds.v()
     }
 
     pub fn covert_to_het_diploid(
@@ -485,10 +480,7 @@ impl<'a> IbdSet<'a> {
         diploid_inds: &'a Individuals,
         ploidy_converter: &PloidyConverter,
     ) {
-        let is_haploid = match self.ploidy_status {
-            Haploid => true,
-            _ => false,
-        };
+        let is_haploid = matches!(self.ploidy_status, Haploid);
         assert!(is_haploid);
 
         self.inds = diploid_inds;
@@ -508,11 +500,7 @@ impl<'a> IbdSet<'a> {
         ploidy_converter: &PloidyConverter,
     ) {
         // check ploidy
-        let is_diploid = match self.ploidy_status {
-            Diploid => true,
-            DiploidMerged => true,
-            _ => false,
-        };
+        let is_diploid = matches!(self.ploidy_status, Diploid | DiploidMerged);
         assert!(is_diploid);
 
         self.inds = haploid_inds;
@@ -531,10 +519,7 @@ impl<'a> IbdSet<'a> {
     }
 
     pub fn merge(&mut self) {
-        let is_diploid_unmerged = match self.ploidy_status {
-            Diploid => true,
-            _ => false,
-        };
+        let is_diploid_unmerged = matches!(self.ploidy_status, Diploid);
         assert!(is_diploid_unmerged);
 
         self.sort_by_samples();
@@ -579,10 +564,7 @@ impl<'a> IbdSet<'a> {
         gt: &GenotypeMatrix,
         site: &Sites,
     ) {
-        let is_diploid_unmerged = match self.ploidy_status {
-            Diploid => true,
-            _ => false,
-        };
+        let is_diploid_unmerged = matches!(self.ploidy_status, Diploid);
 
         assert!(is_diploid_unmerged);
         let ginfo = self.ginfo;
@@ -624,10 +606,8 @@ impl<'a> IbdSet<'a> {
                         } else if (chr1 == chr2)
                             && (gmap.get_cm(s2) - gmap.get_cm(e1) < min_cm)
                             && gt.has_too_many_discod_sites(
-                                ibd1.i as usize,
-                                ibd1.j as usize,
-                                ibd2.i as usize,
-                                ibd2.j as usize,
+                                (ibd1.i as usize, ibd1.j as usize),
+                                (ibd2.i as usize, ibd2.j as usize),
                                 pos_map[&e1],
                                 pos_map[&s2],
                                 max_ndiscord,
@@ -672,7 +652,7 @@ impl<'a> IbdSet<'a> {
             mat = NamedMatrix::new_from_shape(nhap, nhap);
         }
 
-        let blockiter = IbdSetBlockIter::new(&self, ignore_hap);
+        let blockiter = IbdSetBlockIter::new(self, ignore_hap);
         let mut itvs = Intervals::new();
         for blk in blockiter {
             if ignore_hap {
@@ -758,7 +738,7 @@ impl<'a> IbdSet<'a> {
         let gmap = self.gmap;
         for seg in self.iter() {
             for element in tree.query(seg.e..seg.i) {
-                let mut seg = seg.clone();
+                let mut seg = *seg;
                 if seg.s < element.range.start {
                     seg.s = element.range.start;
                 }
@@ -799,7 +779,7 @@ impl<'a> IbdSetBlockIter<'a> {
 impl<'a> Iterator for IbdSetBlockIter<'a> {
     type Item = &'a [IbdSeg];
     fn next(&mut self) -> Option<Self::Item> {
-        if self.ibd.len() == 0 {
+        if self.ibd.is_empty() {
             None
         } else {
             let first = self.peak().unwrap();
@@ -844,15 +824,11 @@ impl<'a> Iterator for IbdSetBlockPairIter<'a> {
             true => x.individual_pair(),
         });
         match (grp1, grp2) {
-            (Some(p1), Some(p2)) => {
-                if p1 < p2 {
-                    Some((self.a.next(), None))
-                } else if p1 == p2 {
-                    Some((self.a.next(), self.b.next()))
-                } else {
-                    Some((None, self.b.next()))
-                }
-            }
+            (Some(p1), Some(p2)) => match p1.cmp(&p2) {
+                Ordering::Less => Some((self.a.next(), None)),
+                Ordering::Equal => Some((self.a.next(), self.b.next())),
+                Ordering::Greater => Some((None, self.b.next())),
+            },
             (Some(_p1), None) => Some((self.a.next(), None)),
             (None, Some(_p2)) => Some((None, self.b.next())),
             _ => None,
@@ -878,7 +854,7 @@ impl<'a> IbdSetBlockIterMut<'a> {
 impl<'a> Iterator for IbdSetBlockIterMut<'a> {
     type Item = &'a mut [IbdSeg];
     fn next(&mut self) -> Option<Self::Item> {
-        if self.ibd.len() == 0 {
+        if self.ibd.is_empty() {
             None
         } else {
             let first = self.peek().unwrap();
@@ -892,8 +868,8 @@ impl<'a> Iterator for IbdSetBlockIterMut<'a> {
             };
             let (blk, rest) = self.ibd.split_at_mut(e);
 
-            let blk = unsafe { std::mem::transmute(blk) };
-            let rest = unsafe { std::mem::transmute(rest) };
+            let blk = unsafe { std::mem::transmute::<&mut [IbdSeg], &mut [IbdSeg]>(blk) };
+            let rest = unsafe { std::mem::transmute::<&mut [IbdSeg], &mut [IbdSeg]>(rest) };
             self.ibd = rest;
             Some(blk)
         }
@@ -926,15 +902,11 @@ impl<'a> Iterator for IbdSetBlockPairIterMut<'a> {
             true => x.individual_pair(),
         });
         match (grp1, grp2) {
-            (Some(p1), Some(p2)) => {
-                if p1 < p2 {
-                    Some((self.a.next(), None))
-                } else if p1 == p2 {
-                    Some((self.a.next(), self.b.next()))
-                } else {
-                    Some((None, self.b.next()))
-                }
-            }
+            (Some(p1), Some(p2)) => match p1.cmp(&p2) {
+                Ordering::Less => Some((self.a.next(), None)),
+                Ordering::Equal => Some((self.a.next(), self.b.next())),
+                Ordering::Greater => Some((None, self.b.next())),
+            },
             (Some(_p1), None) => Some((self.a.next(), None)),
             (None, Some(_p2)) => Some((None, self.b.next())),
             _ => None,
@@ -952,8 +924,8 @@ fn test_ibdset_iter() {
         .idx
         .extend(vec![("chr1".to_owned(), 0), ("chr2".to_owned(), 1)]);
 
-    let gmap = GeneticMap::from_iter(vec![(0, 0.0), (200_000_000, 200.0)].into_iter());
-    let inds = Individuals::from_iter(vec!["a", "b", "c", "d"].into_iter());
+    let gmap = GeneticMap::from_bp_cm_pair_iter(vec![(0, 0.0), (200_000_000, 200.0)].into_iter());
+    let inds = Individuals::from_str_iter(vec!["a", "b", "c", "d"].into_iter());
 
     let mut ibd1 = IbdSet::new(&gmap, &ginfo, &inds);
     let mut ibd2 = IbdSet::new(&gmap, &ginfo, &inds);
@@ -975,22 +947,16 @@ fn test_ibdset_iter() {
     ibd2.sort_by_samples();
 
     for (a, b) in IbdSetBlockPairIter::new(&ibd1, &ibd2, true) {
-        match (a, b) {
-            (Some(a), Some(b)) => {
-                assert_eq!(a[0].individual_pair(), b[0].individual_pair());
-            }
-            _ => {}
+        if let (Some(a), Some(b)) = (a, b) {
+            assert_eq!(a[0].individual_pair(), b[0].individual_pair());
         }
     }
     ibd1.sort_by_haplotypes();
     ibd2.sort_by_haplotypes();
 
     for (a, b) in IbdSetBlockPairIter::new(&ibd1, &ibd2, false) {
-        match (a, b) {
-            (Some(a), Some(b)) => {
-                assert_eq!(a[0].haplotype_pair(), b[0].haplotype_pair());
-            }
-            _ => {}
+        if let (Some(a), Some(b)) = (a, b) {
+            assert_eq!(a[0].haplotype_pair(), b[0].haplotype_pair());
         }
     }
 
@@ -998,24 +964,18 @@ fn test_ibdset_iter() {
     ibd2.sort_by_samples();
 
     for (a, b) in IbdSetBlockPairIterMut::new(&mut ibd1, &mut ibd2, true) {
-        match (a, b) {
-            (Some(a), Some(b)) => {
-                a[0].e += 1;
-                assert_eq!(a[0].individual_pair(), b[0].individual_pair());
-            }
-            _ => {}
+        if let (Some(a), Some(b)) = (a, b) {
+            a[0].e += 1;
+            assert_eq!(a[0].individual_pair(), b[0].individual_pair());
         }
     }
     ibd1.sort_by_haplotypes();
     ibd2.sort_by_haplotypes();
 
     for (a, b) in IbdSetBlockPairIterMut::new(&mut ibd1, &mut ibd2, false) {
-        match (a, b) {
-            (Some(a), Some(b)) => {
-                a[0].e += 1;
-                assert_eq!(a[0].haplotype_pair(), b[0].haplotype_pair());
-            }
-            _ => {}
+        if let (Some(a), Some(b)) = (a, b) {
+            a[0].e += 1;
+            assert_eq!(a[0].haplotype_pair(), b[0].haplotype_pair());
         }
     }
 }

@@ -28,6 +28,10 @@ impl<'a, T: PartialOrd<T> + Copy + Default + Debug> Intervals<T> {
         self.0.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.0.len() == 0
+    }
+
     pub fn push(&mut self, r: Range<T>) {
         self.0.push(r);
     }
@@ -63,7 +67,7 @@ impl<'a, T: PartialOrd<T> + Copy + Default + Debug> Intervals<T> {
             self.sort();
         }
         let (mut e, mut rest) = self.0.split_first_mut().unwrap();
-        while rest.len() > 0 {
+        while !rest.is_empty() {
             if e.end >= rest[0].start {
                 rest[0].start = e.start;
                 e.end = e.start;
@@ -75,7 +79,7 @@ impl<'a, T: PartialOrd<T> + Copy + Default + Debug> Intervals<T> {
 
     pub fn complement(&mut self, min: T, max: T) {
         self.merge();
-        if self.0.len() == 0 {
+        if self.0.is_empty() {
             self.push(min..max);
         } else {
             let the_min = self.0.first().unwrap().start;
@@ -84,7 +88,7 @@ impl<'a, T: PartialOrd<T> + Copy + Default + Debug> Intervals<T> {
             assert!(the_max <= max);
 
             let (mut e, mut rest) = self.0.split_first_mut().unwrap();
-            while rest.len() > 0 {
+            while !rest.is_empty() {
                 e.start = e.end;
                 e.end = rest[0].start;
                 (e, rest) = rest.split_first_mut().unwrap();

@@ -9,10 +9,7 @@ use crate::genome::GenomeInfo;
 /// similar to get_afreq_from_vcf but use genome-wide coordinates
 ///
 /// return a vector of tuple with element being a tuple of gw_pos and afreq
-pub fn get_afreq_from_vcf_genome_wide(
-    vcf_files: &Vec<String>,
-    ginfo: &GenomeInfo,
-) -> Vec<(u32, f32)> {
+pub fn get_afreq_from_vcf_genome_wide(vcf_files: &[String], ginfo: &GenomeInfo) -> Vec<(u32, f32)> {
     let res_map = get_afreq_from_vcf(vcf_files);
     let mut res_vec = Vec::<(u32, f32)>::new();
     println!("number chromosome: {}", res_vec.len());
@@ -33,17 +30,17 @@ pub fn get_afreq_from_vcf_genome_wide(
 ///
 /// the returned results is a hashmap, with key being chromosome name,
 /// and the value for each chromosme is a vector of 2-tuple (chromosomal bp position and the allele frequency)
-pub fn get_afreq_from_vcf(vcf_files: &Vec<String>) -> HashMap<String, Vec<(u32, f32)>> {
+pub fn get_afreq_from_vcf(vcf_files: &[String]) -> HashMap<String, Vec<(u32, f32)>> {
     let mut res = HashMap::<String, Vec<(u32, f32)>>::new();
 
     for vcf_file in vcf_files.iter() {
         let mut last_chr_id = u32::MAX;
         let mut last_v = &mut vec![];
-        let mut reader =
-            bcf::Reader::from_path(vcf_file).expect(&format!("cannot open vcf file {}", vcf_file));
+        let mut reader = bcf::Reader::from_path(vcf_file)
+            .unwrap_or_else(|_| panic!("cannot open vcf file {}", vcf_file));
         let header = reader.header().clone();
         let mut rec = reader.empty_record();
-        while let Some(_) = reader.read(&mut rec) {
+        while reader.read(&mut rec).is_some() {
             // only consider biallelic SNPs
             if !((rec.allele_count() == 2) && unsafe { bcf_is_snp(rec.inner) != 0 }) {
                 continue;
@@ -57,9 +54,8 @@ pub fn get_afreq_from_vcf(vcf_files: &Vec<String>) -> HashMap<String, Vec<(u32, 
             {
                 for gta in *gt_sample {
                     let a: GenotypeAllele = (*gta).into();
-                    match a.index() {
-                        Some(i) => ref_alt_cnt[i as usize] += 1,
-                        None => {}
+                    if let Some(i) = a.index() {
+                        ref_alt_cnt[i as usize] += 1
                     }
                 }
             }

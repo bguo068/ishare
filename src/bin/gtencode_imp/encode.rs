@@ -65,10 +65,7 @@ pub fn main_encode(args: &Commands) {
             let chrname = &ginfo.chromnames[r.0 as usize];
             let rid2 = ireader.header().name2rid(chrname.as_bytes()).unwrap();
             ireader.fetch(rid2, r.1, r.2).unwrap();
-            match ireader.read(&mut rec) {
-                None => false,
-                Some(_) => true,
-            }
+            ireader.read(&mut rec).is_some()
         }
     });
 

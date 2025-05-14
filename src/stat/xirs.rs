@@ -11,19 +11,19 @@ use statrs::distribution::{ChiSquared, ContinuousCDF};
 ///
 /// Step:
 /// 1. Subtract the column mean from all rows to account for the amount of
-/// relatedness between each pair.
+///    relatedness between each pair.
 /// 2. Subtract the row mean from each row and divide by the square root of
-/// pi(1-pi), where pi is the population allele frequency of SNP i. This adjusts
-/// for differences in SNP allele frequencies, which can affect the ability to
-/// detect IBD
+///    pi(1-pi), where pi is the population allele frequency of SNP i. This adjusts
+///    for differences in SNP allele frequencies, which can affect the ability to
+///    detect IBD
 /// 3. Calculate row sums and divide these values by the square root of the
-/// number of pairs (raw summary statistics)
+///    number of pairs (raw summary statistics)
 /// 4. Normalize the raw summary statistics genome-wisely by binning all SNPs
-/// into 100 equally sized bins partitioned on allele frequencies and then we
-/// subtracted the mean and divided by the standard deviation of all values
-/// within each bin (z-score)
+///    into 100 equally sized bins partitioned on allele frequencies and then we
+///    subtracted the mean and divided by the standard deviation of all values
+///    within each bin (z-score)
 /// 5. Square z-score (as negative is hard to interpret) to convert to
-/// a new stats (Xir,s) that follows a chi-squared distribution with 1 degree of freedom.
+///    a new stats (Xir,s) that follows a chi-squared distribution with 1 degree of freedom.
 ///
 ///
 /// Reference:
@@ -112,8 +112,7 @@ impl<'a> XirsBuilder<'a> {
             }
         };
 
-        let col = Self::ij2x(hap_i, hap_j);
-        col
+        Self::ij2x(hap_i, hap_j)
     }
 
     // fn blk_2_x(blk: &[IbdSeg]) -> usize {
@@ -133,10 +132,8 @@ impl<'a> XirsBuilder<'a> {
             let start = p.partition_point(|x| *x < seg.s);
             let end = start + p[start..].partition_point(|x| *x < seg.e);
             let col = self.seg_2_x(seg);
-            for row in start..end {
-                sum[col] += 1.0;
-                xs[row] += 1.0;
-            }
+            xs[start..end].iter_mut().for_each(|x| *x += 1.0);
+            sum[col] += 1.0 * (end - start) as f64;
         }
 
         self.cm_j.extend(sum.into_iter().map(|x| x / m as f64));
@@ -430,8 +427,7 @@ impl<'a> XirsBuilder2<'a> {
             }
         };
 
-        let col = Self::ij2x(hap_i, hap_j);
-        col
+        Self::ij2x(hap_i, hap_j)
     }
 
     fn calculate_raw(&mut self) {
@@ -638,7 +634,7 @@ impl<'a> XirsBuilder2<'a> {
 }
 
 impl IntoParquet for XirsResult {
-    fn into_parquet(&mut self, p: impl AsRef<std::path::Path>) {
+    fn into_parquet(mut self, p: impl AsRef<std::path::Path>) {
         use arrow::record_batch::RecordBatch;
         use parquet::arrow::arrow_writer::ArrowWriter;
         use parquet::file::properties::WriterProperties;

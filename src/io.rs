@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 pub trait IntoParquet {
-    fn into_parquet(&mut self, p: impl AsRef<Path>);
+    fn into_parquet(self, p: impl AsRef<Path>);
 }
 
 pub trait FromParquet {
@@ -36,21 +36,21 @@ impl IntoArrowArray for Vec<f64> {
 }
 
 pub trait FromArrowArray {
-    fn from_array_array<'a>(arr: &'a dyn Array) -> &'a Self;
+    fn from_array_array(arr: &dyn Array) -> &Self;
 }
 
 impl FromArrowArray for [u8] {
-    fn from_array_array<'a>(arr: &'a dyn Array) -> &'a Self {
+    fn from_array_array(arr: &dyn Array) -> &Self {
         arr.as_any().downcast_ref::<UInt8Array>().unwrap().values()
     }
 }
 impl FromArrowArray for [u32] {
-    fn from_array_array<'a>(arr: &'a dyn Array) -> &'a Self {
+    fn from_array_array(arr: &dyn Array) -> &Self {
         arr.as_any().downcast_ref::<UInt32Array>().unwrap().values()
     }
 }
 impl FromArrowArray for [f32] {
-    fn from_array_array<'a>(arr: &'a dyn Array) -> &'a Self {
+    fn from_array_array(arr: &dyn Array) -> &Self {
         let x = arr
             .as_any()
             .downcast_ref::<Float32Array>()
@@ -60,7 +60,7 @@ impl FromArrowArray for [f32] {
     }
 }
 impl FromArrowArray for [f64] {
-    fn from_array_array<'a>(arr: &'a dyn Array) -> &'a Self {
+    fn from_array_array(arr: &dyn Array) -> &Self {
         let x = arr
             .as_any()
             .downcast_ref::<Float64Array>()

@@ -16,7 +16,7 @@ pub fn file_to_u32_vec(p: impl AsRef<Path>) -> Vec<u32> {
         .split("\n")
         .map(|s| s.parse::<u32>().unwrap())
         .collect::<Vec<u32>>();
-    assert!(v.len() != 0);
+    assert!(!v.is_empty());
     v.sort();
     v
 }
@@ -24,7 +24,7 @@ pub fn file_to_u32_vec(p: impl AsRef<Path>) -> Vec<u32> {
 pub fn prep_pairs(
     records: &GenotypeRecords,
     genomes: &Option<Vec<u32>>,
-    lists: &Vec<PathBuf>,
+    lists: &[PathBuf],
 ) -> (
     // pairs
     Vec<(u32, u32)>,
@@ -75,14 +75,14 @@ pub fn prep_pairs(
     let max_gid = records.records().last().unwrap().get_genome();
     let mut row_genomes = Vec::<u32>::new();
     let mut col_genomes = Vec::<u32>::new();
-    let pairs: Vec<(u32, u32)> = match (genomes.len() > 0, lst1.len() > 0) {
+    let pairs: Vec<(u32, u32)> = match (!genomes.is_empty(), !lst1.is_empty()) {
         (true, false) => {
             row_genomes.extend(genomes.iter());
             col_genomes.extend(genomes.iter());
             genomes
                 .iter()
-                .map(|x| *x)
-                .cartesian_product(genomes.iter().map(|x| *x))
+                .copied()
+                .cartesian_product(genomes.iter().copied())
                 .filter(|(a, b)| *a > *b)
                 .collect()
         }
@@ -93,14 +93,14 @@ pub fn prep_pairs(
             if lists.len() == 2 {
                 // two non-overallping list. no need to filter
                 lst1.iter()
-                    .map(|x| *x)
-                    .cartesian_product(lst2.iter().map(|x| *x))
+                    .copied()
+                    .cartesian_product(lst2.iter().copied())
                     .collect()
             } else {
                 // two identical list need to filtering
                 lst1.iter()
-                    .map(|x| *x)
-                    .cartesian_product(lst2.iter().map(|x| *x))
+                    .copied()
+                    .cartesian_product(lst2.iter().copied())
                     .filter(|(a, b)| *a > *b)
                     .collect()
             }

@@ -9,7 +9,7 @@ use ishare::{
 };
 use itertools::Itertools;
 use log::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub fn main_encode(args: &Commands) {
     if let Commands::Encode {
@@ -29,11 +29,11 @@ pub fn main_encode(args: &Commands) {
             .format_module_path(false)
             .init();
         info!("read genome toml file");
-        let ginfo = GenomeInfo::from_toml_file(&genome_info);
+        let ginfo = GenomeInfo::from_toml_file(genome_info);
         info!("read genetic map files");
         let gmap = gmap::GeneticMap::from_genome_info(&ginfo);
         info!("read samples list file");
-        let (inds, _inds_opt) = Individuals::from_txt_file(&sample_lst);
+        let (inds, _inds_opt) = Individuals::from_txt_file(sample_lst);
 
         // read ibd into memory
         let ibd = read_ibd(&ginfo, &gmap, &inds, ibd_dir, fmt);
@@ -94,7 +94,7 @@ fn read_ibd<'a>(
     ibd_dir: &PathBuf,
     fmt: &String,
 ) -> IbdSet<'a> {
-    let mut ibd = IbdSet::new(&gmap, &ginfo, &inds);
+    let mut ibd = IbdSet::new(gmap, ginfo, inds);
 
     info!("read ibd list file");
     if fmt.as_str() == "hapibd" {
@@ -206,8 +206,8 @@ fn get_coverage(ibd: &IbdSet, gmap: &GeneticMap, step_cm: f32) -> (Vec<u32>, Vec
     (sp, cov)
 }
 fn get_exetreme_cov_regions(
-    sp: &Vec<u32>,
-    cov: &Vec<usize>,
+    sp: &[u32],
+    cov: &[usize],
     ginfo: &GenomeInfo,
     outlier_upper: &f64,
 ) -> Intervals<u32> {
@@ -303,7 +303,7 @@ fn cut_ibd(ibd: &IbdSet, region_to_keep: &Intervals<u32>, min_cm: f32) -> Vec<Ib
             if e > seg.e {
                 e = seg.e;
             }
-            let mut new_seg = seg.clone();
+            let mut new_seg = *seg;
             if gmap.get_cm_len(s, e) < min_cm {
                 continue;
             }
@@ -316,48 +316,39 @@ fn cut_ibd(ibd: &IbdSet, region_to_keep: &Intervals<u32>, min_cm: f32) -> Vec<Ib
     out
 }
 
-fn write_histogram(sp: &Vec<u32>, cov: &Vec<usize>, out_prefix: &PathBuf, ginfo: &GenomeInfo) {
+fn write_histogram(sp: &[u32], cov: &[usize], out_prefix: &Path, ginfo: &GenomeInfo) {
     let s = out_prefix.to_str().unwrap();
     let out = format!("{}_hist.tsv", s);
     let mut file =
-        std::fs::File::create(out.clone()).expect(&format!("cannot create file {}", out));
+        std::fs::File::create(out.clone()).unwrap_or_else(|_| panic!("cannot create file {}", out));
     use std::io::Write;
     for (s, c) in sp.iter().zip(cov.iter()) {
         let (_, name, pos) = ginfo.to_chr_pos(*s);
-        write!(file, "{}\t{}\t{}\n", name, pos, c).unwrap();
+        writeln!(file, "{}\t{}\t{}", name, pos, c).unwrap();
     }
 }
-fn write_snp_counts(
-    bounds: &Vec<u32>,
-    counts: &Vec<usize>,
-    out_prefix: &PathBuf,
-    ginfo: &GenomeInfo,
-) {
+fn write_snp_counts(bounds: &[u32], counts: &[usize], out_prefix: &Path, ginfo: &GenomeInfo) {
     let s = out_prefix.to_str().unwrap();
     let out = format!("{}_snp_counts.tsv", s);
     let mut file =
-        std::fs::File::create(out.clone()).expect(&format!("cannot create file {}", out));
+        std::fs::File::create(out.clone()).unwrap_or_else(|_| panic!("cannot create file {}", out));
     use std::io::Write;
     for (s, c) in bounds.iter().zip(counts.iter()) {
         let (_, name, pos) = ginfo.to_chr_pos(*s);
-        write!(file, "{}\t{}\t{}\n", name, pos, c).unwrap();
+        writeln!(file, "{}\t{}\t{}", name, pos, c).unwrap();
     }
 }
-fn write_removed_region(
-    region_to_remove: &Intervals<u32>,
-    out_prefix: &PathBuf,
-    ginfo: &GenomeInfo,
-) {
+fn write_removed_region(region_to_remove: &Intervals<u32>, out_prefix: &Path, ginfo: &GenomeInfo) {
     let s = out_prefix.to_str().unwrap();
     let out = format!("{}_rm_regions.tsv", s);
     let mut file =
-        std::fs::File::create(out.clone()).expect(&format!("cannot create file {}", out));
+        std::fs::File::create(out.clone()).unwrap_or_else(|_| panic!("cannot create file {}", out));
     use std::io::Write;
     for r in region_to_remove.iter() {
         let (chrid_s, name_s, s) = ginfo.to_chr_pos(r.start);
         let (chrid_e, name_e, e) = ginfo.to_chr_pos(r.end);
         if chrid_s == chrid_e {
-            write!(file, "{}\t{}\t{}\n", name_s, s, e).unwrap();
+            writeln!(file, "{}\t{}\t{}", name_s, s, e).unwrap();
         } else {
             let mut start;
             let mut end;
@@ -379,7 +370,7 @@ fn write_removed_region(
                     end = ginfo.chromsize[chrid] - 1;
                     name = ginfo.chromnames[chrid].as_str();
                 }
-                write!(file, "{}\t{}\t{}\n", name, start, end).unwrap();
+                writeln!(file, "{}\t{}\t{}", name, start, end).unwrap();
             }
         }
     }
@@ -391,7 +382,7 @@ fn get_uniq_positions_from_ibd(ibd: &IbdSet) -> Vec<u32> {
         set.insert(seg.s);
         set.insert(seg.e);
     }
-    let mut v = set.iter().map(|x| *x).collect_vec();
+    let mut v = set.iter().copied().collect_vec();
     v.sort();
     v
 }

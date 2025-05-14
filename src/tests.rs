@@ -78,7 +78,7 @@ fn calc_xirs() {
     let afreq = mat.get_afreq();
     let gw_pos = sites.get_gw_pos_slice().to_owned();
 
-    let mut xirs = XirsBuilder::new(afreq, gw_pos, &ibd).finish();
+    let xirs = XirsBuilder::new(afreq, gw_pos, &ibd).finish();
 
     xirs.into_parquet("tmp.xirs.pq");
 }

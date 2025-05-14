@@ -19,10 +19,10 @@ pub fn main_coverage(args: &Commands) {
         out,
     } = args
     {
-        let ginfo = genome::GenomeInfo::from_toml_file(&genome_info);
+        let ginfo = genome::GenomeInfo::from_toml_file(genome_info);
         let gmap = gmap::GeneticMap::from_genome_info(&ginfo);
 
-        let (inds1, inds1_opt) = Individuals::from_txt_file(&sample_lst);
+        let (inds1, inds1_opt) = Individuals::from_txt_file(sample_lst);
         let mut ibd1 = IbdSet::new(&gmap, &ginfo, &inds1);
 
         for (((ibd, fmt), dir), inds_opt) in [&mut ibd1]
@@ -76,7 +76,7 @@ pub fn main_coverage(args: &Commands) {
         }
         let sampling_points_bp: Vec<u32> = sampling_points_cm
             .iter()
-            .map(|cm| gmap.get_bp(*cm as f32))
+            .map(|cm| gmap.get_bp(*cm))
             .collect();
 
         let rngs = sampling_points_bp.iter().map(|bp| (*bp)..(*bp + 1));
@@ -92,7 +92,7 @@ pub fn main_coverage(args: &Commands) {
             .unwrap();
 
         use std::io::Write;
-        write!(file, "Chrom,Pos,Cm,GwPos,GwCm,Coverage\n").unwrap();
+        writeln!(file, "Chrom,Pos,Cm,GwPos,GwCm,Coverage").unwrap();
         for (gw_bp, _, coverage) in counter.iter_sorted_start_end_count() {
             let gw_cm = gmap.get_cm(gw_bp);
             let (idx, chr_str, chr_pos) = ginfo.to_chr_pos(gw_bp);
@@ -100,9 +100,9 @@ pub fn main_coverage(args: &Commands) {
             let gwstart_cm = gmap.get_cm(gwstart_bp);
             let chr_cm = gw_cm - gwstart_cm;
 
-            write!(
+            writeln!(
                 file,
-                "{chr_str},{chr_pos},{chr_cm},{gw_bp},{gw_cm},{coverage}\n"
+                "{chr_str},{chr_pos},{chr_cm},{gw_bp},{gw_cm},{coverage}"
             )
             .unwrap();
         }

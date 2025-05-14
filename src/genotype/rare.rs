@@ -158,11 +158,11 @@ impl GenotypeRecords {
         }
     }
 
-    pub fn iter_genome_pair_genotypes<'a>(
-        &'a self,
+    pub fn iter_genome_pair_genotypes(
+        &self,
         genome1: u32,
         genome2: u32,
-    ) -> impl Iterator<Item = (u32, Option<u8>, Option<u8>)> + 'a {
+    ) -> impl Iterator<Item = (u32, Option<u8>, Option<u8>)> + '_ {
         assert_eq!(self.sort_status, 2);
         let s1 = self.data.partition_point(|x| x.get_genome() < genome1);
         let e1 = self.data.partition_point(|x| x.get_genome() <= genome1);

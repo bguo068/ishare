@@ -20,13 +20,10 @@ pub fn read_vcf(
     // let vcf_fn = "./testdata/test.bcf";
     let mut bcf = IndexedReader::from_path(vcf_path).unwrap();
 
-    match region {
-        Some((rid, start, end_opt)) => {
-            let chrname = &gconfig.chromnames[rid as usize];
-            let rid2 = bcf.header().name2rid(chrname.as_bytes()).unwrap();
-            bcf.fetch(rid2, start, end_opt).unwrap();
-        }
-        None => {}
+    if let Some((rid, start, end_opt)) = region {
+        let chrname = &gconfig.chromnames[rid as usize];
+        let rid2 = bcf.header().name2rid(chrname.as_bytes()).unwrap();
+        bcf.fetch(rid2, start, end_opt).unwrap();
     }
     bcf.set_threads(3).unwrap();
 
@@ -53,7 +50,7 @@ pub fn read_vcf(
     }
 
     // only sameples in targets
-    let individuals = Individuals::from_iter(
+    let individuals = Individuals::from_str_iter(
         it.zip(sample_mask.iter())
             .filter(|(_s, yes)| **yes)
             .map(|(s, _yes)| s),
@@ -69,7 +66,7 @@ pub fn read_vcf(
 
     let mut allele_counts = Vec::new();
     let mut allele_is_rare = Vec::<bool>::new();
-    for (_i, record_result) in bcf.records().enumerate() {
+    for record_result in bcf.records() {
         let record = record_result.unwrap();
 
         let alleles = record.alleles();
@@ -98,37 +95,29 @@ pub fn read_vcf(
         // genome-wide pos
         let pos = { record.pos() as u32 + gconfig.gwstarts[chrid] as u32 };
 
-        let is_new_pos;
-        if pos_last.is_none() {
-            is_new_pos = true
-        } else {
+        let mut is_new_pos = true;
+        if pos_last.is_some() {
             let rid_last = rid_last.unwrap();
             let pos_last = pos_last.unwrap();
             if rid_last == chrid {
                 assert!(pos_last <= pos);
             }
-            if (pos_last == pos) && (rid_last == chrid) {
-                is_new_pos = false;
-            } else {
-                is_new_pos = true;
-            }
+            is_new_pos = !((pos_last == pos) && (rid_last == chrid));
         }
 
         let start_allele: u8;
         if is_new_pos {
             // output information from old pos
             if pos_last.is_some() {
-                let pos_last = pos_last.unwrap();
-                output_rare_allele_records(
+                let buffers = (
                     &mut sites,
                     &mut records,
                     &mut ab,
                     &mut allele_counts,
                     &mut allele_is_rare,
-                    &gt,
-                    pos_last,
-                    ac_thres,
                 );
+                let pos_last = pos_last.unwrap();
+                output_rare_allele_records(buffers, &gt, pos_last, ac_thres);
             }
 
             ab.clear();
@@ -136,7 +125,7 @@ pub fn read_vcf(
             ab.push(alleles[0]);
             for allele in alleles.iter().skip(1) {
                 ab.push(b" ");
-                ab.push_to_data_only(*allele);
+                ab.push_to_data_only(allele);
             }
         } else {
             // Minus 1 as only non ref are added
@@ -151,7 +140,7 @@ pub fn read_vcf(
             // skip the ref allele as it has been added
             for allele in alleles.iter().skip(1) {
                 ab.push(b" ");
-                ab.push_to_data_only(*allele);
+                ab.push_to_data_only(allele);
             }
         }
         let fmt = record.format(b"GT");
@@ -220,16 +209,14 @@ pub fn read_vcf(
     // output the last record:
     if pos_last.is_some() {
         let pos_last = pos_last.unwrap();
-        output_rare_allele_records(
+        let buffers = (
             &mut sites,
             &mut records,
             &mut ab,
             &mut allele_counts,
             &mut allele_is_rare,
-            &gt,
-            pos_last,
-            ac_thres,
         );
+        output_rare_allele_records(buffers, &gt, pos_last, ac_thres);
     }
 
     let gtrec = GenotypeRecords::new(records, 1);
@@ -249,13 +236,10 @@ pub fn read_vcf_for_genotype_matrix(
     // let vcf_fn = "./testdata/test.bcf";
     let mut bcf = IndexedReader::from_path(vcf_path).unwrap();
 
-    match region {
-        Some((rid, start, end_opt)) => {
-            let chrname = &gconfig.chromnames[rid as usize];
-            let rid2 = bcf.header().name2rid(chrname.as_bytes()).unwrap();
-            bcf.fetch(rid2, start, end_opt).unwrap();
-        }
-        None => {}
+    if let Some((rid, start, end_opt)) = region {
+        let chrname = &gconfig.chromnames[rid as usize];
+        let rid2 = bcf.header().name2rid(chrname.as_bytes()).unwrap();
+        bcf.fetch(rid2, start, end_opt).unwrap();
     }
     bcf.set_threads(3).unwrap();
 
@@ -281,7 +265,7 @@ pub fn read_vcf_for_genotype_matrix(
     }
 
     // only sameples in targets
-    let individuals = Individuals::from_iter(
+    let individuals = Individuals::from_str_iter(
         it.zip(sample_mask.iter())
             .filter(|(_s, yes)| **yes)
             .map(|(s, _yes)| s),
@@ -295,7 +279,7 @@ pub fn read_vcf_for_genotype_matrix(
     let mut pos_last = None;
 
     // let mut allele_counts = Vec::new();
-    for (_i, record_result) in bcf.records().enumerate() {
+    for record_result in bcf.records() {
         let record = record_result.unwrap();
 
         let alleles = record.alleles();
@@ -331,20 +315,14 @@ pub fn read_vcf_for_genotype_matrix(
         let pos = { record.pos() as u32 + gconfig.gwstarts[chrid] as u32 };
 
         // check positions are in order
-        let _is_new_pos;
-        if pos_last.is_none() {
-            _is_new_pos = true
-        } else {
+        let mut _is_new_pos = true;
+        if pos_last.is_some() {
             let rid_last = rid_last.unwrap();
             let pos_last = pos_last.unwrap();
             if rid_last == chrid {
                 assert!(pos_last <= pos, "VCF is not sorted by position");
             }
-            if (pos_last == pos) && (rid_last == chrid) {
-                _is_new_pos = false;
-            } else {
-                _is_new_pos = true;
-            }
+            _is_new_pos = !((pos_last == pos) && (rid_last == chrid));
         }
 
         let fmt = record.format(b"GT");
@@ -399,16 +377,21 @@ pub fn read_vcf_for_genotype_matrix(
     (sites, individuals, gm)
 }
 
-fn output_rare_allele_records(
-    sites: &mut Sites,
-    records: &mut Vec<GenotypeRecord>,
-    ab: &mut AlleleBuffer,
-    allele_counts: &mut Vec<usize>,
-    allele_is_rare: &mut Vec<bool>,
-    gt: &Vec<u8>,
-    pos: u32,
-    ac_thres: usize,
-) {
+type ParamBufferInfo<'a> = (
+    &'a mut Sites,
+    &'a mut Vec<GenotypeRecord>,
+    &'a mut AlleleBuffer,
+    &'a mut Vec<usize>,
+    &'a mut Vec<bool>,
+    // sites: &mut Sites,
+    // records: &mut Vec<GenotypeRecord>,
+    // ab: &mut AlleleBuffer,
+    // allele_counts: &mut Vec<usize>,
+    // allele_is_rare: &mut Vec<bool>,
+);
+
+fn output_rare_allele_records(buffers: ParamBufferInfo, gt: &[u8], pos: u32, ac_thres: usize) {
+    let (sites, records, ab, allele_counts, allele_is_rare) = buffers;
     // Get allele counts
     // init
     allele_counts.clear();
@@ -459,9 +442,9 @@ fn output_rare_allele_records(
             continue;
         }
         // encode rare variants
-        let new_enc = ab.get_enc(*old_enc as u8);
+        let new_enc = ab.get_enc(*old_enc);
         let mut rec = GenotypeRecord::new(0);
-        rec.set(pos as u32, i as u32, new_enc as u8);
+        rec.set(pos, i as u32, new_enc);
         records.push(rec);
     }
 

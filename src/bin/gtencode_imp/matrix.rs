@@ -15,12 +15,12 @@ pub fn main_matrix(args: &Commands) {
         let sites = Sites::from_parquet_file(sit_file);
 
         let genomes = match genomes {
-            Some(v) if v.len() == 0 => Vec::new(),
+            Some(v) if v.is_empty() => Vec::new(),
             Some(v) => v.clone(),
             None => Vec::new(),
         };
         let pos_idx = match positions {
-            Some(v) if v.len() == 0 => Vec::new(),
+            Some(v) if v.is_empty() => Vec::new(),
             Some(v) => {
                 let mut u = Vec::<u32>::new();
                 for pos in v {
@@ -41,10 +41,10 @@ pub fn main_matrix(args: &Commands) {
         // let ncols: usize = gm.get_ncol();
 
         use bstr::ByteSlice;
-        match (pos_idx.len() == 0, genomes.len() == 0) {
+        match (pos_idx.is_empty(), genomes.is_empty()) {
             (true, true) => {
                 for row in 0..nrows {
-                    let (pos, bytes) = sites.get_site_by_idx(row as usize);
+                    let (pos, bytes) = sites.get_site_by_idx(row);
                     print!("pos={:10}, allele={:10.10}\t", pos, bytes.as_bstr());
                     let s = gm
                         .get_row(row)
@@ -56,12 +56,12 @@ pub fn main_matrix(args: &Commands) {
             }
             (true, false) => {
                 for row in 0..nrows {
-                    let (pos, bytes) = sites.get_site_by_idx(row as usize);
+                    let (pos, bytes) = sites.get_site_by_idx(row);
                     print!("pos={:10}, allele={:10.10}\t", pos, bytes.as_bstr());
                     let s = genomes
                         .iter()
                         .map(|x| {
-                            let hit = gm.get_at(row as usize, *x as usize);
+                            let hit = gm.get_at(row, *x as usize);
                             if hit {
                                 "1"
                             } else {

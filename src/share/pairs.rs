@@ -24,14 +24,14 @@ where
     T: Send + Copy + Hash + Eq + Ord + std::fmt::Debug,
 {
     pub fn new(a: &[T], b: &[T], sz: usize) -> Self {
-        let h1: HashSet<T> = a.iter().map(|t| *t).collect();
-        let h2: HashSet<T> = b.iter().map(|t| *t).collect();
+        let h1: HashSet<T> = a.iter().copied().collect();
+        let h2: HashSet<T> = b.iter().copied().collect();
 
-        let mut v1: Vec<_> = h1.difference(&h2).map(|x| *x).collect();
+        let mut v1: Vec<_> = h1.difference(&h2).copied().collect();
         v1.sort();
-        let mut v2: Vec<_> = h2.difference(&h1).map(|x| *x).collect();
+        let mut v2: Vec<_> = h2.difference(&h1).copied().collect();
         v2.sort();
-        let mut v12: Vec<_> = h2.intersection(&h1).map(|x| *x).collect();
+        let mut v12: Vec<_> = h2.intersection(&h1).copied().collect();
         v12.sort();
 
         let calc_nstep = |i: usize| match i % sz {
@@ -94,7 +94,7 @@ where
                     pairs.push((*a, *b));
                 }
             }
-            if pairs.len() > 0 {
+            if !pairs.is_empty() {
                 if i == j {
                     related.extend(self.v12[(i * self.sz)..].iter().take(self.sz));
                 } else {
@@ -123,35 +123,35 @@ fn test_pair_chuk_iter() {
     pc_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within);
     assert_eq!(pairs, vec![(0, 6), (0, 7), (1, 6), (1, 7)]);
     assert_eq!(related, vec![0, 1, 6, 7]);
-    assert_eq!(is_within, false);
+    assert!(!is_within);
     pc_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within);
     assert_eq!(pairs, vec![(0, 8), (1, 8)]);
     assert_eq!(related, vec![0, 1, 8]);
-    assert_eq!(is_within, false);
+    assert!(!is_within);
     pc_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within);
     assert_eq!(pairs, vec![(2, 6), (2, 7)]);
     assert_eq!(related, vec![2, 6, 7]);
-    assert_eq!(is_within, false);
+    assert!(!is_within);
     pc_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within);
     assert_eq!(pairs, vec![(2, 8)]);
     assert_eq!(related, vec![2, 8]);
-    assert_eq!(is_within, false);
+    assert!(!is_within);
     pc_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within);
     assert_eq!(pairs, vec![(3, 3), (3, 4), (4, 3), (4, 4)]);
     assert_eq!(related, vec![3, 4]);
-    assert_eq!(is_within, true);
+    assert!(is_within);
     pc_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within);
     assert_eq!(pairs, vec![(3, 5), (4, 5)]);
     assert_eq!(related, vec![3, 4, 5]);
-    assert_eq!(is_within, true);
+    assert!(is_within);
     pc_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within);
     assert_eq!(pairs, vec![(5, 3), (5, 4)]);
     assert_eq!(related, vec![3, 4, 5]);
-    assert_eq!(is_within, true);
+    assert!(is_within);
     pc_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within);
     assert_eq!(pairs, vec![(5, 5)]);
-    assert_eq!(is_within, true);
+    assert!(is_within);
     assert_eq!(related, vec![5]);
     let ret = pc_iter.next_pair_chunks(&mut pairs, &mut related, &mut is_within);
-    assert_eq!(ret, false);
+    assert!(!ret);
 }

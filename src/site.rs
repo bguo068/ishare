@@ -12,7 +12,7 @@ use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Sites {
     gw_pos: Vec<u32>,    // gw_pos
     buf: Vec<u8>,        // alele string
@@ -20,11 +20,7 @@ pub struct Sites {
 }
 impl Sites {
     pub fn new() -> Self {
-        Self {
-            gw_pos: vec![],
-            buf: vec![],
-            offsets: vec![],
-        }
+        Self::default()
     }
     pub fn merge(&mut self, other: Self) {
         self.gw_pos.extend(other.gw_pos);
@@ -134,6 +130,10 @@ impl Sites {
         self.gw_pos.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.gw_pos.len() == 0
+    }
+
     pub fn into_parquet_file(self, p: impl AsRef<Path>) {
         // for col2
         let mut builder = GenericByteBuilder::<GenericBinaryType<i32>>::new();
@@ -177,7 +177,7 @@ impl Sites {
                 .unwrap()
                 .values()
                 .iter()
-                .map(|x| *x);
+                .copied();
             let bytes_iter = record_batch
                 .column(1)
                 .as_any()
@@ -195,7 +195,7 @@ impl Sites {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct AlleleBuffer {
     data: BString,
     offsets: Vec<usize>,
@@ -233,6 +233,9 @@ impl AlleleBuffer {
     }
     pub fn len(&self) -> usize {
         self.offsets.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.offsets.len() == 0
     }
 
     pub fn clear(&mut self) {

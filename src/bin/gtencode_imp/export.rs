@@ -20,9 +20,9 @@ pub fn main_export(args: &Commands) {
         keep_sites_with_multi_common_alleles,
     } = args
     {
-        let mut records = GenotypeRecords::from_parquet_file(&from_prefix(rec, "rec").unwrap());
-        let sites = Sites::from_parquet_file(&from_prefix(rec, ".sit").unwrap());
-        let inds = Individuals::from_parquet_file(&from_prefix(rec, "ind").unwrap());
+        let mut records = GenotypeRecords::from_parquet_file(from_prefix(rec, "rec").unwrap());
+        let sites = Sites::from_parquet_file(from_prefix(rec, ".sit").unwrap());
+        let inds = Individuals::from_parquet_file(from_prefix(rec, "ind").unwrap());
         let ginfo = GenomeInfo::from_toml_file(genome_info);
 
         let mut compressed = true;
@@ -108,7 +108,7 @@ pub fn main_export(args: &Commands) {
                         is_rare.resize(allele.len(), false);
                         recs.iter().for_each(|r| {
                             let i = r.get_allele() as usize;
-                            if is_rare[i] == false {
+                            if !is_rare[i] {
                                 is_rare[i] = true;
                             }
                         });

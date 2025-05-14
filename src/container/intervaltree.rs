@@ -282,7 +282,7 @@ pub struct QueryIter<'a, K: 'a, V: 'a> {
     query: Query<K>,
 }
 
-impl<'a, K: Ord + Clone, V> Clone for QueryIter<'a, K, V> {
+impl<K: Ord + Clone, V> Clone for QueryIter<'_, K, V> {
     fn clone(&self) -> Self {
         QueryIter {
             tree: self.tree,
@@ -292,7 +292,7 @@ impl<'a, K: Ord + Clone, V> Clone for QueryIter<'a, K, V> {
     }
 }
 
-impl<'a, K: Ord + Clone + Debug, V: Debug> Debug for QueryIter<'a, K, V> {
+impl<K: Ord + Clone + Debug, V: Debug> Debug for QueryIter<'_, K, V> {
     fn fmt(&self, fmt: &mut Formatter) -> FmtResult {
         let v: Vec<_> = (*self).clone().collect();
         write!(fmt, "{:?}", v)

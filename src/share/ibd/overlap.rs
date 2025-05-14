@@ -46,10 +46,7 @@ impl<'a> IbdOverlapAnalyzer<'a> {
         let gmap = self.ibd1.get_gmap();
         let ginfo = self.ibd1.get_ginfo();
         let sample_names = self.ibd1.get_inds().v();
-        let len_ranges = match len_ranges {
-            Some(x) => x,
-            None => &[0.0f32],
-        };
+        let len_ranges = len_ranges.unwrap_or(&[0.0f32]);
         let mut counters = vec![0usize; len_ranges.len()];
 
         // define variance in terms of moments expression
@@ -171,7 +168,7 @@ impl<'a> IbdOverlapAnalyzer<'a> {
                             let interval_lwr = len_ranges[which];
                             let (_ichr, chrname, astart) = ginfo.to_chr_pos(a.start);
                             let aend = astart + (a.end - a.start);
-                            write!(detail_file, "{sample1}\t{hapid1}\t{sample2}\t{hapid2}\t{chrname}\t{astart}\t{aend}\t{interval_lwr}\t{:.4}\n", intersect/cm ).unwrap();
+                            writeln!(detail_file, "{sample1}\t{hapid1}\t{sample2}\t{hapid2}\t{chrname}\t{astart}\t{aend}\t{interval_lwr}\t{:.4}", intersect/cm ).unwrap();
                         }
                     }
                     Some((sample1, hapid1, sample2, hapid2))
@@ -234,7 +231,7 @@ impl<'a> IbdOverlapAnalyzer<'a> {
                             let interval_lwr = len_ranges[which];
                             let (_ichr, chrname, astart) = ginfo.to_chr_pos(a.start);
                             let aend = astart + (a.end - a.start);
-                            write!(detail_file, "{sample1}\t{hapid1}\t{sample2}\t{hapid2}\t{chrname}\t{astart}\t{aend}\t{interval_lwr}\t{:.4}\n", intersect/cm ).unwrap();
+                            writeln!(detail_file, "{sample1}\t{hapid1}\t{sample2}\t{hapid2}\t{chrname}\t{astart}\t{aend}\t{interval_lwr}\t{:.4}", intersect/cm ).unwrap();
                         }
                     }
                     Some((sample1, hapid1, sample2, hapid2))
@@ -250,11 +247,11 @@ impl<'a> IbdOverlapAnalyzer<'a> {
                 // ibd1
                 if let Some(detail_file) = detail_file.as_mut() {
                     use std::io::Write;
-                    write!(
-                    detail_file,
-                    "{sample1}\t{hapid1}\t{sample2}\t{hapid2}\tgenome_wide\t-1\t-1\t-1\t{:.4}\n",
-                    gw_total_intersect / gw_total_a
-                )
+                    writeln!(
+                        detail_file,
+                        "{sample1}\t{hapid1}\t{sample2}\t{hapid2}\tgenome_wide\t-1\t-1\t-1\t{:.4}",
+                        gw_total_intersect / gw_total_a
+                    )
                     .unwrap();
                 }
             }
@@ -345,10 +342,7 @@ impl<'a> IbdOverlapAnalyzer<'a> {
         let swap = true;
         let (b_by_a_means, b_by_a_stds, b_by_a_gw_mean, b_by_a_gw_std) =
             self.calc_overlap_rates(ibd1, ibd2, len_ranges, swap);
-        let len_ranges = match len_ranges {
-            Some(x) => x,
-            None => &[0.0f32],
-        };
+        let len_ranges = len_ranges.unwrap_or(&[0.0f32]);
         IbdOverlapResult {
             bins: len_ranges.into(),
             a_by_b_means,
@@ -384,7 +378,7 @@ impl IbdOverlapResult {
             .map(BufWriter::new)
             .unwrap();
 
-        write!(file, "LenBinStart,RateAOverlapByBMean,RateAOverlapByBStd,RateBOverlapByAMean,RateBOverlapByAStd\n").unwrap();
+        writeln!(file, "LenBinStart,RateAOverlapByBMean,RateAOverlapByBStd,RateBOverlapByAMean,RateBOverlapByAStd").unwrap();
         for ((((bin, ab_mean), ab_std), ba_mean), ba_std) in self
             .bins
             .iter()
@@ -393,11 +387,11 @@ impl IbdOverlapResult {
             .zip(self.b_by_a_means.iter())
             .zip(self.b_by_a_stds.iter())
         {
-            write!(file, "{bin},{ab_mean},{ab_std},{ba_mean},{ba_std}\n").unwrap();
+            writeln!(file, "{bin},{ab_mean},{ab_std},{ba_mean},{ba_std}").unwrap();
         }
-        write!(
+        writeln!(
             file,
-            "genome_wide,{},{},{},{}\n",
+            "genome_wide,{},{},{},{}",
             self.a_by_b_gw_mean, self.a_by_b_gw_std, self.b_by_a_gw_mean, self.b_by_a_gw_std
         )
         .unwrap();
@@ -417,7 +411,7 @@ pub fn write_per_winddow_overlap_res(
         .unwrap();
 
     // write csv header
-    write!(file, "Chrom,StartBp,EndBp,StartCm,EndCm,GwStartBp,GwEndBp,GwStartCm,GwEndCm,LenBinStart,AOvByB,BOvByA\n").unwrap();
+    write!(file, "Chrom,StartBp,EndBp,StartCm,EndCm,GwStartBp,GwEndBp,GwStartCm,GwEndCm,LenBinStart,AOvByB,BOvByA").unwrap();
     for (&(win_start, win_end), ov_res) in windows.iter().zip(ov_res_slice.iter()) {
         let (idx_s, chr_s, chr_pos_s) = ginfo.to_chr_pos(win_start);
         let gwcm_s = gmap.get_cm(win_start);
@@ -433,11 +427,11 @@ pub fn write_per_winddow_overlap_res(
             .zip(ov_res.a_by_b_means.iter())
             .zip(ov_res.b_by_a_means.iter())
         {
-            write!(file, "{chr_s},{chr_pos_s},{chr_pos_e},{chrcm_s},{chrcm_e},{win_start},{win_end},{gwcm_s},{gwcm_e},{bin},{ab},{ba}\n").unwrap();
+            writeln!(file, "{chr_s},{chr_pos_s},{chr_pos_e},{chrcm_s},{chrcm_e},{win_start},{win_end},{gwcm_s},{gwcm_e},{bin},{ab},{ba}").unwrap();
         }
-        write!(
+        writeln!(
             file,
-            "{chr_s},{chr_pos_s},{chr_pos_e},{chrcm_s},{chrcm_e},{win_start},{win_end},{gwcm_s},{gwcm_e},genome_wide,{},{}\n",
+            "{chr_s},{chr_pos_s},{chr_pos_e},{chrcm_s},{chrcm_e},{win_start},{win_end},{gwcm_s},{gwcm_e},genome_wide,{},{}",
             ov_res.a_by_b_gw_mean, ov_res.b_by_a_gw_mean
         )
         .unwrap();

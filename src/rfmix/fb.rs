@@ -54,7 +54,7 @@ use std::{
 /// chr22  17148171  3.20484  85  0.00000  0.00000  0.00000  1.00000  0.00000  0.00000  0.99974  0.00026
 /// chr22  17151401  3.20783  90  0.00000  0.00000  0.00000  1.00000  0.00000  0.00000  0.99974  0.00026
 /// chr22  17154637  3.21158  95  0.00000  0.00000  0.00000  1.00000  0.00000  0.00000  0.99974  0.00026
-
+///
 pub struct FbMatrix {
     pub windows: Vec<(u32, u32)>,
     pub ancestry: Vec<String>,
@@ -71,10 +71,8 @@ impl FbMatrix {
         min_prob: f32,
         buffer_size_mb: usize,
     ) -> Self {
-        let reader = File::open(p.as_ref()).expect(&format!(
-            "cannot open file {}",
-            p.as_ref().to_str().unwrap()
-        ));
+        let reader = File::open(p.as_ref())
+            .unwrap_or_else(|_| panic!("cannot open file {}", p.as_ref().to_str().unwrap()));
         let mut reader = BufReader::with_capacity(1024 * buffer_size_mb, reader);
         let mut buf = String::with_capacity(100000);
         let mut ancestry = Vec::<String>::new();
@@ -235,7 +233,7 @@ impl LASet {
 
             segs.extend(
                 hap.iter()
-                    .map(|x| *x)
+                    .copied()
                     .enumerate()
                     .dedup_by(|a, b| a.1 == b.1)
                     .map(|(w, a)| LASeg {

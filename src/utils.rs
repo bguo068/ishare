@@ -18,7 +18,7 @@ pub mod path {
         }
         // remove all extensions from path
         let mut o = prefix.as_ref().to_path_buf();
-        while let Some(_) = o.extension() {
+        while o.extension().is_some() {
             o.set_extension("");
         }
 

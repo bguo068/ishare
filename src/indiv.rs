@@ -48,7 +48,7 @@ impl Individuals {
     /// - `PloidConverter` contains two maps (`d2h` and `h2d`).
     /// - The second `Individuals` is the "to" individuals.
     /// - `PloidConvertDirection` indicates the conversion direction: either
-    /// diploid-to-haploid or haploid-to-diploid.
+    ///    diploid-to-haploid or haploid-to-diploid.
     pub fn from_txt_file(
         p: impl AsRef<Path>,
     ) -> (
@@ -156,7 +156,7 @@ impl Individuals {
         }
     }
 
-    pub fn from_iter<'a>(it: impl Iterator<Item = &'a str> + 'a) -> Self {
+    pub fn from_str_iter<'a>(it: impl Iterator<Item = &'a str> + 'a) -> Self {
         let mut v = Vec::<String>::new();
         let mut m = HashMap::<String, usize>::new();
         for e in it {
@@ -239,7 +239,7 @@ pub struct PloidyConverter {
     d2hm: HashMap<(u32, u8), u32>,
 }
 
-impl<'a> PloidyConverter {
+impl PloidyConverter {
     pub fn h2d(&self, h: u32) -> Option<(u32, u8)> {
         self.h2dm.get(&h).map(|(id, hid)| (*id, *hid))
     }

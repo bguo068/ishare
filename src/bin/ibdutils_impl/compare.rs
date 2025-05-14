@@ -28,11 +28,11 @@ pub fn main_compare(args: &Commands) {
     } = args
     {
         // files
-        let ginfo = genome::GenomeInfo::from_toml_file(&genome_info);
+        let ginfo = genome::GenomeInfo::from_toml_file(genome_info);
         let gmap = gmap::GeneticMap::from_genome_info(&ginfo);
 
-        let (inds1, inds1_opt) = Individuals::from_txt_file(&sample_lst1);
-        let (inds2, inds2_opt) = Individuals::from_txt_file(&sample_lst2);
+        let (inds1, inds1_opt) = Individuals::from_txt_file(sample_lst1);
+        let (inds2, inds2_opt) = Individuals::from_txt_file(sample_lst2);
         let mut ibd1 = IbdSet::new(&gmap, &ginfo, &inds1);
         let mut ibd2 = IbdSet::new(&gmap, &ginfo, &inds2);
 
@@ -90,19 +90,14 @@ pub fn main_compare(args: &Commands) {
             // sort
             length_bin_starts.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-            let ignore_hap = if *use_hap_overlap { false } else { true };
+            let ignore_hap = !(*use_hap_overlap);
 
             // 1. overlapping analysis
             let prefix_for_details = match *write_details {
                 true => Some(out),
                 false => None,
             };
-            let oa = overlap::IbdOverlapAnalyzer::new(
-                &mut ibd1,
-                &mut ibd2,
-                ignore_hap,
-                prefix_for_details,
-            );
+            let oa = overlap::IbdOverlapAnalyzer::new(&ibd1, &ibd2, ignore_hap, prefix_for_details);
 
             // 1.1 overlapping analysis all together
             let res = oa.analzyze(Some(length_bin_starts.as_slice()), None);
@@ -146,7 +141,7 @@ pub fn main_compare(args: &Commands) {
         }
         {
             // 2. total IBD analysis
-            let ignore_hap = if *use_hap_totibd { false } else { true };
+            let ignore_hap = !(*use_hap_totibd);
 
             // re-sort ibd
             match ignore_hap {
@@ -176,9 +171,7 @@ pub fn main_compare(args: &Commands) {
             if !ignore_hap {
                 n *= 2; // n is the number of haplotypes if not ignore_hap
             }
-            let pairs = (0..n - 1)
-                .map(|i| ((i + 1)..n).map(move |j| (i, j)))
-                .flatten();
+            let pairs = (0..n - 1).flat_map(|i| ((i + 1)..n).map(move |j| (i, j)));
             let it1 = pairs
                 .clone()
                 .map(|(i, j)| mat1.get_by_positions(i as u32, j as u32));
@@ -238,9 +231,9 @@ pub fn main_compare(args: &Commands) {
             // write csv file
             let mut f = std::fs::File::create(out.with_extension("poptotibdcsv")).unwrap();
             use std::io::Write;
-            write!(f, "BinCenter,PopTotIbdA,PopTotIbdB\n").unwrap();
+            writeln!(f, "BinCenter,PopTotIbdA,PopTotIbdB").unwrap();
             for ((bc, tot1), tot2) in bincenters.iter().zip(totals1.iter()).zip(totals2.iter()) {
-                write!(f, "{bc},{tot1},{tot2}\n").unwrap();
+                writeln!(f, "{bc},{tot1},{tot2}").unwrap();
             }
         }
     }

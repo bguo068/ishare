@@ -119,32 +119,26 @@ impl IbdSeg {
     }
 }
 
-pub fn write_ibdseg_vec(v: &Vec<IbdSeg>, out: impl AsRef<Path>) {
+pub fn write_ibdseg_vec(v: &[IbdSeg], out: impl AsRef<Path>) {
     use std::io::Write;
     let mut file = std::fs::File::create(out.as_ref())
         .map(std::io::BufWriter::new)
-        .expect(&format!(
-            "cannot create file {}",
-            out.as_ref().to_str().unwrap()
-        ));
+        .unwrap_or_else(|_| panic!("cannot create file {}", out.as_ref().to_str().unwrap()));
     let sz = v.len() as u64;
-    file.write(&sz.to_le_bytes()).unwrap();
+    file.write_all(&sz.to_le_bytes()).unwrap();
 
     for seg in v.iter() {
-        file.write(&seg.i.to_le_bytes()).unwrap();
-        file.write(&seg.j.to_le_bytes()).unwrap();
-        file.write(&seg.s.to_le_bytes()).unwrap();
-        file.write(&seg.e.to_le_bytes()).unwrap();
+        file.write_all(&seg.i.to_le_bytes()).unwrap();
+        file.write_all(&seg.j.to_le_bytes()).unwrap();
+        file.write_all(&seg.s.to_le_bytes()).unwrap();
+        file.write_all(&seg.e.to_le_bytes()).unwrap();
     }
 }
 
 pub fn read_ibdseg_vec(out: impl AsRef<Path>) -> Vec<IbdSeg> {
     let mut file = std::fs::File::open(out.as_ref())
         .map(std::io::BufReader::new)
-        .expect(&format!(
-            "cannot read file {}",
-            out.as_ref().to_str().unwrap()
-        ));
+        .unwrap_or_else(|_| panic!("cannot read file {}", out.as_ref().to_str().unwrap()));
     let mut byte8 = [0u8; 8];
     let mut byte4 = [0u8; 4];
     use std::io::Read;

@@ -27,7 +27,7 @@ pub fn main_records(args: &Commands) {
             }
             _ => {
                 let inds = Individuals::from_parquet_file(
-                    &from_prefix(&rec, "ind").expect("cannot get inds path"),
+                    from_prefix(rec, "ind").expect("cannot get inds path"),
                 );
 
                 match samples.as_ref() {
@@ -59,23 +59,20 @@ pub fn main_records(args: &Commands) {
         choosen_genome.sort();
 
         records
-            .subset_by_genomes(&choosen_genome.as_slice())
+            .subset_by_genomes(choosen_genome.as_slice())
             .unwrap();
 
-        match pos {
-            Some(p) => {
-                records.records_mut().retain(|x| x.get_position() == *p);
-            }
-            _ => {}
+        if let Some(p) = pos {
+            records.records_mut().retain(|x| x.get_position() == *p);
         };
 
         match out {
             Some(out) => {
                 println!("output records counts: {}", records.records().len());
-                records.into_parquet_file(&from_prefix(out, "rec").unwrap());
+                records.into_parquet_file(from_prefix(out, "rec").unwrap());
             }
             None => records.records().iter().for_each(|r| {
-                print!("{:?}\n", r);
+                println!("{:?}", r);
             }),
         }
     }

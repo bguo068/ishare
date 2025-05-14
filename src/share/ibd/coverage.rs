@@ -110,10 +110,10 @@ impl CovCounter {
 
 #[test]
 fn test_cov_counter() {
-    let i = vec![10u32..11, 20..21, 30..31, 40..41];
-    let mut counter = CovCounter::new(i.iter().map(|r| r.clone()));
+    let i = [10u32..11, 20..21, 30..31, 40..41];
+    let mut counter = CovCounter::new(i.iter().cloned());
 
-    let j = vec![10u32..22, 10..21, 1..34];
+    let j = [10u32..22, 10..21, 1..34];
 
     for r in j.iter() {
         counter.count_over_interval(r);

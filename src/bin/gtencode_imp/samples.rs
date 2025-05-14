@@ -21,37 +21,37 @@ pub fn main_samples(args: &Commands) {
 
         #[derive(Copy, Clone)]
         enum Selection {
-            NONE,
-            ONE(usize),
-            ALL,
+            None,
+            One(usize),
+            All,
         }
 
         let mut sel = match sample {
-            Some(s) => Selection::ONE(inds.m()[s]),
-            None => Selection::ALL,
+            Some(s) => Selection::One(inds.m()[s]),
+            None => Selection::All,
         };
         sel = match (idx_sample, sel) {
-            (Some(i), Selection::ONE(ii)) if *i == ii => sel,
-            (Some(i), Selection::ONE(ii)) if *i != ii => Selection::NONE,
-            (Some(_i), Selection::NONE) => Selection::NONE,
-            (Some(i), Selection::ALL) => Selection::ONE(*i),
+            (Some(i), Selection::One(ii)) if *i == ii => sel,
+            (Some(i), Selection::One(ii)) if *i != ii => Selection::None,
+            (Some(_i), Selection::None) => Selection::None,
+            (Some(i), Selection::All) => Selection::One(*i),
             _ => sel,
         };
         sel = match (idx_genome, sel) {
-            (Some(i), Selection::ONE(ii)) if (*i / 2) == ii => sel,
-            (Some(i), Selection::ONE(ii)) if (*i / 2) != ii => Selection::NONE,
-            (Some(_i), Selection::NONE) => Selection::NONE,
-            (Some(i), Selection::ALL) => Selection::ONE(*i / 2),
+            (Some(i), Selection::One(ii)) if (*i / 2) == ii => sel,
+            (Some(i), Selection::One(ii)) if (*i / 2) != ii => Selection::None,
+            (Some(_i), Selection::None) => Selection::None,
+            (Some(i), Selection::All) => Selection::One(*i / 2),
             _ => sel,
         };
         match sel {
-            Selection::NONE => {}
-            Selection::ALL => {
+            Selection::None => {}
+            Selection::All => {
                 for (i, s) in inds.v().iter().enumerate() {
                     print_sample(i, s);
                 }
             }
-            Selection::ONE(i) => {
+            Selection::One(i) => {
                 let s = &inds.v()[i];
                 print_sample(i, s);
             }
