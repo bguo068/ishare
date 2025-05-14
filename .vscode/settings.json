@@ -1,0 +1,7 @@
+{
+    "rust-analyzer.check.command": "clippy",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+        "source.fixAll": true
+    }
+}
