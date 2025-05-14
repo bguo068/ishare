@@ -52,19 +52,7 @@ sudo apt install -y build-essential pkg-config git clang
 
 1. Install [Visual Studio Code](https://code.visualstudio.com/)
 2. Install the Rust extension by the Rust Foundation (search [rust-analyzer](https://code.visualstudio.com/docs/languages/rust) in the Extensions tab)
-3. Open the project folder and make sure you allow VSCode to install any recommended extensions
-
-Recommended VSCode settings (.vscode/settings.json):
-
-```json
-{
-  "rust-analyzer.check.command": "clippy",
-  "editor.formatOnSave": true,
-  "editor.codeActionsOnSave": {
-    "source.fixAll": true
-  }
-}
-```
+3. Open the project folder and make sure you allow VSCode to install any recommended extensions.
 
 ## Fork and develop on your copy
 
