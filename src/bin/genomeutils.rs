@@ -2,14 +2,14 @@ use ishare::genome::*;
 
 use clap::{Parser, Subcommand};
 
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[command(version, about)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 enum Commands {
     /// Convert genome from text files to a binary file
     ToBinaryFile {
@@ -163,7 +163,11 @@ fn main() {
             to_map_prefix,
         } => {
             assert_eq!(chrom_size.len(), chrom_name.len());
-            let rate = rate.unwrap_or(0.01 / bp_per_cm.unwrap() as f32);
+
+            let rate = match rate {
+                Some(rate) => rate,
+                None => 0.01 / bp_per_cm.unwrap() as f32,
+            };
             let mut genome = Genome::new_from_constant_recombination_rate(
                 &genome_name,
                 &chrom_size,

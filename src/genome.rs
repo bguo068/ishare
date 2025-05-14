@@ -380,7 +380,7 @@ impl Genome {
     }
 }
 
-#[derive(Clone, ValueEnum)]
+#[derive(Clone, ValueEnum, Debug)]
 pub enum BuiltinGenome {
     Pf3d7Const15k,
     Sim14chr100cmConst15k,
