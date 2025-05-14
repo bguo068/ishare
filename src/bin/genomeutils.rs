@@ -114,7 +114,7 @@ fn main() {
         Commands::ToBinaryFile { from_toml, to_bin } => {
             let p = to_bin.unwrap_or({
                 std::path::Path::new(&from_toml)
-                    .with_extension(".bin")
+                    .with_extension("bin")
                     .to_string_lossy()
                     .to_string()
             });
@@ -127,7 +127,7 @@ fn main() {
         } => {
             let p = to_toml.unwrap_or({
                 std::path::Path::new(&from_bin)
-                    .with_extension(".bin")
+                    .with_extension("bin")
                     .to_string_lossy()
                     .to_string()
             });
