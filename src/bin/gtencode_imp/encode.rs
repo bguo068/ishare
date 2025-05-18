@@ -1,6 +1,6 @@
 use super::super::Commands;
 use ishare::{
-    genome::GenomeInfo,
+    genome::{Genome, GenomeInfo},
     utils::path::from_prefix,
     vcf::{read_vcf, read_vcf_for_genotype_matrix},
 };
@@ -51,7 +51,12 @@ pub fn main_encode(args: &Commands) {
     }
 
     // encoding
-    let ginfo = GenomeInfo::from_toml_file(genome_info);
+    let ginfo = if matches!( genome_info.as_path().extension(), Some(ext) if ext == ".toml") {
+        GenomeInfo::from_toml_file(genome_info)
+    } else {
+        let genome = Genome::load_from_bincode_file(genome_info.to_str().unwrap());
+        genome.ginfo().clone()
+    };
 
     // divide genome into 10Mb chunks
     let mut regions = ginfo.partition_genome(parallel_chunksize_bp.map(|x| x as u32));
