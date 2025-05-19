@@ -76,9 +76,9 @@ impl GenotypeMatrix {
         let mut ndicosrd = 0u32;
         for (a, b, c, d) in itertools::multizip((s1, s2, s3, s4)) {
             // if (a != b) && (a != c) && (a != d) && (b != c) && (b != d) && (c != d) {
-            if (a == b) && (b == d) && (a != c) {
+            if (a == b) && (c == d) && (a != c) {
                 ndicosrd += 1;
-                if ndicosrd >= max_ndiscord {
+                if ndicosrd > max_ndiscord {
                     return true;
                 }
             }
@@ -193,5 +193,30 @@ impl GenotypeMatrix {
             afreq.push(ac / n);
         }
         afreq
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_gt_matrix() {
+        // rows are genomes and cols are sites
+        let mut m = GenotypeMatrix::new(5);
+        let gt = [
+            [1, 0, 1, 0, 1],
+            [1, 0, 1, 0, 1],
+            [1, 0, 0, 1, 1],
+            [1, 0, 0, 1, 1],
+        ];
+        let it = gt.into_iter().flat_map(|s| s.map(|x| x == 1).into_iter());
+        m.extend_gt_calls(it);
+
+        // two many
+        assert!(m.has_too_many_discod_sites((0, 1), (2, 3), 0, 5, 1));
+        // not too many
+        assert!(!m.has_too_many_discod_sites((0, 1), (2, 3), 0, 5, 2));
+        assert!(!m.has_too_many_discod_sites((0, 1), (2, 3), 0, 5, 3));
     }
 }
