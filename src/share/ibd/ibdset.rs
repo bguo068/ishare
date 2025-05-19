@@ -7,7 +7,7 @@ use crate::gmap::GeneticMap;
 use crate::indiv::{Individuals, PloidyConverter};
 use crate::share::mat::NamedMatrix;
 use crate::site::Sites;
-use ahash::HashMap;
+use ahash::{HashMap, HashMapExt};
 use itertools::Itertools;
 use rayon::prelude::*;
 use rust_htslib::bgzf;
@@ -37,6 +37,7 @@ pub enum IbdSetSortStatus {
 /// - GenomeInfo
 /// - Individual info
 ///
+#[derive(Clone)]
 pub struct IbdSet<'a> {
     ibd: Vec<IbdSeg>,
     gmap: &'a GeneticMap,
@@ -559,7 +560,7 @@ impl<'a> IbdSet<'a> {
 
     pub fn merge_using_browning_method(
         &mut self,
-        min_cm: f32,
+        max_cm: f32,
         max_ndiscord: u32,
         gt: &GenotypeMatrix,
         site: &Sites,
@@ -569,61 +570,60 @@ impl<'a> IbdSet<'a> {
         assert!(is_diploid_unmerged);
         let ginfo = self.ginfo;
         let gmap = self.gmap;
+        let site_pos = site.get_gw_pos_slice();
 
-        let pos_map: HashMap<u32, usize> = site
-            .get_gw_pos_slice()
-            .iter()
-            .enumerate()
-            .map(|(i, p)| (*p, i))
-            .collect();
+        let mut pos_map = HashMap::new();
+        self.ibd.as_slice().iter().for_each(|seg| {
+            pos_map
+                .entry(seg.s)
+                .or_insert(site_pos.partition_point(|pos| *pos < seg.s));
+            pos_map
+                .entry(seg.e)
+                .or_insert(site_pos.partition_point(|pos| *pos < seg.e));
+        });
 
         self.sort_by_samples();
         self.ibd
             .iter_mut()
             .group_by(|x| x.individual_pair())
             .into_iter()
-            .for_each(|(_pair, mut grp)| {
+            .for_each(|(ind_pair, mut grp)| {
                 let mut ibd1 = grp.next().unwrap();
-                for (i, x) in grp.enumerate() {
-                    if i == 0 {
-                        ibd1 = x;
-                    } else {
-                        let ibd2 = x;
-                        let (s1, e1) = (ibd1.s, ibd1.e);
-                        let (s2, e2) = (ibd2.s, ibd2.e);
+                for x in grp {
+                    let ibd2 = x;
+                    let (s1, e1) = (ibd1.s, ibd1.e);
+                    let (s2, e2) = (ibd2.s, ibd2.e);
 
-                        // assert!(s1<=s2);
-                        let (chr1, _, _) = ginfo.to_chr_pos(s1);
-                        let (chr2, _, _) = ginfo.to_chr_pos(s2);
+                    // assert!(s1<=s2);
+                    let (chr1, _, _) = ginfo.to_chr_pos(s1);
+                    let (chr2, _, _) = ginfo.to_chr_pos(s2);
 
-                        if e1 >= s2 {
-                            // overlapping
-                            if e2 > e1 {
-                                ibd1.e = e2;
-                            }
-                            ibd2.i = 0;
-                            ibd2.j = 0;
-                        } else if (chr1 == chr2)
-                            && (gmap.get_cm(s2) - gmap.get_cm(e1) < min_cm)
-                            && gt.has_too_many_discod_sites(
-                                (ibd1.i as usize, ibd1.j as usize),
-                                (ibd2.i as usize, ibd2.j as usize),
-                                pos_map[&e1],
-                                pos_map[&s2],
-                                max_ndiscord,
-                            )
-                        {
-                            // merge if overlapping or nonoverlapping and close and not too many discrod
-                            //     update ibd1 and mark ibd2 as unused record
-                            if e2 > e1 {
-                                ibd1.e = e2;
-                            }
-                            ibd2.i = 0;
-                            ibd2.j = 0;
-                        } else {
-                            // nochange if eveything else
-                            ibd1 = ibd2; // point to next record
+                    if e1 >= s2 {
+                        // overlapping
+                        if e2 > e1 {
+                            ibd1.e = e2;
                         }
+                        ibd2.i = 0;
+                        ibd2.j = 0;
+                    } else if (chr1 == chr2)
+                        && (gmap.get_cm(s2) - gmap.get_cm(e1) < max_cm)
+                        && (!gt.has_too_many_discod_sites(
+                            ind_pair,
+                            pos_map[&e1],
+                            pos_map[&s2],
+                            max_ndiscord,
+                        ))
+                    {
+                        // merge if overlapping or nonoverlapping and close and not too many discrod
+                        //     update ibd1 and mark ibd2 as unused record
+                        if e2 > e1 {
+                            ibd1.e = e2;
+                        }
+                        ibd2.i = 0;
+                        ibd2.j = 0;
+                    } else {
+                        // nochange if eveything else
+                        ibd1 = ibd2; // point to next record
                     }
                 }
             });
@@ -977,5 +977,73 @@ fn test_ibdset_iter() {
             a[0].e += 1;
             assert_eq!(a[0].haplotype_pair(), b[0].haplotype_pair());
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::genome::Genome;
+
+    use super::*;
+
+    fn get_gt_sites_ibd<'a>(
+        gt_array: &[Vec<u8>],
+        sit_pos: &[u32],
+        ibds: &[(u32, u32, u32, u32)],
+        genome: &'a Genome,
+        inds: &'a Individuals,
+    ) -> (GenotypeMatrix, Sites, IbdSet<'a>) {
+        let slice_lengths = gt_array.iter().all(|row| row.len() == sit_pos.len());
+        assert!(slice_lengths);
+        let mut gt_mat = GenotypeMatrix::new(5);
+        let gt_it = gt_array.iter().flat_map(|row| row.iter()).map(|s| *s == 1);
+        gt_mat.extend_gt_calls(gt_it);
+        let mut sites = Sites::new();
+        for pos in sit_pos {
+            sites.add_site_with_bytes(*pos, &[]);
+        }
+        let mut ibd = IbdSet::new(genome.gmap(), genome.ginfo(), inds);
+
+        for (i, j, s, e) in ibds.iter() {
+            let seg = IbdSeg {
+                i: *i,
+                j: *j,
+                s: *s,
+                e: *e,
+            };
+            ibd.add(seg);
+        }
+        (gt_mat, sites, ibd)
+    }
+
+    #[test]
+    fn test_ibd_merge_browning_method() {
+        let genome = Genome::new_from_constant_recombination_rate(
+            "genome1",
+            &[100, 100],
+            &["chr1".into(), "chr2".into()],
+            0.001,
+        );
+        let inds = Individuals::from_str_iter(["sample1", "sample2"].into_iter());
+
+        let (gt_mat, sites, mut ibd) = get_gt_sites_ibd(
+            &[
+                vec![1, 0, 1, 1, 0],
+                vec![1, 0, 1, 1, 0],
+                vec![1, 0, 0, 0, 0],
+                vec![1, 0, 0, 0, 0],
+            ],
+            &[10, 30, 50, 70, 90],
+            &[(0, 4, 20, 40), (1, 5, 71, 90)],
+            &genome,
+            &inds,
+        );
+        ibd.infer_ploidy();
+        let mut ibd1 = ibd.clone();
+        ibd1.merge_using_browning_method(100.0, 2, &gt_mat, &sites);
+        assert_eq!(ibd1.ibd.len(), 1);
+        let mut ibd2 = ibd.clone();
+        ibd2.merge_using_browning_method(100.0, 1, &gt_mat, &sites);
+        assert_eq!(ibd2.ibd.len(), 2);
     }
 }

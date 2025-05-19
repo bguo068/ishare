@@ -60,21 +60,22 @@ impl GenotypeMatrix {
 
     pub fn has_too_many_discod_sites(
         &self,
-        pair1: (usize, usize),
-        pair2: (usize, usize),
+        ind_pair: (u32, u32),
         col1: usize,
         col2: usize,
         max_ndiscord: u32,
     ) -> bool {
-        let (row1, row2) = pair1;
-        let (row3, row4) = pair2;
-        let s1 = self.get_slice(row1, col1, col2);
-        let s2 = self.get_slice(row2, col1, col2);
-        let s3 = self.get_slice(row3, col1, col2);
-        let s4 = self.get_slice(row4, col1, col2);
+        let s1 = self.get_slice(ind_pair.0 as usize * 2, col1, col2);
+        let s2 = self.get_slice(ind_pair.0 as usize * 2 + 1, col1, col2);
+        let s3 = self.get_slice(ind_pair.1 as usize * 2, col1, col2);
+        let s4 = self.get_slice(ind_pair.1 as usize * 2 + 1, col1, col2);
 
         let mut ndicosrd = 0u32;
         for (a, b, c, d) in itertools::multizip((s1, s2, s3, s4)) {
+            let a = *a;
+            let b = *b;
+            let c = *c;
+            let d = *d;
             // if (a != b) && (a != c) && (a != d) && (b != c) && (b != d) && (c != d) {
             if (a == b) && (c == d) && (a != c) {
                 ndicosrd += 1;
@@ -214,9 +215,9 @@ mod test {
         m.extend_gt_calls(it);
 
         // two many
-        assert!(m.has_too_many_discod_sites((0, 1), (2, 3), 0, 5, 1));
+        assert!(m.has_too_many_discod_sites((0, 1), 0, 5, 1));
         // not too many
-        assert!(!m.has_too_many_discod_sites((0, 1), (2, 3), 0, 5, 2));
-        assert!(!m.has_too_many_discod_sites((0, 1), (2, 3), 0, 5, 3));
+        assert!(!m.has_too_many_discod_sites((0, 1), 0, 5, 2));
+        assert!(!m.has_too_many_discod_sites((0, 1), 0, 5, 3));
     }
 }
