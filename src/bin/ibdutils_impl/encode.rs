@@ -197,7 +197,7 @@ fn get_coverage(ibd: &IbdSet, gmap: &GeneticMap, step_cm: f32) -> (Vec<u32>, Vec
     let cov = {
         let mut cov = vec![0; sp.len()];
         for seg in ibd.as_slice() {
-            let i = sp.partition_point(|x| *x < seg.s) - 1;
+            let i = sp.partition_point(|x| *x < seg.s);
             let j = sp.partition_point(|x| *x <= seg.e);
             cov[i..j].iter_mut().for_each(|x| *x += 1);
         }
