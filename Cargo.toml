@@ -15,7 +15,7 @@ serde = { version = "1.0.164", features = ["derive"] }
 smallvec = "1.10.0" # used by intervaltree
 toml = "0.7.4"
 rust-htslib = { version = "*", default-features = false }
-rayon = "1.7.0"
+rayon = "1.10.0"
 clap = { version = "4.3.3", features = ["derive", "wrap_help"] }
 csv = "1.2.2"
 statrs = "0.16.0"
