@@ -1,11 +1,14 @@
 use ahash::AHashSet;
 
 use crate::{
+    container::intervals::Intervals,
     genome::GenomeInfo,
     genotype::{common::*, rare::*},
+    gmap::GeneticMap,
     indiv::Individuals,
     site::*,
 };
+use rust_htslib::bcf::{record::GenotypeAllele, IndexedReader, Read, Reader};
 use std::path::Path;
 
 pub fn read_vcf(
@@ -15,7 +18,6 @@ pub fn read_vcf(
     max_maf: f64,
     region: Option<(u32, u64, Option<u64>)>,
 ) -> (Sites, Individuals, GenotypeRecords) {
-    use rust_htslib::bcf::{record::GenotypeAllele, IndexedReader, Read};
     // let  vcf_fn =  "/local/chib/TOPMedFull/data/org/87668/topmed-dcc/exchange/phs000964_TOPMed_WGS_JHS/Combined_Study_Data/Genotypes/freeze.10b/phased/freeze.10b.chr22.pass_only.phased.bcf";
     // let vcf_fn = "./testdata/test.bcf";
     let mut bcf = IndexedReader::from_path(vcf_path).unwrap();
@@ -450,4 +452,131 @@ fn output_rare_allele_records(buffers: ParamBufferInfo, gt: &[u8], pos: u32, ac_
 
     // add sites info
     sites.add_site(pos, ab);
+}
+
+pub fn read_pos_from_text_file(file_path: &str, ginfo: &GenomeInfo) -> Vec<u32> {
+    let mut out = vec![];
+    for line in std::fs::read_to_string(file_path)
+        .unwrap()
+        .trim()
+        .split("\n")
+    {
+        let mut fields = line.split("\t");
+        let chrname = fields.next().unwrap();
+        let chr_id = ginfo.idx[chrname];
+        let chr_pos = fields.next().unwrap().parse().unwrap();
+        let gw_pos = ginfo.to_gw_pos(chr_id, chr_pos);
+        out.push(gw_pos);
+    }
+    out
+}
+
+pub fn read_pos_from_vcf_file(vcf_path: &str, ginfo: &GenomeInfo) -> Vec<u32> {
+    let mut out = vec![];
+    let mut bcf = Reader::from_path(vcf_path).unwrap();
+    let mut last_rid = u32::MAX;
+    let mut chrid = 0usize;
+    for record_res in bcf.records() {
+        let record = record_res.unwrap();
+        let this_rid = record.rid().unwrap();
+        if this_rid != last_rid {
+            let rname_bstr = record.header().rid2name(this_rid).unwrap();
+            let rname_str = std::str::from_utf8(rname_bstr).unwrap();
+            chrid = ginfo.idx[rname_str];
+            last_rid = this_rid;
+        }
+        let gw_pos = ginfo.to_gw_pos(chrid, record.pos() as u32);
+        out.push(gw_pos);
+    }
+    out
+}
+
+pub fn find_intervals_with_low_snps_density(
+    window_size_cm: f32,
+    min_snp_per_cm: f32,
+    gw_pos: &[u32],
+    ginfo: &GenomeInfo,
+    gmap: &GeneticMap,
+) -> Intervals<u32> {
+    let mut low_snp_dens_intervals = Intervals::<u32>::new();
+    // find chromosome boundaries
+    let mut cm_boundaries = vec![];
+    for start in ginfo.gwstarts.iter() {
+        cm_boundaries.push(gmap.get_cm(*start));
+    }
+    cm_boundaries.push(gmap.get_size_cm());
+
+    // for each chromosome, add windows with size of window_size_cm centimorgans
+    let mut bp_win_boundaries = vec![];
+    let mut win_size_vec_cm = vec![];
+    for cms in cm_boundaries.windows(2) {
+        let mut s = cms[0];
+        let e_max = cms[1];
+        while s < e_max {
+            let mut e = s + window_size_cm;
+            if e > e_max {
+                e = e_max;
+            }
+            bp_win_boundaries.push(gmap.get_bp(s));
+            win_size_vec_cm.push(e - s);
+            s = e;
+        }
+    }
+    bp_win_boundaries.push(ginfo.get_total_len_bp());
+
+    // window number is 1 smaller than window boundires
+    let mut counter = vec![0; bp_win_boundaries.len() - 1];
+    for pos in gw_pos.iter() {
+        let idx = bp_win_boundaries.partition_point(|x| x <= pos) - 1;
+        counter[idx] += 1;
+    }
+    assert_eq!(counter.len(), win_size_vec_cm.len());
+    for ((c, w), win) in counter
+        .iter()
+        .zip(win_size_vec_cm.iter())
+        .zip(bp_win_boundaries.windows(2))
+    {
+        if *c as f32 / *w < min_snp_per_cm {
+            low_snp_dens_intervals.push(win[0]..win[1]);
+        }
+    }
+    low_snp_dens_intervals.merge();
+    low_snp_dens_intervals
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{container::intervals::Intervals, genome::Genome};
+
+    use super::find_intervals_with_low_snps_density;
+
+    fn prepare_data() -> (Genome, Vec<u32>, Intervals<u32>) {
+        let genome = Genome::new_from_constant_recombination_rate(
+            "test",
+            &[10_000_000, 10_000_000, 10_000_000],
+            &["chr1".into(), "chr2".into(), "chr3".into()],
+            1e-8,
+        );
+        let pos: Vec<u32> = (50..30_000_000)
+            .step_by(10_000)
+            .filter(|x| (*x < 4_000_000) || (*x > 6_000_000))
+            .collect();
+        let mut expected = Intervals::<u32>::new();
+        expected.push(4_000_000..6_000_000);
+        (genome, pos, expected)
+    }
+
+    #[test]
+    fn test_find_intervals_with_low_snps_density() {
+        let (genome, pos, expected) = prepare_data();
+        let observed =
+            find_intervals_with_low_snps_density(1.0, 10.0, &pos, genome.ginfo(), genome.gmap());
+        assert!(observed.is_equal(&expected));
+
+        let observed =
+            find_intervals_with_low_snps_density(1.0, 200.0, &pos, genome.ginfo(), genome.gmap());
+        let mut expected = Intervals::<u32>::new();
+        expected.push(000_000..30_000_000);
+        assert!(observed.is_equal(&expected));
+    }
 }
