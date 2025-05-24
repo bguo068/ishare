@@ -12,6 +12,12 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Convert genome from text files to a binary file
+    #[command(after_help=concat!(
+        "Example: \n",
+        "\tgenomeutils to-binary-file --from-toml tmp_genome.toml --to-bin tmp_genome.bin\n",
+        "\n\tNOTE: an example of the genome.toml file can be generated with the ",
+        "genomeutils generate-const-rr subcommand"
+    ))]
     ToBinaryFile {
         /// Input genome TOML with the corrected gmaps paths
         #[arg(short = 't', long)]
@@ -67,13 +73,31 @@ enum Commands {
     },
 
     /// Generate genome using a constant recombination rate
+    #[command(after_help = concat!(
+        "Example:\n",
+        "\tgenomeutils generate-const-rr \\\n",
+        "\t\t--genome-name ex_genome  \\\n",
+        "\t\t--chrom-size 100000000  \\\n",
+        "\t\t--chrom-size 200000000  \\\n",
+        "\t\t--chrom-name chr1  \\\n",
+        "\t\t--chrom-name chr2  \\\n",
+        "\t\t--bp-per-cm 100000000  \\\n",
+        "\t\t--to-toml ex_genome.toml"))]
     GenerateConstRR {
         #[arg(short = 'N', long, default_value = "const_rate_genome")]
         genome_name: String,
 
+        /// chromosome size in bp, if there are multiple chromosomes, the
+        /// argument can be used multiple time. Note the number and orders
+        /// of chromosome sizes and names should be consistent; at least one
+        /// chromosome should be specified
         #[arg(short = 'l', long, required = true)]
         chrom_size: Vec<u32>,
 
+        /// chromosome name, if there are multiple chromosomes, the
+        /// argument can be used multiple time. Note the number and orders
+        /// of chromosome sizes and names should be consistent; at least one
+        /// chromosome should be specified
         #[arg(short = 'n', long, required = true)]
         chrom_name: Vec<String>,
 
@@ -90,12 +114,7 @@ enum Commands {
         to_bin: Option<String>,
 
         /// Output genome TOML
-        #[arg(
-            short = 't',
-            long,
-            group = "generate_by_name_out_format",
-            group = "generate_by_name_to_toml"
-        )]
+        #[arg(short = 't', long, group = "generate_by_name_out_format")]
         to_toml: Option<String>,
 
         /// Prefix for the output genome map files; defaults to "gmap/map"
