@@ -1,0 +1,21 @@
+[package]
+name = "isharepy"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "isharepy"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = "0.19.0"
+arrow = { version = "41.0.0", features = ["pyarrow"] }
+ishare = { path = "../ishare-lib" }
+chrono = "=0.4.39"
+ahash = "*"
+numpy = "0.19.0"
+itertools = "0.10.5"
+rayon = "1.7.0"
+snafu = "0.8.6"
+

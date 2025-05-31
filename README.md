@@ -53,9 +53,14 @@ this crate and its associated binary executables.
 ## Compilation
 
 ```sh
+git clone  https://github.com/bguo068/ishare.git
+cd ishare-lib
 cargo build --release --bin gtencode
 cargo build --release --bin ibdutils
 cargo build --release --bin asibd
+# the compiled binaries can be found at
+ls ../target/release/
+cd ..
 ```
 
 Post-compilation, binaries are located in the target/release/ directory.
@@ -68,7 +73,7 @@ pip install maturin numpy pyarrow
 ```
 3. install `isharepy` 
 ```
-cd ishare_py
+cd ./ishare-py
 maturin develop --release
 cd ..
 ```
