@@ -16,6 +16,8 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
+use super::super::Result;
+
 trait GenomeIDPair {
     fn genome_id_pair(&self) -> (u32, u32);
 }
@@ -28,7 +30,7 @@ impl GenomeIDPair for IbdSeg {
     }
 }
 
-pub fn main_rvibd(args: &Commands) {
+pub fn main_rvibd(args: &Commands) -> Result<()> {
     if let Commands::RvIBD {
         eibd,
         rec,
@@ -48,7 +50,7 @@ pub fn main_rvibd(args: &Commands) {
             .init();
 
         info!("read genome info"); // (for ibd) to compare with that from rare variants
-        let ginfo = GenomeInfo::from_toml_file(genome_info);
+        let ginfo = GenomeInfo::from_toml_file(genome_info)?;
         let gmap = GeneticMap::from_genome_info(&ginfo);
 
         info!("read rv records");
@@ -78,6 +80,7 @@ pub fn main_rvibd(args: &Commands) {
             _ => panic!("Not implemented"),
         }
     }
+    Ok(())
 }
 
 fn check_samples_orders(samples_lst: &PathBuf, inds: &Individuals) {

@@ -9,9 +9,10 @@ use slice_group_by::*;
 use itertools::EitherOrBoth::*;
 use itertools::Itertools;
 
+use super::super::Result;
 use super::args::Commands;
 
-pub fn main_export(args: &Commands) {
+pub fn main_export(args: &Commands) -> Result<()> {
     if let Commands::Export {
         rec,
         output_fmt,
@@ -23,7 +24,7 @@ pub fn main_export(args: &Commands) {
         let mut records = GenotypeRecords::from_parquet_file(from_prefix(rec, "rec").unwrap());
         let sites = Sites::from_parquet_file(from_prefix(rec, ".sit").unwrap());
         let inds = Individuals::from_parquet_file(from_prefix(rec, "ind").unwrap());
-        let ginfo = GenomeInfo::from_toml_file(genome_info);
+        let ginfo = GenomeInfo::from_toml_file(genome_info)?;
 
         let mut compressed = true;
         let mut format = bcf::Format::Bcf;
@@ -164,4 +165,5 @@ pub fn main_export(args: &Commands) {
                 };
             });
     }
+    Ok(())
 }

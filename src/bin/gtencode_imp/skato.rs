@@ -1,7 +1,8 @@
 use super::super::Commands;
+use super::super::Result;
 use ishare::{genotype::rare::GenotypeRecords, indiv::Individuals, site::Sites};
 
-pub fn main_skato(args: &Commands) {
+pub fn main_skato(args: &Commands) -> Result<()> {
     if let Commands::Skato {
         rec,
         genomes: _,
@@ -108,4 +109,5 @@ pub fn main_skato(args: &Commands) {
             }
         }
     }
+    Ok(())
 }

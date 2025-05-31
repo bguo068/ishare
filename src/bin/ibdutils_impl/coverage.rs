@@ -1,12 +1,13 @@
 use super::super::Commands;
 
+use super::super::Result;
 use ishare::{
     genome, gmap,
     indiv::*,
     share::ibd::{coverage::CovCounter, ibdset::*},
 };
 
-pub fn main_coverage(args: &Commands) {
+pub fn main_coverage(args: &Commands) -> Result<()> {
     if let Commands::Coverage {
         genome_info,
         sample_lst,
@@ -19,7 +20,7 @@ pub fn main_coverage(args: &Commands) {
         out,
     } = args
     {
-        let ginfo = genome::GenomeInfo::from_toml_file(genome_info);
+        let ginfo = genome::GenomeInfo::from_toml_file(genome_info)?;
         let gmap = gmap::GeneticMap::from_genome_info(&ginfo);
 
         let (inds1, inds1_opt) = Individuals::from_txt_file(sample_lst);
@@ -107,4 +108,5 @@ pub fn main_coverage(args: &Commands) {
             .unwrap();
         }
     }
+    Ok(())
 }

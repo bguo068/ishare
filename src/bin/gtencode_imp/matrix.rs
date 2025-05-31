@@ -2,8 +2,9 @@ use ishare::{genotype::common::GenotypeMatrix, site::Sites};
 use itertools::Itertools;
 
 use super::super::Commands;
+use super::super::Result;
 
-pub fn main_matrix(args: &Commands) {
+pub fn main_matrix(args: &Commands) -> Result<()> {
     if let Commands::Matrix {
         mat,
         genomes,
@@ -104,4 +105,5 @@ pub fn main_matrix(args: &Commands) {
             }
         }
     }
+    Ok(())
 }

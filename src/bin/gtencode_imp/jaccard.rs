@@ -1,4 +1,5 @@
 use super::super::Commands;
+use super::super::Result;
 use super::utils::*;
 use ishare::genotype::rare::GenotypeRecords;
 use ishare::indiv::Individuals;
@@ -7,7 +8,7 @@ use ishare::share::mat::NamedMatrix;
 use rayon::prelude::*;
 use std::path::PathBuf;
 
-pub fn main_jaccard(args: &Commands) {
+pub fn main_jaccard(args: &Commands) -> Result<()> {
     if let Commands::Jaccard {
         rec,
         genomes,
@@ -109,4 +110,5 @@ pub fn main_jaccard(args: &Commands) {
             resmat.into_parquet(&p)
         }
     }
+    Ok(())
 }

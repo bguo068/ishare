@@ -11,7 +11,7 @@ fn compare_table_matrix_enc() {
     use bstr::ByteSlice;
 
     let genome_info = "testdata/dir001/genome.toml";
-    let ginfo = GenomeInfo::from_toml_file(genome_info);
+    let ginfo = GenomeInfo::from_toml_file(genome_info).unwrap();
     let vcf_path = "testdata/dir001/bcf/sel_chr1.bcf";
 
     let max_maf = 0.001f64;
@@ -48,7 +48,7 @@ fn compare_table_matrix_enc() {
 
 #[test]
 fn calc_xirs() {
-    let ginfo = GenomeInfo::from_toml_file("testdata/dir001/genome.toml");
+    let ginfo = GenomeInfo::from_toml_file("testdata/dir001/genome.toml").unwrap();
     let gmap = GeneticMap::from_genome_info(&ginfo);
 
     let vcf_fns = [

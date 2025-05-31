@@ -1,6 +1,19 @@
-use ishare::genome::*;
-
 use clap::{Parser, Subcommand};
+use ishare::{genome::*, utils::error::show_snafu_error};
+use snafu::Snafu;
+
+#[derive(Debug, Snafu)]
+enum Error {
+    #[snafu(transparent)]
+    GenomeError { source: ishare::genome::Error },
+}
+type Result<T> = std::result::Result<T, Error>;
+fn main() {
+    if let Err(e) = main_entry() {
+        show_snafu_error(e);
+        std::process::exit(-1);
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(version, about)]
@@ -127,7 +140,8 @@ enum Commands {
         to_map_prefix: String,
     },
 }
-fn main() {
+
+fn main_entry() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::ToBinaryFile { from_toml, to_bin } => {
@@ -137,7 +151,7 @@ fn main() {
                     .to_string_lossy()
                     .to_string()
             });
-            Genome::load_from_text_file(&from_toml).save_to_bincode_file(&p);
+            Genome::load_from_text_file(&from_toml)?.save_to_bincode_file(&p)?;
         }
         Commands::ToTextFiles {
             from_bin,
@@ -150,9 +164,9 @@ fn main() {
                     .to_string_lossy()
                     .to_string()
             });
-            let mut genome = Genome::load_from_bincode_file(&from_bin);
+            let mut genome = Genome::load_from_bincode_file(&from_bin)?;
             genome.set_gmap_path_prefix(&to_map_prefix);
-            genome.save_to_text_files(&p);
+            genome.save_to_text_files(&p)?;
         }
         Commands::GenerateByName {
             name,
@@ -162,10 +176,10 @@ fn main() {
         } => {
             let mut genome = Genome::new_from_name(name);
             if let Some(to_bin) = to_bin {
-                genome.save_to_bincode_file(&to_bin);
+                genome.save_to_bincode_file(&to_bin)?;
             } else if let Some(to_toml) = to_toml {
                 genome.set_gmap_path_prefix(&to_map_prefix);
-                genome.save_to_text_files(&to_toml);
+                genome.save_to_text_files(&to_toml)?;
             } else {
                 eprintln!("Error: one of --to-bin and --to-toml has to be set");
                 std::process::exit(-1);
@@ -194,14 +208,15 @@ fn main() {
                 rate,
             );
             if let Some(to_bin) = to_bin {
-                genome.save_to_bincode_file(&to_bin);
+                genome.save_to_bincode_file(&to_bin)?;
             } else if let Some(to_toml) = to_toml {
                 genome.set_gmap_path_prefix(&to_map_prefix);
-                genome.save_to_text_files(&to_toml);
+                genome.save_to_text_files(&to_toml)?;
             } else {
                 eprintln!("Error: one of --to-bin and --to-toml has to be set");
                 std::process::exit(-1);
             }
         }
     }
+    Ok(())
 }

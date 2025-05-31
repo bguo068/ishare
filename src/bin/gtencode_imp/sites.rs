@@ -1,14 +1,17 @@
 use super::super::Commands;
 use ishare::genome::GenomeInfo;
 use ishare::site::Sites;
-pub fn main_sites(args: &Commands) {
+
+use super::super::Result;
+
+pub fn main_sites(args: &Commands) -> Result<()> {
     if let Commands::Sites {
         sit,
         pos,
         genome_info,
     } = args
     {
-        let ginfo = GenomeInfo::from_toml_file(genome_info);
+        let ginfo = GenomeInfo::from_toml_file(genome_info)?;
 
         let sites = Sites::from_parquet_file(sit);
         for i in 0..sites.len() {
@@ -27,4 +30,5 @@ pub fn main_sites(args: &Commands) {
             );
         }
     }
+    Ok(())
 }

@@ -2,7 +2,9 @@ use super::super::Commands;
 
 use ishare::{genotype::rare::GenotypeRecords, indiv::Individuals, utils::path::from_prefix};
 
-pub fn main_records(args: &Commands) {
+use super::super::Result;
+
+pub fn main_records(args: &Commands) -> Result<()> {
     if let Commands::Records {
         rec,
         genome,
@@ -76,4 +78,5 @@ pub fn main_records(args: &Commands) {
             }),
         }
     }
+    Ok(())
 }

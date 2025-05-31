@@ -7,7 +7,9 @@ use ishare::share::mat::NamedMatrix;
 use rayon::prelude::*;
 use std::path::PathBuf;
 
-pub fn main_cosine(args: &Commands) {
+use super::super::Result;
+
+pub fn main_cosine(args: &Commands) -> Result<()> {
     if let Commands::Cosine {
         rec,
         genomes,
@@ -107,4 +109,5 @@ pub fn main_cosine(args: &Commands) {
             resmat.into_parquet(&p)
         }
     }
+    Ok(())
 }

@@ -10,7 +10,8 @@ use ishare::{
 use log::*;
 use std::path::PathBuf;
 
-pub fn main_unrelated(args: &Commands) {
+use super::super::Result;
+pub fn main_unrelated(args: &Commands) -> Result<()> {
     if let Commands::GetUnrelated {
         genome_info,
         sample_lst,
@@ -25,7 +26,7 @@ pub fn main_unrelated(args: &Commands) {
             .format_module_path(false)
             .init();
         info!("read genome toml file");
-        let ginfo = GenomeInfo::from_toml_file(genome_info);
+        let ginfo = GenomeInfo::from_toml_file(genome_info)?;
         info!("read genetic map files");
         let gmap = gmap::GeneticMap::from_genome_info(&ginfo);
         info!("read samples list file");
@@ -43,6 +44,7 @@ pub fn main_unrelated(args: &Commands) {
         );
         write_sample_to_keep(out, &inds, samples_to_rm);
     }
+    Ok(())
 }
 
 fn read_ibd<'a>(

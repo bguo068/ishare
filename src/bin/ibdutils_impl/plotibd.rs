@@ -8,9 +8,10 @@ use ishare::{
 };
 use serde::{Deserialize, Serialize};
 
+use super::super::Result;
 use super::args::*;
 
-pub fn main_plotibd(args: &Commands) {
+pub fn main_plotibd(args: &Commands) -> Result<()> {
     if let Commands::PlotIBD {
         genome_info,
         sample_lst1,
@@ -26,7 +27,7 @@ pub fn main_plotibd(args: &Commands) {
     } = args
     {
         use std::sync::Arc;
-        let ginfo = Arc::new(genome::GenomeInfo::from_toml_file(&genome_info));
+        let ginfo = Arc::new(genome::GenomeInfo::from_toml_file(&genome_info))?;
         let gmap = gmap::GeneticMap::from_genome_info(&ginfo);
 
         let (inds1, inds1_opt) = Individuals::from_txt_file(&sample_lst1);
@@ -232,6 +233,7 @@ pub fn main_plotibd(args: &Commands) {
             }
         }
     }
+    Ok(())
 }
 /// plot IBD of a sample pair from both v1 and v2
 fn plot_svg(

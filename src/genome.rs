@@ -4,8 +4,38 @@ use ahash::{HashMap, HashMapExt};
 use clap::ValueEnum;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use std::backtrace::Backtrace;
 use std::io::{BufWriter, Read, Write};
 use std::path::Path;
+
+use snafu::{OptionExt, ResultExt, Snafu};
+#[derive(Debug, Snafu)]
+pub enum Error {
+    IoError {
+        source: std::io::Error,
+        backtrace: Option<Backtrace>,
+    },
+    TomlSerError {
+        source: Box<toml::ser::Error>,
+        backtrace: Option<Backtrace>,
+    },
+    TomlDeError {
+        source: Box<toml::de::Error>,
+        backtrace: Option<Backtrace>,
+    },
+    EmptySliceError {
+        backtrace: Option<Backtrace>,
+    },
+    BincodeError {
+        source: bincode::Error,
+        backtrace: Option<Backtrace>,
+    },
+    InferMapFilePrefixError {
+        backtrace: Option<Backtrace>,
+    },
+}
+
+type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Deserialize, Serialize, Debug)]
 struct GenomeFile {
@@ -69,7 +99,7 @@ impl GenomeInfo {
         }
     }
 
-    pub fn to_toml_file(&self, p: impl AsRef<Path>) {
+    pub fn to_toml_file(&self, p: impl AsRef<Path>) -> Result<()> {
         let gf = GenomeFile {
             name: self.name.clone(),
             chromnames: self.chromnames.clone(),
@@ -77,25 +107,29 @@ impl GenomeInfo {
             gmaps: self.gmaps.clone(),
             idx: self.idx.clone(),
         };
-        let s = toml::to_string(&gf).unwrap();
+        let s = toml::to_string(&gf)
+            .map_err(Box::new)
+            .context(TomlSerSnafu {})?;
 
         let mut f = std::fs::File::create(p.as_ref())
             .map(BufWriter::new)
             .expect("fail to create file for writing ginfo file");
-        f.write_all(s.as_bytes()).unwrap();
+        f.write_all(s.as_bytes()).context(IoSnafu {})
     }
 
-    pub fn from_toml_file<P>(path: P) -> Self
+    pub fn from_toml_file<P>(path: P) -> Result<Self>
     where
         P: AsRef<Path>,
     {
         let mut s = String::new();
         let p: &Path = path.as_ref();
         std::fs::File::open(p)
-            .unwrap()
+            .context(IoSnafu {})?
             .read_to_string(&mut s)
-            .unwrap();
-        let mut gfile: GenomeFile = toml::from_str(&s).unwrap();
+            .context(IoSnafu {})?;
+        let mut gfile: GenomeFile = toml::from_str(&s)
+            .map_err(Box::new)
+            .context(TomlDeSnafu {})?;
         gfile.check();
         let mut ginfo = Self::new();
         use std::mem::swap;
@@ -106,10 +140,10 @@ impl GenomeInfo {
         swap(&mut gfile.gmaps, &mut ginfo.gmaps);
         ginfo.gwstarts.push(0u32);
         for chrlen in &ginfo.chromsize[0..(ginfo.chromsize.len() - 1)] {
-            let last = ginfo.gwstarts.last().unwrap();
+            let last = ginfo.gwstarts.last().context(EmptySliceSnafu {})?;
             ginfo.gwstarts.push(*chrlen + *last);
         }
-        ginfo
+        Ok(ginfo)
     }
     pub fn to_gw_pos(&self, chrid: usize, pos: u32) -> u32 {
         self.gwstarts[chrid] + pos
@@ -287,7 +321,7 @@ impl Genome {
         chromsizes: &[u32],
         chromnames: &[String],
         plink_files: &[String],
-    ) -> Self {
+    ) -> Result<Self> {
         let mut gfile = GenomeFile {
             name: genome_name.to_owned(),
             chromsize: chromsizes.to_owned(),
@@ -309,50 +343,53 @@ impl Genome {
         swap(&mut gfile.gmaps, &mut ginfo.gmaps);
         ginfo.gwstarts.push(0u32);
         for chrlen in &ginfo.chromsize[0..(ginfo.chromsize.len() - 1)] {
-            let last = ginfo.gwstarts.last().unwrap();
+            let last = ginfo.gwstarts.last().context(EmptySliceSnafu {})?;
             ginfo.gwstarts.push(*chrlen + *last);
         }
         let gmap = GeneticMap::from_genome_info(&ginfo);
-        Self { ginfo, gmap }
+        Ok(Self { ginfo, gmap })
     }
 
     /// load genome (ginfo and gmap) from a single bincode file, for ease of use
-    pub fn load_from_bincode_file(p: &str) -> Self {
-        let mut reader = std::fs::File::open(p).map(std::io::BufReader::new).unwrap();
-        bincode::deserialize_from(&mut reader).unwrap()
+    pub fn load_from_bincode_file(p: &str) -> Result<Self> {
+        let mut reader = std::fs::File::open(p)
+            .map(std::io::BufReader::new)
+            .context(IoSnafu {})?;
+        bincode::deserialize_from(&mut reader).context(BincodeSnafu {})
     }
 
     /// save to single bincode file, for ease of use
-    pub fn save_to_bincode_file(&self, p: &str) {
+    pub fn save_to_bincode_file(&self, p: &str) -> Result<()> {
         if let Some(parent) = Path::new(p).parent() {
-            std::fs::create_dir_all(parent).unwrap();
+            std::fs::create_dir_all(parent).context(IoSnafu {})?;
         }
         let reader = std::fs::File::create(p)
             .map(std::io::BufWriter::new)
-            .unwrap();
-        bincode::serialize_into(reader, &self).unwrap();
+            .context(IoSnafu {})?;
+        bincode::serialize_into(reader, &self).context(BincodeSnafu {})
     }
 
     /// save to readable text file,  including the genome info toml file and a list of per chr recombinaton rate in plink map format
-    pub fn save_to_text_files(&self, ginfo_path: &str) {
+    pub fn save_to_text_files(&self, ginfo_path: &str) -> Result<()> {
         if let Some(parent) = std::path::Path::new(ginfo_path).parent() {
-            std::fs::create_dir_all(parent).unwrap();
+            std::fs::create_dir_all(parent).context(IoSnafu {})?;
         }
-        self.ginfo.to_toml_file(ginfo_path);
+        self.ginfo.to_toml_file(ginfo_path)?;
         let gmap_path_prefix = self.ginfo.gmaps[0]
             .strip_suffix(".map")
-            .unwrap()
+            .context(InferMapFilePrefixSnafu {})?
             .strip_suffix(&self.ginfo.chromnames[0])
-            .unwrap()
+            .context(InferMapFilePrefixSnafu {})?
             .strip_suffix("_")
-            .unwrap();
+            .context(InferMapFilePrefixSnafu {})?;
         self.gmap.to_plink_map_files(&self.ginfo, gmap_path_prefix);
+        Ok(())
     }
 
-    pub fn load_from_text_file(ginfo_path: &str) -> Self {
-        let ginfo = GenomeInfo::from_toml_file(ginfo_path);
+    pub fn load_from_text_file(ginfo_path: &str) -> Result<Self> {
+        let ginfo = GenomeInfo::from_toml_file(ginfo_path)?;
         let gmap = GeneticMap::from_genome_info(&ginfo);
-        Self { ginfo, gmap }
+        Ok(Self { ginfo, gmap })
     }
 
     pub fn ginfo(&self) -> &GenomeInfo {
@@ -389,12 +426,12 @@ fn test_genome_io() {
     let mut genome = Genome::new_from_name(BuiltinGenome::Pf3d7Const15k);
     genome.set_gmap_path_prefix("tmp_gmap/map");
 
-    genome.save_to_bincode_file("tmp.bincode");
-    let genome2 = Genome::load_from_bincode_file("tmp.bincode");
+    genome.save_to_bincode_file("tmp.bincode").unwrap();
+    let genome2 = Genome::load_from_bincode_file("tmp.bincode").unwrap();
     assert_eq!(&genome, &genome2);
 
-    genome.save_to_text_files("tmp_genome.toml");
-    let genome3 = Genome::load_from_text_file("tmp_genome.toml");
+    genome.save_to_text_files("tmp_genome.toml").unwrap();
+    let genome3 = Genome::load_from_text_file("tmp_genome.toml").unwrap();
 
     assert_eq!(&genome, &genome3);
 }

@@ -4,6 +4,7 @@ use ishare::{
     indiv::Individuals,
     rfmix::{asibd::ASIBDSet, fb::*},
     share::ibd::ibdset::IbdSet,
+    utils::error::show_snafu_error,
 };
 use std::{
     fs::File,
@@ -63,11 +64,26 @@ struct Cli {
     out: PathBuf,
 }
 
+use snafu::Snafu;
+#[derive(Debug, Snafu)]
+enum Error {
+    #[snafu(transparent)]
+    GenomeError { source: ishare::genome::Error },
+}
+type Result<T> = std::result::Result<T, Error>;
+
 fn main() {
+    if let Err(e) = main_entry() {
+        show_snafu_error(e);
+        std::process::exit(-1);
+    }
+}
+
+fn main_entry() -> Result<()> {
     let cli = Cli::parse();
 
     eprintln!("reading gnome.toml");
-    let ginfo = GenomeInfo::from_toml_file(&cli.genome);
+    let ginfo = GenomeInfo::from_toml_file(&cli.genome)?;
     eprintln!("reading genetic map files");
     let gmap = GeneticMap::from_genome_info(&ginfo);
     eprintln!("reading sample list");
@@ -104,6 +120,7 @@ fn main() {
     eprintln!("writing as-ibd file");
     let out = File::create(&cli.out).map(BufWriter::new).unwrap();
     asibd.flush(out);
+    Ok(())
 }
 
 fn read_chr_positions(p: impl AsRef<Path>, ginfo: &GenomeInfo) -> Vec<u32> {

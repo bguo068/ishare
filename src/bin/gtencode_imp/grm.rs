@@ -8,7 +8,8 @@ use ishare::site::Sites;
 use rayon::prelude::*;
 use std::path::PathBuf;
 
-pub fn main_grm(args: &Commands) {
+use super::super::Result;
+pub fn main_grm(args: &Commands) -> Result<()> {
     if let Commands::Grm {
         rec,
         genomes,
@@ -103,4 +104,5 @@ pub fn main_grm(args: &Commands) {
             resmat.into_parquet(&p)
         }
     }
+    Ok(())
 }

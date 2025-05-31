@@ -11,7 +11,8 @@ use rayon::prelude::*;
 use slice_group_by::GroupByMut;
 use std::sync::Arc;
 
-pub fn main_samplediff(args: &Commands) {
+use super::super::Result;
+pub fn main_samplediff(args: &Commands) -> Result<()> {
     if let Commands::SampleDiff { rec, pairs, out } = args {
         let mut records = GenotypeRecords::from_parquet_file(rec);
         assert!(records.is_sorted_by_genome());
@@ -34,6 +35,7 @@ pub fn main_samplediff(args: &Commands) {
         }
         output(out, &res_vec, &inds)
     }
+    Ok(())
 }
 
 use std::path::PathBuf;

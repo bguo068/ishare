@@ -5,9 +5,12 @@ use ishare::{
     vcf::{read_vcf, read_vcf_for_genotype_matrix},
 };
 use rayon::prelude::*;
+
 use rust_htslib::bcf::Read;
 
-pub fn main_encode(args: &Commands) {
+use super::super::Result;
+
+pub fn main_encode(args: &Commands) -> Result<()> {
     // unpack cli args
     let (vcf, sample_lst, genome_info, out, parallel_chunksize_bp, matrix, threshold_maf) =
         if let Commands::Encode {
@@ -52,9 +55,9 @@ pub fn main_encode(args: &Commands) {
 
     // encoding
     let ginfo = if matches!( genome_info.as_path().extension(), Some(ext) if ext == ".toml") {
-        GenomeInfo::from_toml_file(genome_info)
+        GenomeInfo::from_toml_file(genome_info)?
     } else {
-        let genome = Genome::load_from_bincode_file(genome_info.to_str().unwrap());
+        let genome = Genome::load_from_bincode_file(genome_info.to_string_lossy().as_ref())?;
         genome.ginfo().clone()
     };
 
@@ -155,4 +158,5 @@ pub fn main_encode(args: &Commands) {
     // report encoding time used
     let duration = start.elapsed();
     println!("# Encoding Time : {:?}", duration);
+    Ok(())
 }

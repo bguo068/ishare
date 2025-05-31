@@ -1,7 +1,8 @@
 use super::super::Commands;
 use ishare::indiv::Individuals;
 
-pub fn main_samples(args: &Commands) {
+use super::super::Result;
+pub fn main_samples(args: &Commands) -> Result<()> {
     if let Commands::Samples {
         ind,
         sample,
@@ -57,4 +58,5 @@ pub fn main_samples(args: &Commands) {
             }
         }
     }
+    Ok(())
 }
