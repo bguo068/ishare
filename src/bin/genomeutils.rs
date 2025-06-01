@@ -1,11 +1,13 @@
 use clap::{Parser, Subcommand};
-use ishare::{genome::*, utils::error::show_snafu_error};
+use ishare::{genome::*, gmap, utils::error::show_snafu_error};
 use snafu::Snafu;
 
 #[derive(Debug, Snafu)]
 enum Error {
     #[snafu(transparent)]
     GenomeError { source: ishare::genome::Error },
+    #[snafu(transparent)]
+    GmapError { source: gmap::Error },
 }
 type Result<T> = std::result::Result<T, Error>;
 fn main() {
@@ -174,7 +176,7 @@ fn main_entry() -> Result<()> {
             to_toml,
             to_map_prefix,
         } => {
-            let mut genome = Genome::new_from_name(name);
+            let mut genome = Genome::new_from_name(name)?;
             if let Some(to_bin) = to_bin {
                 genome.save_to_bincode_file(&to_bin)?;
             } else if let Some(to_toml) = to_toml {
@@ -206,7 +208,7 @@ fn main_entry() -> Result<()> {
                 &chrom_size,
                 &chrom_name,
                 rate,
-            );
+            )?;
             if let Some(to_bin) = to_bin {
                 genome.save_to_bincode_file(&to_bin)?;
             } else if let Some(to_toml) = to_toml {

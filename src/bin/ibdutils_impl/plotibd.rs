@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::super::Result;
 use super::args::*;
+use snafu::{ResultExt, Whatever};
 
 pub fn main_plotibd(args: &Commands) -> Result<()> {
     if let Commands::PlotIBD {
@@ -27,11 +28,11 @@ pub fn main_plotibd(args: &Commands) -> Result<()> {
     } = args
     {
         use std::sync::Arc;
-        let ginfo = Arc::new(genome::GenomeInfo::from_toml_file(&genome_info))?;
-        let gmap = gmap::GeneticMap::from_genome_info(&ginfo);
+        let ginfo = Arc::new(genome::GenomeInfo::from_toml_file(genome_info)?);
+        let gmap = gmap::GeneticMap::from_genome_info(&ginfo)?;
 
-        let (inds1, inds1_opt) = Individuals::from_txt_file(&sample_lst1);
-        let (inds2, inds2_opt) = Individuals::from_txt_file(&sample_lst2);
+        let (inds1, inds1_opt) = Individuals::from_txt_file(sample_lst1);
+        let (inds2, inds2_opt) = Individuals::from_txt_file(sample_lst2);
         let mut ibd1 = IbdSet::new(&gmap, &ginfo, &inds1);
         let mut ibd2 = IbdSet::new(&gmap, &ginfo, &inds2);
 
@@ -228,8 +229,8 @@ pub fn main_plotibd(args: &Commands) -> Result<()> {
                 let last = ibdv2[..].partition_point(|x| x.individual_pair() <= (id1, id2));
                 let v2 = &ibdv2[first..last];
                 let svg_string = plot_svg(v1, v2, ginfo.as_ref()).unwrap();
-                std::fs::write(&out, svg_string)
-                    .expect(&format!("cannot write to file: {}", out.to_str().unwrap()));
+                std::fs::write(out, svg_string)
+                    .unwrap_or_else(|_| panic!("cannot write to file: {}", out.to_str().unwrap()));
             }
         }
     }
@@ -240,13 +241,15 @@ fn plot_svg(
     v1: &[IbdSeg],
     v2: &[IbdSeg],
     ginfo: &GenomeInfo,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> std::result::Result<String, Whatever> {
     let mut ret = String::new();
 
     {
         use plotters::{prelude::*, style::text_anchor::*};
         let root_area = SVGBackend::with_string(&mut ret, (1024, 768)).into_drawing_area();
-        root_area.fill(&WHITE)?;
+        root_area
+            .fill(&WHITE)
+            .whatever_context("error in fill root area")?;
 
         let nchrom = ginfo.chromnames.len() as f32;
         let chrsz_max = *ginfo.chromsize.iter().max().unwrap() as f32;
@@ -255,7 +258,8 @@ fn plot_svg(
             .set_left_and_bottom_label_area_size(50)
             .set_label_area_size(LabelAreaPosition::Left, 60)
             .caption("IBD shared by a pair of samples", ("sans-serif", 30))
-            .build_cartesian_2d(-1.0f32..chrsz_max, -1.0f32..nchrom)?;
+            .build_cartesian_2d(-1.0f32..chrsz_max, -1.0f32..nchrom)
+            .whatever_context("error building cartesian 2d")?;
 
         cc.configure_mesh()
             .x_labels(20)
@@ -266,7 +270,8 @@ fn plot_svg(
             .axis_desc_style(("sans-serif", 20))
             .x_label_formatter(&|v| format!("{:.0}", v))
             .y_label_formatter(&|v| format!("{:.0}", v))
-            .draw()?;
+            .draw()
+            .whatever_context("draw error")?;
 
         // draw IBD segments
         let mut points = vec![];
@@ -293,8 +298,10 @@ fn plot_svg(
                     color.clone().stroke_width(2),
                 );
 
-                let s = cc.draw_series(ls)?;
-                let legstyle = |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color.clone());
+                let s = cc
+                    .draw_series(ls)
+                    .whatever_context("error in draw_series")?;
+                let legstyle = |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], *color);
                 if iseg == 0 {
                     s.label(label).legend(legstyle);
                 }
@@ -319,11 +326,15 @@ fn plot_svg(
                 let chrname = &ginfo.chromnames[chrid];
                 EmptyElement::at(coord)
                     + PathElement::new(vec![(-size, 0), (0, 0)], style)
-                    + Text::new(format!("{}", chrname), (-size - 5, 0), ts)
+                    + Text::new(chrname.to_string(), (-size - 5, 0), ts)
             },
-        ))?;
+        ))
+        .whatever_context("error in draw_series")?;
 
-        cc.configure_series_labels().border_style(&BLACK).draw()?;
+        cc.configure_series_labels()
+            .border_style(BLACK)
+            .draw()
+            .whatever_context("error in draw")?;
 
         // To avoid the IO failure being ignored silently, we manually call the present function
         root_area.present().expect("Unable to write result to file");

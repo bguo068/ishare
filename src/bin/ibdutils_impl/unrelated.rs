@@ -28,14 +28,14 @@ pub fn main_unrelated(args: &Commands) -> Result<()> {
         info!("read genome toml file");
         let ginfo = GenomeInfo::from_toml_file(genome_info)?;
         info!("read genetic map files");
-        let gmap = gmap::GeneticMap::from_genome_info(&ginfo);
+        let gmap = gmap::GeneticMap::from_genome_info(&ginfo)?;
         info!("read samples list file");
         let (inds, _inds_opt) = Individuals::from_txt_file(sample_lst);
         // read ibd
         let ibd = read_ibd(&ginfo, &gmap, &inds, ibd_dir, fmt);
         info!("total IBD segment counts: {}", ibd.as_slice().len());
 
-        let related_paris = get_related_pairs(&ibd, *theshold);
+        let related_paris = get_related_pairs(&ibd, *theshold)?;
         let samples_to_rm = get_samples_to_remove(related_paris);
         info!(
             "remove {} samples out of {}",
@@ -73,9 +73,9 @@ fn read_ibd<'a>(
     ibd
 }
 
-fn get_related_pairs(ibd: &IbdSet, threshold: f64) -> Vec<(u32, u32)> {
+fn get_related_pairs(ibd: &IbdSet, threshold: f64) -> Result<Vec<(u32, u32)>> {
     let gmap = ibd.get_gmap();
-    let gsize = gmap.get_size_cm();
+    let gsize = gmap.get_size_cm()?;
     let min_totibd_related = gsize * threshold as f32;
     info!(
         "related pair total ibd theshold in cM: {:.3}",
@@ -92,7 +92,7 @@ fn get_related_pairs(ibd: &IbdSet, threshold: f64) -> Vec<(u32, u32)> {
         v.push(related_pair);
     }
     info!("found related pairs:: {}", v.len());
-    v
+    Ok(v)
 }
 
 fn get_samples_to_remove(mut related_pairs: Vec<(u32, u32)>) -> HashSet<u32> {

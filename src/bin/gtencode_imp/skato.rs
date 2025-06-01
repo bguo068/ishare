@@ -23,10 +23,8 @@ pub fn main_skato(args: &Commands) -> Result<()> {
         let all_records = records.records();
         let sitepos = sites.get_gw_pos_slice();
 
-        let it1 = (0..sitepos.len()).step_by(*step as usize);
-        let it2 = (0..sitepos.len())
-            .skip(*window as usize)
-            .step_by(*step as usize);
+        let it1 = (0..sitepos.len()).step_by(*step);
+        let it2 = (0..sitepos.len()).skip(*window).step_by(*step);
 
         let mut total_steps = (sitepos.len() - *window) / (*step);
         if ((sitepos.len() - *window) % (*step)) != 0 {
@@ -51,7 +49,7 @@ pub fn main_skato(args: &Commands) -> Result<()> {
                 &all_records[s..e]
             };
             println!("\tnumber of selected records: {}", sel_records.len());
-            let nsites = *window as usize;
+            let nsites = *window;
             let nsams = inds.v().len();
             {
                 println!("\tprepare matrix for call skat-o test");
@@ -91,7 +89,7 @@ pub fn main_skato(args: &Commands) -> Result<()> {
                 // MU
                 let mu = run_logistic_regression_b(&x, &y);
                 // PI
-                let pi: Array1<f64> = mu.map(|mu_i| mu_i * (1.0 - mu_i)).into();
+                let pi: Array1<f64> = mu.map(|mu_i| mu_i * (1.0 - mu_i));
                 // X1
                 let x1 = make_mat_x1(&x);
                 let rho_vec = vec![0.1, 0.3, 0.5, 0.7, 0.9];

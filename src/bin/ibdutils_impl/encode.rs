@@ -32,7 +32,7 @@ pub fn main_encode(args: &Commands) -> Result<()> {
         info!("read genome toml file");
         let ginfo = GenomeInfo::from_toml_file(genome_info)?;
         info!("read genetic map files");
-        let gmap = gmap::GeneticMap::from_genome_info(&ginfo);
+        let gmap = gmap::GeneticMap::from_genome_info(&ginfo)?;
         info!("read samples list file");
         let (inds, _inds_opt) = Individuals::from_txt_file(sample_lst);
 
@@ -49,11 +49,11 @@ pub fn main_encode(args: &Commands) -> Result<()> {
         // count snps per cM
         //   calculate low snp regions
         let (low_snp_regions, bounds, cnts) =
-            get_low_snp_regions(&ginfo, &gmap, positions, min_snp);
+            get_low_snp_regions(&ginfo, &gmap, positions, min_snp)?;
 
         // get coverage
         let step_cm = 0.25;
-        let (sp, cov) = get_coverage(&ibd, &gmap, step_cm);
+        let (sp, cov) = get_coverage(&ibd, &gmap, step_cm)?;
 
         // calculate exetreme IBD sharing region
         let extreme_regions = get_exetreme_cov_regions(&sp, &cov, &ginfo, outlier_upper);
@@ -136,10 +136,10 @@ fn get_low_snp_regions(
     gmap: &GeneticMap,
     positions: Vec<u32>,
     min_snp: &u32,
-) -> (Intervals<u32>, Vec<u32>, Vec<usize>) {
+) -> Result<(Intervals<u32>, Vec<u32>, Vec<usize>)> {
     // boundaries in cM
     let boundaries = {
-        let gwsize_cm = gmap.get_size_cm();
+        let gwsize_cm = gmap.get_size_cm()?;
         let gwsize_bp = ginfo.get_total_len_bp();
         let mut x = 0.0f32;
         let mut v = vec![];
@@ -177,15 +177,15 @@ fn get_low_snp_regions(
         regions
     };
 
-    (low_snp_regions, boundaries, counts)
+    Ok((low_snp_regions, boundaries, counts))
 }
 
-fn get_coverage(ibd: &IbdSet, gmap: &GeneticMap, step_cm: f32) -> (Vec<u32>, Vec<usize>) {
+fn get_coverage(ibd: &IbdSet, gmap: &GeneticMap, step_cm: f32) -> Result<(Vec<u32>, Vec<usize>)> {
     // get sampling points
     let sp = {
         let mut sp = vec![];
         let mut x = step_cm / 2.0;
-        let genome_size_cm = gmap.get_size_cm();
+        let genome_size_cm = gmap.get_size_cm()?;
         // let genome_size_bp = ginfo.get_total_len_bp();
         while x < genome_size_cm {
             let gw_pos = gmap.get_bp(x);
@@ -205,7 +205,7 @@ fn get_coverage(ibd: &IbdSet, gmap: &GeneticMap, step_cm: f32) -> (Vec<u32>, Vec
         }
         cov
     };
-    (sp, cov)
+    Ok((sp, cov))
 }
 fn get_exetreme_cov_regions(
     sp: &[u32],

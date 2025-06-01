@@ -4,12 +4,66 @@ use crate::{
     container::intervals::Intervals,
     genome::GenomeInfo,
     genotype::{common::*, rare::*},
-    gmap::GeneticMap,
+    gmap::{self, GeneticMap},
     indiv::Individuals,
     site::*,
 };
 use rust_htslib::bcf::{record::GenotypeAllele, IndexedReader, Read, Reader};
-use std::path::Path;
+use std::{backtrace::Backtrace, num::ParseIntError, path::Path, str::Utf8Error};
+
+use snafu::{ensure, OptionExt, ResultExt, Snafu};
+
+#[derive(Debug, Snafu)]
+pub enum Error {
+    #[snafu(transparent)]
+    GmapError {
+        source: gmap::Error,
+    },
+
+    // #[snafu(transparent)]
+    HtslibError {
+        source: rust_htslib::errors::Error,
+        backtrace: Option<Backtrace>,
+    },
+    Utf8Error {
+        source: Utf8Error,
+        backtrace: Option<Backtrace>,
+    },
+    SampleNameUtf8Error {
+        backtrace: Option<Backtrace>,
+    },
+    VcfRidError {
+        backtrace: Option<Backtrace>,
+    },
+    VcfPosUnsorted {
+        backtrace: Option<Backtrace>,
+    },
+    IoError {
+        source: std::io::Error,
+        backtrace: Option<Backtrace>,
+    },
+    ReadPosFileMissingChrname {
+        backtrace: Option<Backtrace>,
+    },
+    ReadPosFileMissingPos {
+        backtrace: Option<Backtrace>,
+    },
+    ParseIntError {
+        source: ParseIntError,
+        backtrace: Option<Backtrace>,
+    },
+    RefInconsistAtSamePos {
+        backtrace: Option<Backtrace>,
+    },
+    FmtGtError {
+        backtrace: Option<Backtrace>,
+    },
+    AlleleIdError {
+        backtrace: Option<Backtrace>,
+    },
+}
+
+type Result<T> = std::result::Result<T, Error>;
 
 pub fn read_vcf(
     target_samples: &AHashSet<String>,
@@ -17,17 +71,18 @@ pub fn read_vcf(
     vcf_path: impl AsRef<Path>,
     max_maf: f64,
     region: Option<(u32, u64, Option<u64>)>,
-) -> (Sites, Individuals, GenotypeRecords) {
-    // let  vcf_fn =  "/local/chib/TOPMedFull/data/org/87668/topmed-dcc/exchange/phs000964_TOPMed_WGS_JHS/Combined_Study_Data/Genotypes/freeze.10b/phased/freeze.10b.chr22.pass_only.phased.bcf";
-    // let vcf_fn = "./testdata/test.bcf";
-    let mut bcf = IndexedReader::from_path(vcf_path).unwrap();
+) -> Result<(Sites, Individuals, GenotypeRecords)> {
+    let mut bcf = IndexedReader::from_path(vcf_path).context(HtslibSnafu {})?;
 
     if let Some((rid, start, end_opt)) = region {
         let chrname = &gconfig.chromnames[rid as usize];
-        let rid2 = bcf.header().name2rid(chrname.as_bytes()).unwrap();
-        bcf.fetch(rid2, start, end_opt).unwrap();
+        let rid2 = bcf
+            .header()
+            .name2rid(chrname.as_bytes())
+            .context(HtslibSnafu {})?;
+        bcf.fetch(rid2, start, end_opt).context(HtslibSnafu {})?;
     }
-    bcf.set_threads(3).unwrap();
+    bcf.set_threads(3).context(HtslibSnafu {})?;
 
     let header = bcf.header().clone();
     let nsam = header.sample_count();
@@ -39,7 +94,9 @@ pub fn read_vcf(
     let it = header
         .samples()
         .into_iter()
-        .map(|x| std::str::from_utf8(x).unwrap());
+        .flat_map(|x| std::str::from_utf8(x));
+
+    ensure!(it.clone().count() == nsam as usize, SampleNameUtf8Snafu {});
 
     // calculate sample_mask
     let mut sample_mask = vec![true; header.sample_count() as usize];
@@ -69,7 +126,7 @@ pub fn read_vcf(
     let mut allele_counts = Vec::new();
     let mut allele_is_rare = Vec::<bool>::new();
     for record_result in bcf.records() {
-        let record = record_result.unwrap();
+        let record = record_result.context(HtslibSnafu {})?;
 
         let alleles = record.alleles();
 
@@ -88,9 +145,9 @@ pub fn read_vcf(
 
         // chromosome id
         let chrid = {
-            let rid = record.rid().unwrap();
-            let chrname = header.rid2name(rid).unwrap();
-            let chrname = std::str::from_utf8(chrname).unwrap();
+            let rid = record.rid().context(VcfRidSnafu {})?;
+            let chrname = header.rid2name(rid).context(HtslibSnafu {})?;
+            let chrname = std::str::from_utf8(chrname).context(Utf8Snafu {})?;
             gconfig.idx[chrname]
         };
 
@@ -98,11 +155,9 @@ pub fn read_vcf(
         let pos = { record.pos() as u32 + gconfig.gwstarts[chrid] as u32 };
 
         let mut is_new_pos = true;
-        if pos_last.is_some() {
-            let rid_last = rid_last.unwrap();
-            let pos_last = pos_last.unwrap();
+        if let (Some(pos_last), Some(rid_last)) = (pos_last, rid_last) {
             if rid_last == chrid {
-                assert!(pos_last <= pos);
+                ensure!(pos_last <= pos, VcfPosUnsortedSnafu {});
             }
             is_new_pos = !((pos_last == pos) && (rid_last == chrid));
         }
@@ -110,7 +165,8 @@ pub fn read_vcf(
         let start_allele: u8;
         if is_new_pos {
             // output information from old pos
-            if pos_last.is_some() {
+
+            if let Some(pos_last) = pos_last {
                 let buffers = (
                     &mut sites,
                     &mut records,
@@ -118,8 +174,7 @@ pub fn read_vcf(
                     &mut allele_counts,
                     &mut allele_is_rare,
                 );
-                let pos_last = pos_last.unwrap();
-                output_rare_allele_records(buffers, &gt, pos_last, ac_thres);
+                output_rare_allele_records(buffers, &gt, pos_last, ac_thres)?;
             }
 
             ab.clear();
@@ -134,11 +189,7 @@ pub fn read_vcf(
             start_allele = ab.len() as u8 - 1;
             // assert different lines of the same position have a consistent REF allele
             let alleles = record.alleles();
-            assert_eq!(
-                ab.get(0),
-                alleles[0],
-                "REF alleles are consistent for variants with the same position"
-            );
+            ensure!(ab.get(0) == alleles[0], RefInconsistAtSamePosSnafu {});
             // skip the ref allele as it has been added
             for allele in alleles.iter().skip(1) {
                 ab.push(b" ");
@@ -151,8 +202,8 @@ pub fn read_vcf(
         // see https://github.com/samtools/htslib/blob/99415e2a2ce26bdbf4e910954330ea769de2c3f0/htslib/vcf.h#L156
         // https://samtools.github.io/hts-specs/VCFv4.2.pdf
         // assert_eq!(bcf_fmt.type_, 1);
-        assert_eq!(bcf_fmt.n, 2);
-        assert_eq!(bcf_fmt.p_len, 2 * nsam);
+        ensure!(bcf_fmt.n == 2, FmtGtSnafu {});
+        ensure!(bcf_fmt.p_len == 2 * nsam, FmtGtSnafu {});
 
         let raw_gt_bytes = unsafe { std::slice::from_raw_parts(bcf_fmt.p, bcf_fmt.p_len as usize) };
 
@@ -209,8 +260,7 @@ pub fn read_vcf(
     }
 
     // output the last record:
-    if pos_last.is_some() {
-        let pos_last = pos_last.unwrap();
+    if let Some(pos_last) = pos_last {
         let buffers = (
             &mut sites,
             &mut records,
@@ -218,12 +268,12 @@ pub fn read_vcf(
             &mut allele_counts,
             &mut allele_is_rare,
         );
-        output_rare_allele_records(buffers, &gt, pos_last, ac_thres);
+        output_rare_allele_records(buffers, &gt, pos_last, ac_thres)?;
     }
 
     let gtrec = GenotypeRecords::new(records, 1);
 
-    (sites, individuals, gtrec)
+    Ok((sites, individuals, gtrec))
 }
 
 pub fn read_vcf_for_genotype_matrix(
@@ -232,18 +282,19 @@ pub fn read_vcf_for_genotype_matrix(
     vcf_path: impl AsRef<Path>,
     min_maf: f64,
     region: Option<(u32, u64, Option<u64>)>,
-) -> (Sites, Individuals, GenotypeMatrix) {
+) -> Result<(Sites, Individuals, GenotypeMatrix)> {
     use rust_htslib::bcf::{record::GenotypeAllele, IndexedReader, Read};
-    // let  vcf_fn =  "/local/chib/TOPMedFull/data/org/87668/topmed-dcc/exchange/phs000964_TOPMed_WGS_JHS/Combined_Study_Data/Genotypes/freeze.10b/phased/freeze.10b.chr22.pass_only.phased.bcf";
-    // let vcf_fn = "./testdata/test.bcf";
-    let mut bcf = IndexedReader::from_path(vcf_path).unwrap();
+    let mut bcf = IndexedReader::from_path(vcf_path).context(HtslibSnafu {})?;
 
     if let Some((rid, start, end_opt)) = region {
         let chrname = &gconfig.chromnames[rid as usize];
-        let rid2 = bcf.header().name2rid(chrname.as_bytes()).unwrap();
-        bcf.fetch(rid2, start, end_opt).unwrap();
+        let rid2 = bcf
+            .header()
+            .name2rid(chrname.as_bytes())
+            .context(HtslibSnafu {})?;
+        bcf.fetch(rid2, start, end_opt).context(HtslibSnafu {})?;
     }
-    bcf.set_threads(3).unwrap();
+    bcf.set_threads(3).context(HtslibSnafu {})?;
 
     let header = bcf.header().clone();
     let nsam = header.sample_count();
@@ -254,7 +305,9 @@ pub fn read_vcf_for_genotype_matrix(
     let it = header
         .samples()
         .into_iter()
-        .map(|x| std::str::from_utf8(x).unwrap());
+        .flat_map(|x| std::str::from_utf8(x));
+
+    ensure!(it.clone().count() == nsam as usize, SampleNameUtf8Snafu {});
 
     // calculate sample_mask
     let mut sample_mask = vec![true; header.sample_count() as usize];
@@ -282,7 +335,7 @@ pub fn read_vcf_for_genotype_matrix(
 
     // let mut allele_counts = Vec::new();
     for record_result in bcf.records() {
-        let record = record_result.unwrap();
+        let record = record_result.context(HtslibSnafu {})?;
 
         let alleles = record.alleles();
 
@@ -307,9 +360,9 @@ pub fn read_vcf_for_genotype_matrix(
 
         // chromosome id
         let chrid = {
-            let rid = record.rid().unwrap();
-            let chrname = header.rid2name(rid).unwrap();
-            let chrname = std::str::from_utf8(chrname).unwrap();
+            let rid = record.rid().context(VcfRidSnafu {})?;
+            let chrname = header.rid2name(rid).context(HtslibSnafu {})?;
+            let chrname = std::str::from_utf8(chrname).context(Utf8Snafu {})?;
             gconfig.idx[chrname]
         };
 
@@ -318,11 +371,9 @@ pub fn read_vcf_for_genotype_matrix(
 
         // check positions are in order
         let mut _is_new_pos = true;
-        if pos_last.is_some() {
-            let rid_last = rid_last.unwrap();
-            let pos_last = pos_last.unwrap();
+        if let (Some(pos_last), Some(rid_last)) = (pos_last, rid_last) {
             if rid_last == chrid {
-                assert!(pos_last <= pos, "VCF is not sorted by position");
+                ensure!(pos_last <= pos, VcfPosUnsortedSnafu {});
             }
             _is_new_pos = !((pos_last == pos) && (rid_last == chrid));
         }
@@ -330,8 +381,8 @@ pub fn read_vcf_for_genotype_matrix(
         let fmt = record.format(b"GT");
         let bcf_fmt = fmt.inner();
         // assert_eq!(bcf_fmt.type_, 1); // uint8_t
-        assert!(bcf_fmt.n == 2);
-        assert_eq!(bcf_fmt.p_len, 2 * nsam);
+        ensure!(bcf_fmt.n == 2, FmtGtSnafu {});
+        ensure!(bcf_fmt.p_len == 2 * nsam, FmtGtSnafu {});
 
         let raw_gt_slice = unsafe { std::slice::from_raw_parts(bcf_fmt.p, bcf_fmt.p_len as usize) };
 
@@ -376,7 +427,7 @@ pub fn read_vcf_for_genotype_matrix(
         pos_last = Some(pos);
     }
 
-    (sites, individuals, gm)
+    Ok((sites, individuals, gm))
 }
 
 type ParamBufferInfo<'a> = (
@@ -392,7 +443,12 @@ type ParamBufferInfo<'a> = (
     // allele_is_rare: &mut Vec<bool>,
 );
 
-fn output_rare_allele_records(buffers: ParamBufferInfo, gt: &[u8], pos: u32, ac_thres: usize) {
+fn output_rare_allele_records(
+    buffers: ParamBufferInfo,
+    gt: &[u8],
+    pos: u32,
+    ac_thres: usize,
+) -> Result<()> {
     let (sites, records, ab, allele_counts, allele_is_rare) = buffers;
     // Get allele counts
     // init
@@ -417,10 +473,7 @@ fn output_rare_allele_records(buffers: ParamBufferInfo, gt: &[u8], pos: u32, ac_
         } else {
             allele_is_rare.push(false);
         }
-        assert!(
-            i < u8::MAX as usize - 1,
-            "allele index should be less than 255"
-        );
+        ensure!(i < u8::MAX as usize - 1, AlleleIdSnafu {});
         // for ALT allele with allele count > 0
         if *ac > 0 {
             ab.set_enc(i as u8, new_encode);
@@ -434,7 +487,7 @@ fn output_rare_allele_records(buffers: ParamBufferInfo, gt: &[u8], pos: u32, ac_
 
     if new_encode == 1 {
         // no rare variant in this site, skip adding the variants and sites
-        return;
+        return Ok(());
     }
 
     // Remap allelic encodings and generate rare variants records:
@@ -452,32 +505,37 @@ fn output_rare_allele_records(buffers: ParamBufferInfo, gt: &[u8], pos: u32, ac_
 
     // add sites info
     sites.add_site(pos, ab);
+    Ok(())
 }
 
-pub fn read_pos_from_text_file(file_path: &str, ginfo: &GenomeInfo) -> Vec<u32> {
+pub fn read_pos_from_text_file(file_path: &str, ginfo: &GenomeInfo) -> Result<Vec<u32>> {
     let mut out = vec![];
     for line in std::fs::read_to_string(file_path)
-        .unwrap()
+        .context(IoSnafu {})?
         .trim()
         .split("\n")
     {
         let mut fields = line.split("\t");
-        let chrname = fields.next().unwrap();
+        let chrname = fields.next().context(ReadPosFileMissingChrnameSnafu {})?;
         let chr_id = ginfo.idx[chrname];
-        let chr_pos = fields.next().unwrap().parse().unwrap();
+        let chr_pos = fields
+            .next()
+            .context(ReadPosFileMissingPosSnafu {})?
+            .parse()
+            .context(ParseIntSnafu {})?;
         let gw_pos = ginfo.to_gw_pos(chr_id, chr_pos);
         out.push(gw_pos);
     }
-    out
+    Ok(out)
 }
 
-pub fn read_pos_from_vcf_file(vcf_path: &str, ginfo: &GenomeInfo) -> Vec<u32> {
+pub fn read_pos_from_vcf_file(vcf_path: &str, ginfo: &GenomeInfo) -> Result<Vec<u32>> {
     let mut out = vec![];
-    let mut bcf = Reader::from_path(vcf_path).unwrap();
+    let mut bcf = Reader::from_path(vcf_path).context(HtslibSnafu {})?;
     let mut last_rid = u32::MAX;
     let mut chrid = 0usize;
     for record_res in bcf.records() {
-        let record = record_res.unwrap();
+        let record = record_res.context(HtslibSnafu {})?;
         let this_rid = record.rid().unwrap();
         if this_rid != last_rid {
             let rname_bstr = record.header().rid2name(this_rid).unwrap();
@@ -488,7 +546,7 @@ pub fn read_pos_from_vcf_file(vcf_path: &str, ginfo: &GenomeInfo) -> Vec<u32> {
         let gw_pos = ginfo.to_gw_pos(chrid, record.pos() as u32);
         out.push(gw_pos);
     }
-    out
+    Ok(out)
 }
 
 pub fn find_intervals_with_low_snps_density(
@@ -497,14 +555,14 @@ pub fn find_intervals_with_low_snps_density(
     gw_pos: &[u32],
     ginfo: &GenomeInfo,
     gmap: &GeneticMap,
-) -> Intervals<u32> {
+) -> Result<Intervals<u32>> {
     let mut low_snp_dens_intervals = Intervals::<u32>::new();
     // find chromosome boundaries
     let mut cm_boundaries = vec![];
     for start in ginfo.gwstarts.iter() {
         cm_boundaries.push(gmap.get_cm(*start));
     }
-    cm_boundaries.push(gmap.get_size_cm());
+    cm_boundaries.push(gmap.get_size_cm()?);
 
     // for each chromosome, add windows with size of window_size_cm centimorgans
     let mut bp_win_boundaries = vec![];
@@ -541,7 +599,7 @@ pub fn find_intervals_with_low_snps_density(
         }
     }
     low_snp_dens_intervals.merge();
-    low_snp_dens_intervals
+    Ok(low_snp_dens_intervals)
 }
 
 #[cfg(test)]
@@ -556,7 +614,8 @@ mod test {
             &[10_000_000, 10_000_000, 10_000_000],
             &["chr1".into(), "chr2".into(), "chr3".into()],
             1e-8,
-        );
+        )
+        .unwrap();
         let pos: Vec<u32> = (50..30_000_000)
             .step_by(10_000)
             .filter(|x| (*x < 4_000_000) || (*x > 6_000_000))
@@ -570,11 +629,13 @@ mod test {
     fn test_find_intervals_with_low_snps_density() {
         let (genome, pos, expected) = prepare_data();
         let observed =
-            find_intervals_with_low_snps_density(1.0, 10.0, &pos, genome.ginfo(), genome.gmap());
+            find_intervals_with_low_snps_density(1.0, 10.0, &pos, genome.ginfo(), genome.gmap())
+                .unwrap();
         assert!(observed.is_equal(&expected));
 
         let observed =
-            find_intervals_with_low_snps_density(1.0, 200.0, &pos, genome.ginfo(), genome.gmap());
+            find_intervals_with_low_snps_density(1.0, 200.0, &pos, genome.ginfo(), genome.gmap())
+                .unwrap();
         let mut expected = Intervals::<u32>::new();
         expected.push(000_000..30_000_000);
         assert!(observed.is_equal(&expected));

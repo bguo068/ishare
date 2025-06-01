@@ -1,6 +1,9 @@
 use super::super::Commands;
 use ishare::{
     genome::{Genome, GenomeInfo},
+    genotype::{common::GenotypeMatrix, rare::GenotypeRecords},
+    indiv::Individuals,
+    site::Sites,
     utils::path::from_prefix,
     vcf::{read_vcf, read_vcf_for_genotype_matrix},
 };
@@ -88,9 +91,9 @@ pub fn main_encode(args: &Commands) -> Result<()> {
 
     if *matrix {
         // parallel running
-        let mut res: Vec<_> = regions
+        let mut res: Vec<(Sites, Individuals, GenotypeMatrix)> = regions
             .into_par_iter()
-            .map(|region| {
+            .map(|region| -> Result<_> {
                 // (sites, individuals, GenotypeMatrix)
                 let res = read_vcf_for_genotype_matrix(
                     &target_samples,
@@ -98,13 +101,13 @@ pub fn main_encode(args: &Commands) -> Result<()> {
                     vcf,
                     *threshold_maf,
                     region,
-                );
+                )?;
                 if region.is_some() {
                     println!("{:?}", region);
                 }
-                res
+                Ok(res)
             })
-            .collect();
+            .collect::<Result<Vec<_>>>()?;
 
         // merge results
         let (mut sites, individuals, mut gm) = res.pop().unwrap();
@@ -125,17 +128,18 @@ pub fn main_encode(args: &Commands) -> Result<()> {
         individuals.into_parquet_file(&ind_file);
     } else {
         // parallel running
-        let mut res: Vec<_> = regions
+        let mut res: Vec<(Sites, Individuals, GenotypeRecords)> = regions
+            // let mut res: Vec<_> = regions
             .into_par_iter()
             .map(|region| {
                 // (sites, individuals, GenotypeRecords)
-                let res = read_vcf(&target_samples, &ginfo, vcf, *threshold_maf, region);
+                let res = read_vcf(&target_samples, &ginfo, vcf, *threshold_maf, region)?;
                 if region.is_some() {
                     println!("{:?}", region);
                 }
-                res
+                Ok(res)
             })
-            .collect();
+            .collect::<Result<Vec<_>>>()?;
 
         // merge results
         let (mut sites, individuals, mut records) = res.pop().unwrap();

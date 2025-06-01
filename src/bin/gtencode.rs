@@ -2,13 +2,17 @@ use args::{Cli, Commands};
 use clap::Parser;
 use gtencode_imp::*;
 
-use ishare::utils::error::show_snafu_error;
+use ishare::{gmap, utils::error::show_snafu_error, vcf};
 use snafu::Snafu;
 
 #[derive(Debug, Snafu)]
 enum Error {
     #[snafu(transparent)]
-    GenomeError { source: ishare::genome::Error },
+    Genome { source: ishare::genome::Error },
+    #[snafu(transparent)]
+    Vcf { source: vcf::Error },
+    #[snafu(transparent)]
+    Gmap { source: gmap::Error },
 }
 pub(crate) type Result<T> = std::result::Result<T, Error>;
 

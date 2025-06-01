@@ -1023,7 +1023,8 @@ mod test {
             &[100, 100],
             &["chr1".into(), "chr2".into()],
             0.001,
-        );
+        )
+        .unwrap();
         let inds = Individuals::from_str_iter(["sample1", "sample2"].into_iter());
 
         let (gt_mat, sites, mut ibd) = get_gt_sites_ibd(

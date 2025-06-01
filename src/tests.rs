@@ -15,13 +15,13 @@ fn compare_table_matrix_enc() {
     let vcf_path = "testdata/dir001/bcf/sel_chr1.bcf";
 
     let max_maf = 0.001f64;
-    let (sit, _ind, rec) = read_vcf(&AHashSet::new(), &ginfo, vcf_path, max_maf, None);
+    let (sit, _ind, rec) = read_vcf(&AHashSet::new(), &ginfo, vcf_path, max_maf, None).unwrap();
 
     // here use a very low min_maf to encode rare variants and common varints in matrix,
     // so that it can use be to very the accuracy of table encoding of rare variants
     let min_maf = 0.0;
     let (sit2, _ind2, gm2) =
-        read_vcf_for_genotype_matrix(&AHashSet::new(), &ginfo, vcf_path, min_maf, None);
+        read_vcf_for_genotype_matrix(&AHashSet::new(), &ginfo, vcf_path, min_maf, None).unwrap();
 
     for r in rec.records() {
         let pos = r.get_position();
@@ -49,7 +49,7 @@ fn compare_table_matrix_enc() {
 #[test]
 fn calc_xirs() {
     let ginfo = GenomeInfo::from_toml_file("testdata/dir001/genome.toml").unwrap();
-    let gmap = GeneticMap::from_genome_info(&ginfo);
+    let gmap = GeneticMap::from_genome_info(&ginfo).unwrap();
 
     let vcf_fns = [
         "testdata/dir001/vcf_filt/sel_chr1.vcf.gz",
@@ -58,10 +58,10 @@ fn calc_xirs() {
     ];
     let target_samples = AHashSet::new();
     let (mut sites, inds, mut mat) =
-        read_vcf_for_genotype_matrix(&target_samples, &ginfo, vcf_fns[0], 0.01, None);
+        read_vcf_for_genotype_matrix(&target_samples, &ginfo, vcf_fns[0], 0.01, None).unwrap();
     for vcf_fn in &vcf_fns[1..] {
         let (sites2, inds2, mat2) =
-            read_vcf_for_genotype_matrix(&target_samples, &ginfo, vcf_fn, 0.01, None);
+            read_vcf_for_genotype_matrix(&target_samples, &ginfo, vcf_fn, 0.01, None).unwrap();
         assert!(inds.v() == inds2.v());
         sites.merge(sites2);
         mat.merge(mat2);

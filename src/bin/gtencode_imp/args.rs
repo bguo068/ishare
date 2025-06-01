@@ -185,8 +185,7 @@ pub enum Commands {
         output: Option<PathBuf>,
     },
     /// Run binary trait SKAT-O test
-    // see details in Lee et al 2012 AJHG: https://www.cell.com/ajhg/fulltext/S0002-9297(12)00316-3
-
+    /// see details in Lee et al 2012 AJHG: https://www.cell.com/ajhg/fulltext/S0002-9297(12)00316-3
     #[cfg(feature = "skato")]
     Skato {
         /// Path to genotype record table (input)

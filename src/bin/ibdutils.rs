@@ -4,13 +4,15 @@ pub mod ibdutils_impl;
 
 use ibdutils_impl::{args::*, *};
 
-use ishare::utils::error::show_snafu_error;
+use ishare::{gmap, utils::error::show_snafu_error};
 use snafu::Snafu;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(transparent)]
     GenomeError { source: ishare::genome::Error },
+    #[snafu(transparent)]
+    GmapError { source: gmap::Error },
 }
 pub(crate) type Result<T> = std::result::Result<T, Error>;
 

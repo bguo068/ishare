@@ -21,7 +21,7 @@ pub fn main_coverage(args: &Commands) -> Result<()> {
     } = args
     {
         let ginfo = genome::GenomeInfo::from_toml_file(genome_info)?;
-        let gmap = gmap::GeneticMap::from_genome_info(&ginfo);
+        let gmap = gmap::GeneticMap::from_genome_info(&ginfo)?;
 
         let (inds1, inds1_opt) = Individuals::from_txt_file(sample_lst);
         let mut ibd1 = IbdSet::new(&gmap, &ginfo, &inds1);
@@ -68,7 +68,7 @@ pub fn main_coverage(args: &Commands) -> Result<()> {
             }
         }
 
-        let total_size = gmap.get_size_cm();
+        let total_size = gmap.get_size_cm()?;
         let mut sampling_points_cm: Vec<f32> = vec![];
         let mut cm_sp = *start_cm as f32;
         while cm_sp < total_size {

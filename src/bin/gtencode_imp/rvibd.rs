@@ -51,7 +51,7 @@ pub fn main_rvibd(args: &Commands) -> Result<()> {
 
         info!("read genome info"); // (for ibd) to compare with that from rare variants
         let ginfo = GenomeInfo::from_toml_file(genome_info)?;
-        let gmap = GeneticMap::from_genome_info(&ginfo);
+        let gmap = GeneticMap::from_genome_info(&ginfo)?;
 
         info!("read rv records");
         let mut records = GenotypeRecords::from_parquet_file(rec);

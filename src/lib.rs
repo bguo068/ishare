@@ -10,5 +10,6 @@ pub mod site;
 pub mod stat;
 #[cfg(test)]
 pub mod tests;
+pub mod traits;
 pub mod utils;
 pub mod vcf;

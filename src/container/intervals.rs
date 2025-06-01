@@ -1,10 +1,14 @@
 use std::fmt::Debug;
 use std::ops::Range;
 
-#[derive(Clone, Debug)]
-pub struct Intervals<T: PartialOrd<T> + Copy + Default + Debug>(Vec<Range<T>>);
+use super::super::traits::TotalOrd;
 
-impl<'a, T: PartialOrd<T> + Copy + Default + Debug> Intervals<T> {
+#[derive(Clone, Debug)]
+pub struct Intervals<T>(Vec<Range<T>>)
+where
+    T: TotalOrd + Copy + Default + Debug;
+
+impl<'a, T: TotalOrd + Copy + Default + Debug> Intervals<T> {
     pub fn interval_is_less(a: &Range<T>, b: &Range<T>) -> bool {
         (a.start, a.end) < (b.start, b.end)
     }
@@ -51,8 +55,9 @@ impl<'a, T: PartialOrd<T> + Copy + Default + Debug> Intervals<T> {
     }
     pub fn sort(&mut self) {
         self.0
-            .sort_by(|a, b| (a.start, a.end).partial_cmp(&(b.start, b.end)).unwrap());
+            .sort_by(|a, b| (a.start, a.end).total_cmp(&(b.start, b.end)));
     }
+
     pub fn is_sorted(&self) -> bool {
         self.0
             .iter()
@@ -82,20 +87,24 @@ impl<'a, T: PartialOrd<T> + Copy + Default + Debug> Intervals<T> {
         if self.0.is_empty() {
             self.push(min..max);
         } else {
+            // unwrap wont panic
             let the_min = self.0.first().unwrap().start;
             let the_max = self.0.last().unwrap().end;
             assert!(the_min >= min);
             assert!(the_max <= max);
 
+            // unwrap wont panic
             let (mut e, mut rest) = self.0.split_first_mut().unwrap();
             while !rest.is_empty() {
                 e.start = e.end;
                 e.end = rest[0].start;
+                // unwrap wont panic
                 (e, rest) = rest.split_first_mut().unwrap();
             }
             if the_max == max {
                 self.0.pop();
             } else {
+                // unwrap wont panic
                 let last = self.0.last_mut().unwrap();
                 last.start = last.end;
                 last.end = max;

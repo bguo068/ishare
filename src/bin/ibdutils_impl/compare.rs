@@ -30,7 +30,7 @@ pub fn main_compare(args: &Commands) -> Result<()> {
     {
         // files
         let ginfo = genome::GenomeInfo::from_toml_file(genome_info)?;
-        let gmap = gmap::GeneticMap::from_genome_info(&ginfo);
+        let gmap = gmap::GeneticMap::from_genome_info(&ginfo)?;
 
         let (inds1, inds1_opt) = Individuals::from_txt_file(sample_lst1);
         let (inds2, inds2_opt) = Individuals::from_txt_file(sample_lst2);

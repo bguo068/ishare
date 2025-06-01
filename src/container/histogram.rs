@@ -1,8 +1,18 @@
-use std::cmp::{PartialEq, PartialOrd};
+use super::super::traits::TotalOrd;
+use snafu::{ensure, Snafu};
+use std::backtrace::Backtrace;
+
+#[derive(Debug, Snafu)]
+pub enum Error {
+    // InComparableError { backtrace: Option<Backtrace> },
+    BoundaryNotUniqueError { backtrace: Option<Backtrace> },
+    EmptyBoundaryError { backtrace: Option<Backtrace> },
+}
+type Result<T> = std::result::Result<T, Error>;
 
 pub struct Histogram<T>
 where
-    T: PartialEq + PartialOrd + Copy,
+    T: TotalOrd + Copy,
 {
     bins: Vec<T>,
     counts: Vec<usize>,
@@ -10,30 +20,37 @@ where
 
 impl<'a, T> Histogram<T>
 where
-    T: PartialEq + PartialOrd + Copy + 'a,
+    T: TotalOrd + Copy + 'a,
 {
-    pub fn new(bin_iter: impl Iterator<Item = &'a T>) -> Self {
+    pub fn new(bin_iter: impl Iterator<Item = &'a T>) -> Result<Self> {
         let mut bins: Vec<T> = bin_iter.copied().collect();
-        bins.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        assert!(
-            bins.iter().zip(bins.iter().skip(1)).all(|(a, b)| *a < *b),
-            "boundaries should be sorted and unique"
+
+        // boundary should not be empty
+        ensure!(!bins.is_empty(), EmptyBoundarySnafu {});
+
+        bins.sort_by(|a, b| a.total_cmp(b));
+
+        ensure!(
+            bins.iter().zip(bins.iter().skip(1)).all(|(a, b)| *a != *b),
+            BoundaryNotUniqueSnafu {}
         );
-        assert!(!bins.is_empty(), "min length of boundaries is 1");
+
         let n = bins.len();
-        Self {
+        Ok(Self {
             bins,
             counts: vec![0; n],
-        }
+        })
     }
 
     pub fn analyze(&mut self, val_iter: impl Iterator<Item = &'a T>) {
         let min = self.bins[0];
         for val in val_iter {
-            if val.partial_cmp(&min).unwrap().is_lt() {
+            if val.total_cmp(&min).is_lt() {
                 // ignore those that are two short/small
                 continue;
             }
+            // unwrap won't panic as both val_iter and boundary both have
+            // been tested for comparability
             let idx = self
                 .bins
                 .partition_point(|x| x.partial_cmp(val).unwrap().is_le());
@@ -53,7 +70,7 @@ where
 fn test_histogram() {
     let bins = [1, 2, 3];
     let val = [0, 1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 4];
-    let mut hist = Histogram::new(bins.iter());
+    let mut hist = Histogram::new(bins.iter()).unwrap();
     hist.analyze(val.iter());
 
     assert_eq!(hist.get_counts(), &vec![2, 3, 9]);

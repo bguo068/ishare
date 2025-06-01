@@ -1,6 +1,6 @@
 use ishare::{
     genome::GenomeInfo,
-    gmap::GeneticMap,
+    gmap::{self, GeneticMap},
     indiv::Individuals,
     rfmix::{asibd::ASIBDSet, fb::*},
     share::ibd::ibdset::IbdSet,
@@ -69,6 +69,8 @@ use snafu::Snafu;
 enum Error {
     #[snafu(transparent)]
     GenomeError { source: ishare::genome::Error },
+    #[snafu(transparent)]
+    GmapError { source: gmap::Error },
 }
 type Result<T> = std::result::Result<T, Error>;
 
@@ -85,7 +87,7 @@ fn main_entry() -> Result<()> {
     eprintln!("reading gnome.toml");
     let ginfo = GenomeInfo::from_toml_file(&cli.genome)?;
     eprintln!("reading genetic map files");
-    let gmap = GeneticMap::from_genome_info(&ginfo);
+    let gmap = GeneticMap::from_genome_info(&ginfo)?;
     eprintln!("reading sample list");
     let (indivs, opt) = Individuals::from_txt_file(&cli.samples);
     assert!(opt.is_none(), "should use single column samples list");

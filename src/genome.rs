@@ -1,5 +1,5 @@
 use crate::container::intervals::Intervals;
-use crate::gmap::GeneticMap;
+use crate::gmap::{self, GeneticMap};
 use ahash::{HashMap, HashMapExt};
 use clap::ValueEnum;
 use itertools::Itertools;
@@ -32,6 +32,12 @@ pub enum Error {
     },
     InferMapFilePrefixError {
         backtrace: Option<Backtrace>,
+    },
+    #[snafu(transparent)]
+    GmapError {
+        // use Box here to avoid the circular dependency between two modules
+        #[snafu(source(from(gmap::Error, Box::new)))]
+        source: Box<gmap::Error>,
     },
 }
 
@@ -253,7 +259,7 @@ pub struct Genome {
 }
 
 impl Genome {
-    pub fn new_from_name(builtgenome: BuiltinGenome) -> Self {
+    pub fn new_from_name(builtgenome: BuiltinGenome) -> Result<Self> {
         match builtgenome {
             BuiltinGenome::Pf3d7Const15k => Self::new_from_constant_recombination_rate(
                 "pf3d7_const15k",
@@ -275,7 +281,7 @@ impl Genome {
         chromsizes: &[u32],
         chromnames: &[String],
         const_recom_rate: f32,
-    ) -> Self {
+    ) -> Result<Self> {
         let m: HashMap<_, _> = chromnames
             .iter()
             .enumerate()
@@ -311,9 +317,9 @@ impl Genome {
                 ]
             })
             .collect();
-        let gmap = GeneticMap::from_gmap_vec(&gmap_vec, chromsizes);
+        let gmap = GeneticMap::from_gmap_vec(&gmap_vec, chromsizes)?;
 
-        Self { ginfo, gmap }
+        Ok(Self { ginfo, gmap })
     }
 
     pub fn new_from_plink_gmaps(
@@ -346,7 +352,7 @@ impl Genome {
             let last = ginfo.gwstarts.last().context(EmptySliceSnafu {})?;
             ginfo.gwstarts.push(*chrlen + *last);
         }
-        let gmap = GeneticMap::from_genome_info(&ginfo);
+        let gmap = GeneticMap::from_genome_info(&ginfo)?;
         Ok(Self { ginfo, gmap })
     }
 
@@ -382,13 +388,14 @@ impl Genome {
             .context(InferMapFilePrefixSnafu {})?
             .strip_suffix("_")
             .context(InferMapFilePrefixSnafu {})?;
-        self.gmap.to_plink_map_files(&self.ginfo, gmap_path_prefix);
+        self.gmap
+            .to_plink_map_files(&self.ginfo, gmap_path_prefix)?;
         Ok(())
     }
 
     pub fn load_from_text_file(ginfo_path: &str) -> Result<Self> {
         let ginfo = GenomeInfo::from_toml_file(ginfo_path)?;
-        let gmap = GeneticMap::from_genome_info(&ginfo);
+        let gmap = GeneticMap::from_genome_info(&ginfo)?;
         Ok(Self { ginfo, gmap })
     }
 
@@ -423,7 +430,7 @@ pub const PF3D7CHRLENS: &[u32] = &[
 
 #[test]
 fn test_genome_io() {
-    let mut genome = Genome::new_from_name(BuiltinGenome::Pf3d7Const15k);
+    let mut genome = Genome::new_from_name(BuiltinGenome::Pf3d7Const15k).unwrap();
     genome.set_gmap_path_prefix("tmp_gmap/map");
 
     genome.save_to_bincode_file("tmp.bincode").unwrap();
