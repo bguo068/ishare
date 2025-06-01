@@ -1,4 +1,4 @@
-use ahash::{AHashSet, HashMap, HashMapExt};
+use ahash::{AHashSet, HashMap};
 
 use ishare::{
     genome::GenomeInfo,
@@ -121,7 +121,7 @@ impl GMap {
     #[staticmethod]
     fn from_plink_map_file(p: &str, chrlen: u32) -> PyResult<Self> {
         Ok(Self {
-            gmap: GeneticMap::from_plink_map(p, chrlen),
+            gmap: GeneticMap::from_plink_map(p, chrlen).unwrap(),
         })
     }
     #[staticmethod]
@@ -161,7 +161,7 @@ impl GMap {
 
 /// a version of IbdSet to construct pyclass (no references)
 #[pyclass]
-struct IBD {
+struct Ibd {
     gmap: GeneticMap,
     ginfo: GenomeInfo,
     inds: Individuals,
@@ -171,7 +171,7 @@ struct IBD {
 }
 
 #[pymethods]
-impl IBD {
+impl Ibd {
     #[new]
     fn new(
         ginfo: &GInfo,
@@ -181,7 +181,7 @@ impl IBD {
         samples: Vec<String>,
     ) -> PyResult<Self> {
         // individuals
-        let inds = Individuals::from_iter(samples.iter().map(|s| s.as_str()));
+        let inds = Individuals::from_str_iter(samples.iter().map(|s| s.as_str()));
         let ginfo = ginfo.ginfo.clone();
         let gmap = gmap.gmap.clone();
 
@@ -207,7 +207,7 @@ impl IBD {
 
         let (ibd, ps, ss) = ibdset.into_parts();
 
-        Ok(IBD {
+        Ok(Ibd {
             gmap,
             ginfo,
             inds,
@@ -308,13 +308,13 @@ struct RVar {
 #[pymethods]
 impl RVar {
     #[staticmethod]
-    fn from_vcf<'py>(
+    fn from_vcf(
         ginfo: &GInfo,
         samples: Vec<String>,
         vcf: &str,
         chunksize: usize,
         max_maf: f64,
-        _py: Python<'py>,
+        _py: Python<'_>,
     ) -> PyResult<Self> {
         let ginfo = &ginfo.ginfo;
 
@@ -336,7 +336,8 @@ impl RVar {
                 }
                 res
             })
-            .collect();
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
 
         // merge results
         let (mut sites, individuals, mut records) = res.pop().unwrap();
@@ -364,23 +365,14 @@ impl RVar {
         let sites_file = from_prefix(&prefix, "sit").unwrap();
         let ind_file = from_prefix(&prefix, "ind").unwrap();
 
-        match self.records.as_ref() {
-            Some(records) => {
-                records.clone().into_parquet_file(&gt_file);
-            }
-            None => {}
+        if let Some(records) = self.records.as_ref() {
+            records.clone().into_parquet_file(&gt_file);
         }
-        match self.sits.as_ref() {
-            Some(sits) => {
-                sits.clone().into_parquet_file(&sites_file);
-            }
-            None => {}
+        if let Some(sits) = self.sits.as_ref() {
+            sits.clone().into_parquet_file(&sites_file);
         }
-        match self.inds.as_ref() {
-            Some(inds) => {
-                inds.clone().into_parquet_file(&ind_file);
-            }
-            None => {}
+        if let Some(inds) = self.inds.as_ref() {
+            inds.clone().into_parquet_file(&ind_file);
         }
         Ok(())
     }
@@ -453,27 +445,27 @@ impl RVar {
         if let Some(_recs) = self.records.as_ref() {
             Ok(())
         } else {
-            return Err(PyErr::new::<PyValueError, _>(
+            Err(PyErr::new::<PyValueError, _>(
                 "genotype is empty - have you loaded it?",
-            ));
+            ))
         }
     }
     fn check_sites(&self) -> PyResult<()> {
-        if let Some(_) = self.sits.as_ref() {
+        if self.sits.as_ref().is_some() {
             Ok(())
         } else {
-            return Err(PyErr::new::<PyValueError, _>(
+            Err(PyErr::new::<PyValueError, _>(
                 "sites is empty - have you loaded it?",
-            ));
+            ))
         }
     }
     fn check_individuals(&self) -> PyResult<()> {
-        if let Some(_) = self.inds.as_ref() {
+        if self.inds.as_ref().is_some() {
             Ok(())
         } else {
-            return Err(PyErr::new::<PyValueError, _>(
+            Err(PyErr::new::<PyValueError, _>(
                 "individuals is empty - have you loaded it?",
-            ));
+            ))
         }
     }
 
@@ -627,7 +619,7 @@ impl RVar {
 /// A Python module implemented in Rust.
 #[pymodule]
 fn isharepy(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<IBD>()?;
+    m.add_class::<Ibd>()?;
     m.add_class::<GMap>()?;
     m.add_class::<GInfo>()?;
     m.add_class::<RVar>()?;
