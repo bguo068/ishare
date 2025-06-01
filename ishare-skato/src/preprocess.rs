@@ -102,6 +102,5 @@ pub fn run_logistic_regression_b(mat_x: &Array2<f64>, vec_yb: &Array1<f64>) -> A
         .fit()
         .expect("error when fitting model");
     let input = ndarray_glm::utility::one_pad(mat_x.view());
-    let pred = fit.predict(&input, None);
-    pred
+    fit.predict(&input, None)
 }

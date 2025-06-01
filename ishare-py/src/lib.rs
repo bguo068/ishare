@@ -330,7 +330,7 @@ impl RVar {
             .into_par_iter()
             .map(|region| {
                 // (sites, individuals, GenotypeRecords)
-                let res = read_vcf(&target_samples, &ginfo, vcf, max_maf, region);
+                let res = read_vcf(&target_samples, ginfo, vcf, max_maf, region);
                 if region.is_some() {
                     println!("{:?}", region);
                 }
