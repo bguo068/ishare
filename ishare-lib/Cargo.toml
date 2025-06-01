@@ -38,7 +38,6 @@ regex = "1.11.1"
 chrono = "=0.4.39"
 
 [features]
-default = ["skato", "plotibd"]
 # # need to fix this so can build binary with skato functionality
 skato = ["dep:skato"]
 plotibd = ["dep:plotters", "dep:tokio", "dep:axum"]
