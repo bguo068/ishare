@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 use ishare::{genome::*, gmap, utils::error::show_snafu_error};
 use snafu::Snafu;
@@ -36,26 +38,26 @@ enum Commands {
     ToBinaryFile {
         /// Input genome TOML with the corrected gmaps paths
         #[arg(short = 't', long)]
-        from_toml: String,
+        from_toml: PathBuf,
 
         /// Output binary file; if not set, it will be inferred from the --from-toml argument
         #[arg(short = 'b', long)]
-        to_bin: Option<String>,
+        to_bin: Option<PathBuf>,
     },
 
     /// Convert genome from a binary file to text files
     ToTextFiles {
         /// Input binary file
         #[arg(short = 'b', long)]
-        from_bin: String,
+        from_bin: PathBuf,
 
         /// Input genome TOML; if not set, it will be inferred from the --from-toml argument
         #[arg(short = 't', long)]
-        to_toml: Option<String>,
+        to_toml: Option<PathBuf>,
 
         /// Prefix for the output genome map files; defaults to "gmap/map"
         #[arg(short = 'x', long, default_value = "gmap/map")]
-        to_map_prefix: String,
+        to_map_prefix: PathBuf,
     },
 
     /// Generate genome from names of built-in genomes
@@ -66,7 +68,7 @@ enum Commands {
 
         /// Output binary file
         #[arg(short = 'b', long, group = "generate_by_name_out_format")]
-        to_bin: Option<String>,
+        to_bin: Option<PathBuf>,
 
         /// Output genome TOML
         #[arg(
@@ -75,7 +77,7 @@ enum Commands {
             group = "generate_by_name_out_format",
             group = "generate_by_name_to_toml"
         )]
-        to_toml: Option<String>,
+        to_toml: Option<PathBuf>,
 
         /// Prefix for the output genome map files; defaults to "gmap/map"
         #[arg(
@@ -84,7 +86,7 @@ enum Commands {
             default_value = "gmap/map",
             requires = "generate_by_name_to_toml"
         )]
-        to_map_prefix: String,
+        to_map_prefix: PathBuf,
     },
 
     /// Generate genome using a constant recombination rate
@@ -126,11 +128,11 @@ enum Commands {
 
         /// Output binary file
         #[arg(short = 'b', long, group = "generate_by_name_out_format")]
-        to_bin: Option<String>,
+        to_bin: Option<PathBuf>,
 
         /// Output genome TOML
         #[arg(short = 't', long, group = "generate_by_name_out_format")]
-        to_toml: Option<String>,
+        to_toml: Option<PathBuf>,
 
         /// Prefix for the output genome map files; defaults to "gmap/map"
         #[arg(
@@ -139,7 +141,7 @@ enum Commands {
             default_value = "gmap/map",
             requires = "generate_by_name_to_toml"
         )]
-        to_map_prefix: String,
+        to_map_prefix: PathBuf,
     },
 }
 
@@ -147,12 +149,7 @@ fn main_entry() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::ToBinaryFile { from_toml, to_bin } => {
-            let p = to_bin.unwrap_or({
-                std::path::Path::new(&from_toml)
-                    .with_extension("bin")
-                    .to_string_lossy()
-                    .to_string()
-            });
+            let p = to_bin.unwrap_or(from_toml.with_extension("bin"));
             Genome::load_from_text_file(&from_toml)?.save_to_bincode_file(&p)?;
         }
         Commands::ToTextFiles {
@@ -160,15 +157,9 @@ fn main_entry() -> Result<()> {
             to_toml,
             to_map_prefix,
         } => {
-            let p = to_toml.unwrap_or({
-                std::path::Path::new(&from_bin)
-                    .with_extension("bin")
-                    .to_string_lossy()
-                    .to_string()
-            });
+            let p = to_toml.unwrap_or(from_bin.with_extension("bin"));
             let mut genome = Genome::load_from_bincode_file(&from_bin)?;
-            genome.set_gmap_path_prefix(&to_map_prefix);
-            genome.save_to_text_files(&p)?;
+            genome.save_to_text_files(&p, to_map_prefix)?;
         }
         Commands::GenerateByName {
             name,
@@ -180,8 +171,7 @@ fn main_entry() -> Result<()> {
             if let Some(to_bin) = to_bin {
                 genome.save_to_bincode_file(&to_bin)?;
             } else if let Some(to_toml) = to_toml {
-                genome.set_gmap_path_prefix(&to_map_prefix);
-                genome.save_to_text_files(&to_toml)?;
+                genome.save_to_text_files(&to_toml, to_map_prefix)?;
             } else {
                 eprintln!("Error: one of --to-bin and --to-toml has to be set");
                 std::process::exit(-1);
@@ -212,8 +202,7 @@ fn main_entry() -> Result<()> {
             if let Some(to_bin) = to_bin {
                 genome.save_to_bincode_file(&to_bin)?;
             } else if let Some(to_toml) = to_toml {
-                genome.set_gmap_path_prefix(&to_map_prefix);
-                genome.save_to_text_files(&to_toml)?;
+                genome.save_to_text_files(&to_toml, to_map_prefix)?;
             } else {
                 eprintln!("Error: one of --to-bin and --to-toml has to be set");
                 std::process::exit(-1);

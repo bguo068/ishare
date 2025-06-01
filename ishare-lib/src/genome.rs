@@ -6,7 +6,8 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::backtrace::Backtrace;
 use std::io::{BufWriter, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use snafu::{OptionExt, ResultExt, Snafu};
 #[derive(Debug, Snafu)]
@@ -49,7 +50,8 @@ struct GenomeFile {
     chromsize: Vec<u32>,
     idx: HashMap<String, usize>,
     chromnames: Vec<String>,
-    gmaps: Vec<String>,
+    map_root: Option<PathBuf>,
+    gmaps: Vec<PathBuf>,
 }
 
 impl GenomeFile {
@@ -77,7 +79,8 @@ pub struct GenomeInfo {
     pub chromnames: Vec<String>,
     pub idx: HashMap<String, usize>,
     pub gwstarts: Vec<u32>,
-    pub gmaps: Vec<String>,
+    pub map_root: Option<PathBuf>,
+    pub gmaps: Vec<PathBuf>,
 }
 
 impl GenomeInfo {
@@ -101,6 +104,7 @@ impl GenomeInfo {
             chromnames,
             idx,
             gwstarts,
+            map_root: None,
             gmaps: vec![],
         }
     }
@@ -110,6 +114,7 @@ impl GenomeInfo {
             name: self.name.clone(),
             chromnames: self.chromnames.clone(),
             chromsize: self.chromsize.clone(),
+            map_root: p.as_ref().parent().map(|p| p.to_path_buf()),
             gmaps: self.gmaps.clone(),
             idx: self.idx.clone(),
         };
@@ -149,6 +154,7 @@ impl GenomeInfo {
             let last = ginfo.gwstarts.last().context(EmptySliceSnafu {})?;
             ginfo.gwstarts.push(*chrlen + *last);
         }
+        ginfo.map_root = path.as_ref().parent().map(|p| p.to_path_buf());
         Ok(ginfo)
     }
     pub fn to_gw_pos(&self, chrid: usize, pos: u32) -> u32 {
@@ -206,6 +212,7 @@ impl GenomeInfo {
             chromnames,
             chromsize,
             idx,
+            map_root: self.map_root.clone(),
             gwstarts,
             gmaps,
         }
@@ -326,7 +333,7 @@ impl Genome {
         genome_name: &str,
         chromsizes: &[u32],
         chromnames: &[String],
-        plink_files: &[String],
+        plink_files: &[PathBuf],
     ) -> Result<Self> {
         let mut gfile = GenomeFile {
             name: genome_name.to_owned(),
@@ -337,6 +344,7 @@ impl Genome {
                 .map(|(index, chrname)| (chrname.to_owned(), index))
                 .collect(),
             chromnames: chromnames.to_vec(),
+            map_root: None,
             gmaps: plink_files.to_owned(),
         };
         gfile.check();
@@ -357,7 +365,7 @@ impl Genome {
     }
 
     /// load genome (ginfo and gmap) from a single bincode file, for ease of use
-    pub fn load_from_bincode_file(p: &str) -> Result<Self> {
+    pub fn load_from_bincode_file(p: impl AsRef<Path>) -> Result<Self> {
         let mut reader = std::fs::File::open(p)
             .map(std::io::BufReader::new)
             .context(IoSnafu {})?;
@@ -365,8 +373,8 @@ impl Genome {
     }
 
     /// save to single bincode file, for ease of use
-    pub fn save_to_bincode_file(&self, p: &str) -> Result<()> {
-        if let Some(parent) = Path::new(p).parent() {
+    pub fn save_to_bincode_file(&self, p: impl AsRef<Path>) -> Result<()> {
+        if let Some(parent) = Path::new(p.as_ref()).parent() {
             std::fs::create_dir_all(parent).context(IoSnafu {})?;
         }
         let reader = std::fs::File::create(p)
@@ -376,24 +384,21 @@ impl Genome {
     }
 
     /// save to readable text file,  including the genome info toml file and a list of per chr recombinaton rate in plink map format
-    pub fn save_to_text_files(&self, ginfo_path: &str) -> Result<()> {
-        if let Some(parent) = std::path::Path::new(ginfo_path).parent() {
+    pub fn save_to_text_files(
+        &mut self,
+        toml_path: impl AsRef<Path>,
+        gmap_path: impl AsRef<Path>,
+    ) -> Result<()> {
+        if let Some(parent) = toml_path.as_ref().parent() {
             std::fs::create_dir_all(parent).context(IoSnafu {})?;
         }
-        self.ginfo.to_toml_file(ginfo_path)?;
-        let gmap_path_prefix = self.ginfo.gmaps[0]
-            .strip_suffix(".map")
-            .context(InferMapFilePrefixSnafu {})?
-            .strip_suffix(&self.ginfo.chromnames[0])
-            .context(InferMapFilePrefixSnafu {})?
-            .strip_suffix("_")
-            .context(InferMapFilePrefixSnafu {})?;
-        self.gmap
-            .to_plink_map_files(&self.ginfo, gmap_path_prefix)?;
+        self.ginfo.to_toml_file(toml_path.as_ref())?;
+        self.set_gmap_path(toml_path, gmap_path);
+        self.gmap.to_plink_map_files(&self.ginfo)?;
         Ok(())
     }
 
-    pub fn load_from_text_file(ginfo_path: &str) -> Result<Self> {
+    pub fn load_from_text_file(ginfo_path: impl AsRef<Path>) -> Result<Self> {
         let ginfo = GenomeInfo::from_toml_file(ginfo_path)?;
         let gmap = GeneticMap::from_genome_info(&ginfo)?;
         Ok(Self { ginfo, gmap })
@@ -407,12 +412,17 @@ impl Genome {
         &self.gmap
     }
 
-    pub fn set_gmap_path_prefix(&mut self, new_gmap_path_prefix: &str) {
+    pub fn set_gmap_path(&mut self, toml_path: impl AsRef<Path>, gmap_path: impl AsRef<Path>) {
+        let dir = &toml_path.as_ref().parent().unwrap();
+        self.ginfo.map_root = Some(dir.to_path_buf());
         self.ginfo.gmaps = self
             .ginfo
             .chromnames
             .iter()
-            .map(|chrname| format!("{new_gmap_path_prefix}_{chrname}.map"))
+            .map(|chrname| {
+                dir.join(gmap_path.as_ref())
+                    .join(PathBuf::from_str(&format!("{chrname}.map")).unwrap())
+            })
             .collect::<Vec<_>>();
     }
 }
@@ -431,13 +441,15 @@ pub const PF3D7CHRLENS: &[u32] = &[
 #[test]
 fn test_genome_io() {
     let mut genome = Genome::new_from_name(BuiltinGenome::Pf3d7Const15k).unwrap();
-    genome.set_gmap_path_prefix("tmp_gmap/map");
+    genome.set_gmap_path("tmp_genome.toml", "tmp_gmap");
 
     genome.save_to_bincode_file("tmp.bincode").unwrap();
     let genome2 = Genome::load_from_bincode_file("tmp.bincode").unwrap();
     assert_eq!(&genome, &genome2);
 
-    genome.save_to_text_files("tmp_genome.toml").unwrap();
+    genome
+        .save_to_text_files("tmp_genome.toml", "tmp_gmap")
+        .unwrap();
     let genome3 = Genome::load_from_text_file("tmp_genome.toml").unwrap();
 
     assert_eq!(&genome, &genome3);

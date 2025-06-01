@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use snafu::{ensure, OptionExt, ResultExt, Snafu};
 use std::{
     backtrace::Backtrace,
-    env::current_dir,
     io::{BufWriter, Write},
     num::{ParseFloatError, ParseIntError},
     path::Path,
@@ -48,6 +47,9 @@ pub enum Error {
     PrefixIsTwoDots {
         backtrace: Option<Backtrace>,
     },
+    PathParentError {
+        backtrace: Option<Backtrace>,
+    },
 }
 
 type Result<T> = std::result::Result<T, Error>;
@@ -75,8 +77,13 @@ impl GeneticMap {
         let mut gw_chr_start_cm = 0.0f32;
         let mut v = Vec::new();
 
+        let dir = ginfo
+            .map_root
+            .as_ref()
+            .map_or(Path::new("."), |p| p.as_path());
         for (chrlen, plinkmap_fn) in ginfo.chromsize.iter().zip(ginfo.gmaps.iter()) {
-            let mut chrmap = GeneticMap::from_plink_map(plinkmap_fn, *chrlen)?;
+            let p = dir.join(plinkmap_fn);
+            let mut chrmap = GeneticMap::from_plink_map(p, *chrlen)?;
             let chrlen_cm = chrmap.get_size_cm()?;
 
             chrmap.update_to_genome_wide_coords(gw_chr_start_bp, gw_chr_start_cm);
@@ -254,25 +261,20 @@ impl GeneticMap {
         });
     }
 
-    pub fn to_plink_map_files(&self, ginfo: &GenomeInfo, prefix: impl AsRef<Path>) -> Result<()> {
-        // make folder
-        let parent = match prefix.as_ref().parent() {
-            Some(p) => p,
-            None => &current_dir().context(IoSnafu {})?,
-        };
-        if !parent.exists() {
-            std::fs::create_dir_all(parent).context(IoSnafu {})?;
-        }
-        let filename = prefix
+    pub fn to_plink_map_files(&self, ginfo: &GenomeInfo) -> Result<()> {
+        let dir = ginfo
+            .map_root
             .as_ref()
-            .file_name()
-            .context(PrefixIsTwoDotsSnafu {})?
-            .to_string_lossy();
+            .map_or(Path::new("."), |s| s.as_path());
+
         for (i, chrname) in ginfo.chromnames.iter().enumerate() {
-            // make a file name per chromosome
-            let mut path = parent.to_path_buf();
-            path.push(format!("{}_{}.map", filename, chrname));
-            let mut f = std::fs::File::create(&path)
+            let p = dir.join(&ginfo.gmaps[i]);
+            let parent = p.parent().context(PathParentSnafu {})?;
+            if !parent.exists() {
+                std::fs::create_dir_all(parent).context(IoSnafu {})?;
+            }
+
+            let mut f = std::fs::File::create(&p)
                 .map(BufWriter::new)
                 .context(IoSnafu {})?;
             // find the first end record for each chromosome

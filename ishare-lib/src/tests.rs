@@ -12,7 +12,7 @@ fn compare_table_matrix_enc() {
 
     let genome_info = "../testdata/dir001/genome.toml";
     let ginfo = GenomeInfo::from_toml_file(genome_info).unwrap();
-    let vcf_path = "testdata/dir001/bcf/sel_chr1.bcf";
+    let vcf_path = "../testdata/dir001/bcf/sel_chr1.bcf";
 
     let max_maf = 0.001f64;
     let (sit, _ind, rec) = read_vcf(&AHashSet::new(), &ginfo, vcf_path, max_maf, None).unwrap();
@@ -52,9 +52,9 @@ fn calc_xirs() {
     let gmap = GeneticMap::from_genome_info(&ginfo).unwrap();
 
     let vcf_fns = [
-        "testdata/dir001/vcf_filt/sel_chr1.vcf.gz",
-        "testdata/dir001/vcf_filt/sel_chr2.vcf.gz",
-        "testdata/dir001/vcf_filt/sel_chr3.vcf.gz",
+        "../testdata/dir001/vcf_filt/sel_chr1.vcf.gz",
+        "../testdata/dir001/vcf_filt/sel_chr2.vcf.gz",
+        "../testdata/dir001/vcf_filt/sel_chr3.vcf.gz",
     ];
     let target_samples = AHashSet::new();
     let (mut sites, inds, mut mat) =
@@ -71,7 +71,7 @@ fn calc_xirs() {
     // return;
 
     let mut ibd = IbdSet::new(&gmap, &ginfo, &inds);
-    ibd.read_hapibd_dir("testdata/dir001/ibd_hapibd/");
+    ibd.read_hapibd_dir("../testdata/dir001/ibd_hapibd/");
     ibd.sort_by_haplotypes();
     ibd.infer_ploidy();
 
