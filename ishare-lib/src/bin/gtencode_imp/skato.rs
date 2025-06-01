@@ -53,7 +53,7 @@ pub fn main_skato(args: &Commands) -> Result<()> {
             let nsams = inds.v().len();
             {
                 println!("\tprepare matrix for call skat-o test");
-                use skato_rs::*;
+                use skato::*;
                 // build matrix
                 let mut z = Array2::<f64>::zeros([nsams, nsites]);
                 // get genotype data Z

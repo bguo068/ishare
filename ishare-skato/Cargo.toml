@@ -1,5 +1,5 @@
 [package]
-name = "skato-rs"
+name = "skato"
 version = "0.1.0"
 edition = "2021"
 
@@ -13,6 +13,8 @@ ndarray = { version = "0.15.6", features = ["blas"] }
 # 
 # 1. on mac use, it is easier to use system openblas
 # brew install openblas
+# export LDFLAGS="-L/opt/homebrew/opt/openblas/lib"
+# export CPPFLAGS="-I/opt/homebrew/opt/openblas/include"
 # export PKG_CONFIG_PATH="/usr/local/opt/openblas/lib/pkgconfig"
 # # then change ndarray-glm/ndarray-linalg features to "openblas-system"
 # 2. on linux

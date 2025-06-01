@@ -11,7 +11,7 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = "0.19.0"
 arrow = { version = "41.0.0", features = ["pyarrow"] }
-ishare = { path = "../" }
+ishare = { path = "../ishare-lib" }
 chrono = "=0.4.39"
 ahash = "*"
 numpy = "0.19.0"
