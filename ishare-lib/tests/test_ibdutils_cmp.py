@@ -1,3 +1,8 @@
+"""
+mamba create -n py pandas numpy scipy scikit-learn scikit-allel bedtools pybedtools maturin black pyright pyslim msprime tskit ipython polars matplotlib fastparquet xlsxwriter
+conda activate py
+"""
+
 import pandas as pd
 import pybedtools as pb
 from subprocess import run
@@ -6,26 +11,29 @@ import numpy as np
 # %% ============================================
 # IBD overlapping analyses via ibdutils compare command
 
+with open("tmp_sample_lst.txt", "wt") as f:
+    for i in range(1000):
+        f.write(f"{i}\n")
+
 
 # run ishare ibdutils command
 cmd = f"""
-cd ..
-cargo run -q --release --bin ibdutils  -- compare \
-    -g testdata/genome.toml  \
-    -s testdata/samples.hap.txt \
+RUST_BACKTRACE=1  cargo run --release --bin ibdutils  -- compare \
+    -g ../../testdata/dir001/genome.toml  \
+    -s  tmp_sample_lst.txt \
     -f tskibd \
-    -i testdata/ibd_tskibd \
-    -S testdata/samples.hap.txt \
+    -i ../../testdata/dir001/ibd_tskibd \
+    -S  tmp_sample_lst.txt \
     -F hmmibd \
-    -I testdata/ibd_hmmibd \
-    -o /tmp/ttttt.csv
+    -I ../../testdata/dir001/ibd_hmmibd2 \
+    -o tmp_ttttt.csv
 """
 r = run(cmd, shell=True, text=True)
 if r.returncode != 0:
     print(r.stderr)
     raise Exception("command err")
 
-df1 = pd.read_csv("/tmp/ttttt.csv")
+df1 = pd.read_csv("tmp_ttttt.csv")
 df1
 
 
@@ -37,12 +45,12 @@ lst1, lst2 = [], []
 
 for chrno in range(1, 4):
     # Id1 Id2 Start End Ancestor Tmrca HasMutation
-    df1 = pd.read_csv(f"../testdata/ibd_tskibd/{chrno}.ibd", sep="\t")
+    df1 = pd.read_csv(f"../../testdata/dir001/ibd_tskibd/{chrno}.ibd", sep="\t")
     df1["Chrom"] = chrno
     lst1.append(df1[["Id1", "Id2", "Chrom", "Start", "End"]])
 
     # sample1 sample2 chr start end different Nsnp
-    df2 = pd.read_csv(f"../testdata/ibd_hmmibd2/{chrno}.hmm.txt", sep="\t")
+    df2 = pd.read_csv(f"../../testdata/dir001/ibd_hmmibd2/{chrno}.hmm.txt", sep="\t")
     df2 = df2[
         (df2["different"] == 0) & (df2["end"] - df2["start"] >= 15000 * 2.0)
     ].iloc[:, :5]
@@ -115,10 +123,13 @@ y = intersect_2_by_1.dropna().groupby("Cm")["Ov"].mean().rename("Ov2By1")
 
 df2 = pd.concat([x, y], axis=1)
 
+df2.to_csv("tmp_tttpy.tsv", sep="\t")
 # %% compare results of two methods
 
-diff1 = np.abs(df1.iloc[:5, 1].values - df2.iloc[:5, 0].values)
-diff2 = np.abs(df1.iloc[:5, 2].values - df2.iloc[:5, 1].values)
+diff1 = np.abs(df1["RateAOverlapByBMean"].values[:5] - df2["Ov1By2"].values[:5])
+diff2 = np.abs(df1["RateBOverlapByAMean"].values[:5] - df2["Ov2By1"].values[:5])
+print(diff1.max())
+print(diff2.max())
 assert np.all(diff1 < 0.001)
 assert np.all(diff2 < 0.001)
 

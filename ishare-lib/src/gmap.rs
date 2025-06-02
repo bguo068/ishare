@@ -217,7 +217,11 @@ impl GeneticMap {
         let (x1, y1) = self.0[idx];
         let (x2, y2) = match self.0.get(idx + 1) {
             Some(x) => *x,
-            None => panic!("idx={}, bp={}", idx, bp),
+            None => {
+                let max_cm = self.get_size_cm().unwrap();
+                eprintln!("WARN get_cm: idx={}, bp={}, cm>={}", idx, bp, max_cm);
+                return max_cm;
+            }
         };
         let slope = (y2 - y1) / (x2 - x1) as f32;
         let mut cm = (bp - x1) as f32 * slope + y1;
