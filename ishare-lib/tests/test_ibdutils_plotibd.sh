@@ -1,6 +1,6 @@
 #! /usr/bin/env
 set -e
-cd ..
+# cd ..
 # cargo run --release --bin ibdutils -- \
 #     plot-ibd -g testdata/genome.toml \
 #     -i testdata/ibd_hmmibd  \
@@ -36,16 +36,18 @@ cd ..
 #     -o plot -x 0 -X $i
 # done
 
-for i in {1..100}; do
-cargo run --release --bin ibdutils -- \
-    plot-ibd -g testdata/genome.toml \
-    -i testdata/ibd_hapibd  \
-    -f hapibd \
-    -s testdata/samples.dip.txt \
-    -I testdata/ibd_tskibd  \
-    -F tskibd \
-    -S testdata/samples.h2d.txt \
-    -o plot -x 0 -X $i
-done
 
-cd -
+cargo build --release --bin ibdutils --features plotibd
+PROJCTDIR=`cargo locate-project --workspace --message-format plain`
+PROJCTDIR=`dirname $PROJCTDIR`
+cd $PROJCTDIR/ishare-lib/tests
+
+../../target/release/ibdutils \
+    plot-ibd -g ../../testdata/dir001/genome.toml \
+    -i ../../testdata/dir001/ibd_hapibd  \
+    -f hapibd \
+    -s ../../testdata/dir001/sample.list \
+    -I ../../testdata/dir001/ibd_tskibd  \
+    -F tskibd \
+    -S ../../testdata/dir001/sample.list.2col.txt \
+    --port 8080 -x 9 -X 10
