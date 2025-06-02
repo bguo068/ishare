@@ -63,7 +63,7 @@ Clone the forked repository and build:
 ```sh
 # replace the url to that of your own fork
 git clone https://github.com/bguo068/ishare.git
-cd ishare
+cd ishare/ishare-lib
 # pull submodules that contain some test data
 git submodule update --init --recursive
 ```
@@ -98,7 +98,7 @@ This is popup a web page that contains documentation for all used crates as well
 ## Push your changes
 
 ```
-git add [FILES_YOUR_CHANGES]
+git add [FILES_WITH_YOUR_CHANGES]
 git commit -m '[SHORT_MEANING_FULL_MESSAGE]'
 git push
 ```
