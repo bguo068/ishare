@@ -452,5 +452,9 @@ fn test_genome_io() {
         .unwrap();
     let genome3 = Genome::load_from_text_file("tmp_genome.toml").unwrap();
 
+    std::fs::remove_file("tmp_genome.toml").unwrap();
+    std::fs::remove_file("tmp.bincode").unwrap();
+    std::fs::remove_dir_all("tmp_gmap").unwrap();
+
     assert_eq!(&genome, &genome3);
 }

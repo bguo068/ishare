@@ -81,4 +81,6 @@ fn calc_xirs() {
     let xirs = XirsBuilder::new(afreq, gw_pos, &ibd).finish();
 
     xirs.into_parquet("tmp.xirs.pq");
+
+    std::fs::remove_file("tmp.xirs.pq").unwrap();
 }

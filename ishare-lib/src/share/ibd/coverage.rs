@@ -122,4 +122,6 @@ fn test_cov_counter() {
     assert_eq!(counter.get_counts(), &[3, 3, 1, 0]);
 
     counter.into_parquet("tmp.cov.pq");
+
+    std::fs::remove_file("tmp.cov.pq").unwrap();
 }
