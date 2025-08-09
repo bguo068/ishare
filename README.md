@@ -85,3 +85,16 @@ E.g., `gtencode encode --help`.
 Running tests requires cloning test data from `https://github.com/bguo068/testdata`, 
 which has been added as  a submodule of `ishare` and thus can downloaded by running: 
 `git submodule update --init --recursive`
+
+# Citations
+- For functionalities implemented in `ibdutils` used for IBD caller benchmarking, please consider citing:
+  - Original (non-windowed) version
+   > Guo Bing, Takala-Harrison Shannon, O’Connor Timothy D (2025)
+   > Benchmarking and Optimization of Methods for the Detection of Identity-By-Descent in
+   > High-Recombining Plasmodium falciparum Genomes eLife 14:RP101924 https://doi.org/10.7554/eLife.101924.2
+  - Windowed version:
+  > Guo B, Schaffner SF, Taylor AR, O'Connor TD, Takala-Harrison S.
+  > hmmibd-rs: An enhanced hmmIBD implementation for parallelizable identity-by-descent detection
+  > from large-scale Plasmodium genomic data. Res Sq [Preprint].
+  > 2025 Jul 2:rs.3.rs-7004070. doi: 10.21203/rs.3.rs-7004070/v1.
+  > PMID: 40630530; PMCID: PMC12236896.
