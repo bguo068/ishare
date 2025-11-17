@@ -72,6 +72,21 @@ cd ishare_py
 maturin develop --release
 cd ..
 ```
+## Docker image:
+
+```sh
+docker pull ishare:v0.1.11
+# Run any of the tools
+docker run --rm ishare:v0.1.11 gtencode --help
+docker run --rm ishare:v0.1.11 ibdutils --help
+docker run --rm ishare:v0.1.11 asibd --help
+
+# Run with your data (mount current directory)
+docker run --rm -v $(pwd):/data ishare:v0.1.11 gtencode [subcommand] [options]
+docker run --rm -v $(pwd):/data ishare:v0.1.11 ibdutils [subcommand] [options]
+docker run --rm -v $(pwd):/data ishare:v0.1.11 asibd    [subcommand] [options]
+```
+
 
 # Usage
 Instructions for each command line tool are as follows:
