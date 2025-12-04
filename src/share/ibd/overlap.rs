@@ -411,7 +411,7 @@ pub fn write_per_winddow_overlap_res(
         .unwrap();
 
     // write csv header
-    write!(file, "Chrom,StartBp,EndBp,StartCm,EndCm,GwStartBp,GwEndBp,GwStartCm,GwEndCm,LenBinStart,AOvByB,BOvByA").unwrap();
+    writeln!(file, "Chrom,StartBp,EndBp,StartCm,EndCm,GwStartBp,GwEndBp,GwStartCm,GwEndCm,LenBinStart,AOvByB,BOvByA").unwrap();
     for (&(win_start, win_end), ov_res) in windows.iter().zip(ov_res_slice.iter()) {
         let (idx_s, chr_s, chr_pos_s) = ginfo.to_chr_pos(win_start);
         let gwcm_s = gmap.get_cm(win_start);
