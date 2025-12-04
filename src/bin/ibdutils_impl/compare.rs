@@ -23,6 +23,7 @@ pub fn main_compare(args: &Commands) {
         window_size_bp,
         use_hap_overlap,
         use_hap_totibd,
+        suppress_total_ibd_calculation,
         write_details,
         out,
     } = args
@@ -139,7 +140,7 @@ pub fn main_compare(args: &Commands) {
                 );
             }
         }
-        {
+        if !suppress_total_ibd_calculation {
             // 2. total IBD analysis
             let ignore_hap = !(*use_hap_totibd);
 

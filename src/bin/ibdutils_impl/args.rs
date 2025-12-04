@@ -88,6 +88,10 @@ pub enum Commands {
         /// output details
         #[arg(short = 'D', long, default_value_t = false)]
         write_details: bool,
+        /// Use this flag to supress calculation of total ibd
+        #[arg(long, default_value_t = false)]
+        suppress_total_ibd_calculation: bool,
+
         /// Path to sample list file
         #[arg(short = 'o', long, default_value = "ibd_cmp_res.txt")]
         out: PathBuf,
