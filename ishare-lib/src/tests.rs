@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::genome::GenomeInfo;
 use crate::gmap::GeneticMap;
 use crate::io::IntoParquet;
@@ -51,8 +53,8 @@ fn compare_table_matrix_enc() {
 
 #[test]
 fn calc_xirs() {
-    let ginfo = GenomeInfo::from_toml_file("../testdata/dir001/genome.toml").unwrap();
-    let gmap = GeneticMap::from_genome_info(&ginfo).unwrap();
+    let ginfo = Arc::new(GenomeInfo::from_toml_file("../testdata/dir001/genome.toml").unwrap());
+    let gmap = Arc::new(GeneticMap::from_genome_info(&ginfo).unwrap());
 
     let vcf_fns = [
         "../testdata/dir001/vcf_filt/sel_chr1.vcf.gz",
@@ -62,6 +64,7 @@ fn calc_xirs() {
     let target_samples = AHashSet::new();
     let (mut sites, inds, mut mat) =
         read_vcf_for_genotype_matrix(&target_samples, &ginfo, vcf_fns[0], 0.01, None).unwrap();
+    let inds = Arc::new(inds);
     for vcf_fn in &vcf_fns[1..] {
         let (sites2, inds2, mat2) =
             read_vcf_for_genotype_matrix(&target_samples, &ginfo, vcf_fn, 0.01, None).unwrap();
@@ -73,8 +76,9 @@ fn calc_xirs() {
     println!("mat size: nrow={}, ncol={}", mat.nrows(), mat.ncols());
     // return;
 
-    let mut ibd = IbdSet::new(&gmap, &ginfo, &inds);
-    ibd.read_hapibd_dir("../testdata/dir001/ibd_hapibd/").unwrap();
+    let mut ibd = IbdSet::new(gmap, ginfo, inds);
+    ibd.read_hapibd_dir("../testdata/dir001/ibd_hapibd/")
+        .unwrap();
     ibd.sort_by_haplotypes();
     ibd.infer_ploidy();
 

@@ -74,7 +74,7 @@ use statrs::distribution::{ChiSquared, ContinuousCDF};
 pub struct XirsBuilder<'a> {
     afrq_i: Vec<f64>,
     pos_i: Vec<u32>,
-    ibd: &'a IbdSet<'a>,
+    ibd: &'a IbdSet,
     npairs: usize,
     nsites: usize,
     xs_i: Vec<f64>,   // intermediate variables (columns means in step 1)
@@ -88,7 +88,7 @@ pub struct XirsBuilder<'a> {
 }
 
 impl<'a> XirsBuilder<'a> {
-    pub fn new(afrq: Vec<f64>, site_pos: Vec<u32>, ibd: &'a IbdSet<'a>) -> Result<Self> {
+    pub fn new(afrq: Vec<f64>, site_pos: Vec<u32>, ibd: &'a IbdSet) -> Result<Self> {
         // sort and check positions order and range
         ensure!(
             site_pos
@@ -119,7 +119,10 @@ impl<'a> XirsBuilder<'a> {
             IbdSetPloidyStatus::Haploid => ibd.get_inds().v().len(),
             IbdSetPloidyStatus::Diploid => ibd.get_inds().v().len() * 2,
             status => {
-                return InvalidPloidyStatusSnafu { status: format!("{status:?}") }.fail();
+                return InvalidPloidyStatusSnafu {
+                    status: format!("{status:?}"),
+                }
+                .fail();
             }
         };
         let npairs = nhap * (nhap - 1) / 2;
@@ -159,7 +162,10 @@ impl<'a> XirsBuilder<'a> {
             IbdSetPloidyStatus::Haploid => (id1, id2),
             IbdSetPloidyStatus::Diploid => ((id1 << 1) + (hap1 as u32), (id2 << 1) + (hap2 as u32)),
             status => {
-                return InvalidPloidyStatusSnafu { status: format!("{status:?}") }.fail();
+                return InvalidPloidyStatusSnafu {
+                    status: format!("{status:?}"),
+                }
+                .fail();
             }
         };
 
@@ -411,7 +417,7 @@ pub struct XirsResult {
 pub struct XirsBuilder2<'a> {
     afrq_i: Vec<f64>,
     pos_i: Vec<u32>,
-    ibd: &'a IbdSet<'a>,
+    ibd: &'a IbdSet,
     npairs: usize,
     nsites: usize,
     raw_i: Vec<f64>,  //
@@ -421,7 +427,7 @@ pub struct XirsBuilder2<'a> {
 }
 
 impl<'a> XirsBuilder2<'a> {
-    pub fn new(afrq: Vec<f64>, site_pos: Vec<u32>, ibd: &'a IbdSet<'a>) -> Result<Self> {
+    pub fn new(afrq: Vec<f64>, site_pos: Vec<u32>, ibd: &'a IbdSet) -> Result<Self> {
         // sort and check positions order and range
 
         ensure!(
@@ -453,7 +459,10 @@ impl<'a> XirsBuilder2<'a> {
             IbdSetPloidyStatus::Haploid => ibd.get_inds().v().len(),
             IbdSetPloidyStatus::Diploid => ibd.get_inds().v().len() * 2,
             status => {
-                return InvalidPloidyStatusSnafu { status: format!("{status:?}") }.fail();
+                return InvalidPloidyStatusSnafu {
+                    status: format!("{status:?}"),
+                }
+                .fail();
             }
         };
         let npairs = nhap * (nhap - 1) / 2;
@@ -489,7 +498,10 @@ impl<'a> XirsBuilder2<'a> {
             IbdSetPloidyStatus::Haploid => (id1, id2),
             IbdSetPloidyStatus::Diploid => ((id1 << 1) + (hap1 as u32), (id2 << 1) + (hap2 as u32)),
             status => {
-                return InvalidPloidyStatusSnafu { status: format!("{status:?}") }.fail();
+                return InvalidPloidyStatusSnafu {
+                    status: format!("{status:?}"),
+                }
+                .fail();
             }
         };
 

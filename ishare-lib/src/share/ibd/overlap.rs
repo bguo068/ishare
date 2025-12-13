@@ -11,16 +11,16 @@ use std::path::PathBuf;
 type Result<T> = std::result::Result<T, super::Error>;
 
 pub struct IbdOverlapAnalyzer<'a> {
-    ibd1: &'a IbdSet<'a>,
-    ibd2: &'a IbdSet<'a>,
+    ibd1: &'a IbdSet,
+    ibd2: &'a IbdSet,
     prefix_for_details: Option<&'a PathBuf>,
     ignore_hap: bool,
 }
 
 impl<'a> IbdOverlapAnalyzer<'a> {
     pub fn new(
-        ibd1: &'a IbdSet<'a>,
-        ibd2: &'a IbdSet<'a>,
+        ibd1: &'a IbdSet,
+        ibd2: &'a IbdSet,
         ignore_hap: bool,
         prefix_for_details: Option<&'a PathBuf>,
     ) -> Self {
@@ -42,8 +42,8 @@ impl<'a> IbdOverlapAnalyzer<'a> {
 
     fn calc_overlap_rates<'b>(
         &self,
-        ibd1: &'b IbdSet<'a>,
-        ibd2: &'b IbdSet<'a>,
+        ibd1: &'b IbdSet,
+        ibd2: &'b IbdSet,
         len_ranges: Option<&[f32]>,
         swap12: bool,
     ) -> Result<(Vec<f64>, Vec<f64>, f64, f64)> {
@@ -305,14 +305,14 @@ impl<'a> IbdOverlapAnalyzer<'a> {
 
         // empty
         let mut ibd1_win = IbdSet::new(
-            self.ibd1.get_gmap(),
-            self.ibd1.get_ginfo(),
-            self.ibd1.get_inds(),
+            self.ibd1.get_gmap().clone(),
+            self.ibd1.get_ginfo().clone(),
+            self.ibd1.get_inds().clone(),
         );
         let mut ibd2_win = IbdSet::new(
-            self.ibd2.get_gmap(),
-            self.ibd2.get_ginfo(),
-            self.ibd2.get_inds(),
+            self.ibd2.get_gmap().clone(),
+            self.ibd2.get_ginfo().clone(),
+            self.ibd2.get_inds().clone(),
         );
 
         if let Some((win_start, win_end)) = window_gw_bp {

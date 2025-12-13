@@ -10,6 +10,7 @@ use ishare::{
 use itertools::Itertools;
 use log::*;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use snafu::prelude::*;
 #[derive(Debug, Snafu)]
@@ -65,14 +66,15 @@ pub fn main_encode(args: &Commands) -> Result<()> {
             .format_module_path(false)
             .init();
         info!("read genome toml file");
-        let ginfo = GenomeInfo::from_toml_file(genome_info)?;
+        let ginfo = Arc::new(GenomeInfo::from_toml_file(genome_info)?);
         info!("read genetic map files");
-        let gmap = gmap::GeneticMap::from_genome_info(&ginfo)?;
+        let gmap = Arc::new(gmap::GeneticMap::from_genome_info(&ginfo)?);
         info!("read samples list file");
         let (inds, _inds_opt) = Individuals::from_txt_file(sample_lst)?;
+        let inds = Arc::new(inds);
 
         // read ibd into memory
-        let ibd = read_ibd(&ginfo, &gmap, &inds, ibd_dir, fmt)?;
+        let ibd = read_ibd(ginfo.clone(), gmap.clone(), inds, ibd_dir, fmt)?;
         info!("before encoding no. ibd: {}", ibd.as_slice().len());
 
         // read positions
@@ -124,13 +126,13 @@ pub fn main_encode(args: &Commands) -> Result<()> {
     }
     Ok(())
 }
-fn read_ibd<'a>(
-    ginfo: &'a GenomeInfo,
-    gmap: &'a GeneticMap,
-    inds: &'a Individuals,
+fn read_ibd(
+    ginfo: Arc<GenomeInfo>,
+    gmap: Arc<GeneticMap>,
+    inds: Arc<Individuals>,
     ibd_dir: &PathBuf,
     fmt: &String,
-) -> Result<IbdSet<'a>> {
+) -> Result<IbdSet> {
     let mut ibd = IbdSet::new(gmap, ginfo, inds);
 
     info!("read ibd list file");

@@ -9,6 +9,7 @@ use ishare::{
     share::ibd::ibdset::IbdSet,
     utils::error::show_snafu_error,
 };
+use std::sync::Arc;
 use std::{
     fs::File,
     io::{read_to_string, BufWriter},
@@ -138,15 +139,16 @@ fn main_entry() -> Result<()> {
     let cli = Cli::parse();
 
     eprintln!("reading gnome.toml");
-    let ginfo = GenomeInfo::from_toml_file(&cli.genome)?;
+    let ginfo = Arc::new(GenomeInfo::from_toml_file(&cli.genome)?);
     eprintln!("reading genetic map files");
-    let gmap = GeneticMap::from_genome_info(&ginfo)?;
+    let gmap = Arc::new(GeneticMap::from_genome_info(&ginfo)?);
     eprintln!("reading sample list");
     let (indivs, opt) = Individuals::from_txt_file(&cli.samples)?;
+    let indivs = Arc::new(indivs);
     assert!(opt.is_none(), "should use single column samples list");
 
     eprintln!("reading ibd file");
-    let mut ibd = IbdSet::new(&gmap, &ginfo, &indivs);
+    let mut ibd = IbdSet::new(gmap.clone(), ginfo.clone(), indivs.clone());
     ibd.read_hapibd_file(&cli.hapibd_ibd, cli.min_ibd_seg_cm)?;
     ibd.sort_by_haplotypes();
 
@@ -167,9 +169,10 @@ fn main_entry() -> Result<()> {
         let la_set = LASet::from_fbmat(&fb);
         (ancestry, la_set)
     };
+    let ancestry = Arc::from(ancestry);
 
     eprintln!("inferring as-ibd file");
-    let mut asibd = ASIBDSet::new(&gmap, &ginfo, &indivs, &ancestry);
+    let mut asibd = ASIBDSet::new(gmap, ginfo, indivs, ancestry);
     asibd.get_asibd_from_ibdsets_and_laset(&ibd, &la_set)?;
 
     eprintln!("writing as-ibd file");

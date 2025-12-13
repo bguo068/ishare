@@ -26,6 +26,7 @@ use pyo3::{
     types::{PyDict, PyList},
 };
 use rayon::prelude::*;
+use std::sync::Arc;
 
 fn convert_err<E>(e: E) -> PyErr
 where
@@ -36,7 +37,7 @@ where
 
 #[pyclass]
 struct GInfo {
-    ginfo: GenomeInfo,
+    pub ginfo: Arc<GenomeInfo>,
 }
 
 #[pymethods]
@@ -86,7 +87,9 @@ impl GInfo {
             }
             v
         };
-        let ginfo = GenomeInfo::new_from_parts(name, chromsizes, chromnames, idx, gwstarts);
+        let ginfo = Arc::new(GenomeInfo::new_from_parts(
+            name, chromsizes, chromnames, idx, gwstarts,
+        ));
 
         Ok(GInfo { ginfo })
     }
@@ -94,7 +97,7 @@ impl GInfo {
 
 #[pyclass]
 struct GMap {
-    gmap: GeneticMap,
+    pub gmap: Arc<GeneticMap>,
 }
 #[pymethods]
 impl GMap {
@@ -122,19 +125,19 @@ impl GMap {
             lst.push((chrlen - 1, (chrlen - 1) as f32 * average_rate));
         }
 
-        let gmap = GeneticMap::from_vec(lst);
+        let gmap = Arc::new(GeneticMap::from_vec(lst));
         Ok(Self { gmap })
     }
     #[staticmethod]
     fn from_plink_map_file(p: &str, chrlen: u32) -> PyResult<Self> {
         Ok(Self {
-            gmap: GeneticMap::from_plink_map(p, chrlen).unwrap(),
+            gmap: Arc::new(GeneticMap::from_plink_map(p, chrlen).unwrap()),
         })
     }
     #[staticmethod]
     fn from_constant_rate(rate: f32, chrlen: u32) -> PyResult<Self> {
         Ok(Self {
-            gmap: GeneticMap::from_constant_rate(rate, chrlen),
+            gmap: Arc::new(GeneticMap::from_constant_rate(rate, chrlen)),
         })
     }
 
@@ -161,7 +164,7 @@ impl GMap {
             cm_offset += cm_len;
         }
         Ok(GMap {
-            gmap: GeneticMap::from_vec(out),
+            gmap: Arc::new(GeneticMap::from_vec(out)),
         })
     }
 }
@@ -169,9 +172,9 @@ impl GMap {
 /// a version of IbdSet to construct pyclass (no references)
 #[pyclass]
 struct Ibd {
-    gmap: GeneticMap,
-    ginfo: GenomeInfo,
-    inds: Individuals,
+    gmap: Arc<GeneticMap>,
+    ginfo: Arc<GenomeInfo>,
+    inds: Arc<Individuals>,
     ibd: Vec<IbdSeg>,
     ploidy_status: IbdSetPloidyStatus,
     sort_status: IbdSetSortStatus,
@@ -187,12 +190,14 @@ impl Ibd {
         samples: Vec<String>,
     ) -> PyResult<Self> {
         // individuals
-        let inds = Individuals::from_str_iter(samples.iter().map(|s| s.as_str()));
+        let inds = Arc::new(Individuals::from_str_iter(
+            samples.iter().map(|s| s.as_str()),
+        ));
         let ginfo = ginfo.ginfo.clone();
         let gmap = gmap.gmap.clone();
 
         // Ibdset
-        let mut ibdset = IbdSet::new(&gmap, &ginfo, &inds);
+        let mut ibdset = IbdSet::new(gmap.clone(), ginfo.clone(), inds.clone());
 
         for (fname, chrname) in ibd_files.iter().zip(ginfo.chromnames.iter()) {
             if ibd_format == "hapibd" {
@@ -275,7 +280,7 @@ impl Ibd {
 
         let mut ibdvec = vec![];
         std::mem::swap(&mut self.ibd, &mut ibdvec);
-        let mut ibdset = IbdSet::new(&self.gmap, &self.ginfo, &self.inds);
+        let mut ibdset = IbdSet::new(self.gmap.clone(), self.ginfo.clone(), self.inds.clone());
         ibdset.update_parts(ibdvec, self.ploidy_status, self.sort_status);
         dbg!(self.ploidy_status);
 
