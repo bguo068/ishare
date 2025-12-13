@@ -2,14 +2,18 @@ use std::num::ParseFloatError;
 
 use super::utils::*;
 use ishare::{
-    genome, gmap,
+    genome,
+    gmap::{self, GeneticMap},
     indiv::*,
     share::ibd::{
+        ibdseg::IbdSeg,
         ibdset::*,
         overlap::{self, write_per_winddow_overlap_res, IbdOverlapResult},
     },
 };
 
+use itertools::Itertools;
+use slice_group_by::GroupBy;
 use snafu::prelude::*;
 
 #[derive(Debug, Snafu)]
@@ -171,6 +175,8 @@ pub fn main_compare(args: &Commands) -> Result<()> {
         if !suppress_total_ibd_calculation {
             // 2. total IBD analysis
             let ignore_hap = !(*use_hap_totibd);
+            let mut total1_vec = vec![];
+            let mut total2_vec = vec![];
 
             // re-sort ibd
             match ignore_hap {
@@ -179,7 +185,36 @@ pub fn main_compare(args: &Commands) -> Result<()> {
                         if !ibd.is_sorted_by_samples() {
                             ibd.sort_by_samples();
                         }
-                        ibd.infer_ploidy()
+                        ibd.infer_ploidy();
+                    }
+                    let it1 = ibd1
+                        .as_slice()
+                        .linear_group_by_key(|seg| seg.individual_pair());
+                    let it2 = ibd2
+                        .as_slice()
+                        .linear_group_by_key(|seg| seg.individual_pair());
+                    for e in it1.merge_join_by(it2, |blk1, blk2| {
+                        blk1[0].individual_pair().cmp(&blk2[0].individual_pair())
+                    }) {
+                        // individual pairs. segments may overlap
+                        match e {
+                            itertools::EitherOrBoth::Left(blk1) => {
+                                let total1: f32 = get_sample_pair_total_ibd(blk1, &gmap);
+                                total1_vec.push(total1);
+                                total2_vec.push(0.0f32);
+                            }
+                            itertools::EitherOrBoth::Right(blk2) => {
+                                let total2: f32 = get_sample_pair_total_ibd(blk2, &gmap);
+                                total2_vec.push(total2);
+                                total1_vec.push(0.0f32);
+                            }
+                            itertools::EitherOrBoth::Both(blk1, blk2) => {
+                                let total1: f32 = get_sample_pair_total_ibd(blk1, &gmap);
+                                let total2: f32 = get_sample_pair_total_ibd(blk2, &gmap);
+                                total1_vec.push(total1);
+                                total2_vec.push(total2);
+                            }
+                        }
                     }
                 }
                 false => {
@@ -187,30 +222,48 @@ pub fn main_compare(args: &Commands) -> Result<()> {
                         if !ibd.is_sorted_by_haplotypes() {
                             ibd.sort_by_haplotypes();
                         }
-                        ibd.infer_ploidy()
+                        ibd.infer_ploidy();
+                    }
+                    let it1 = ibd1
+                        .as_slice()
+                        .linear_group_by_key(|seg| seg.haplotype_pair());
+                    let it2 = ibd2
+                        .as_slice()
+                        .linear_group_by_key(|seg| seg.haplotype_pair());
+                    for e in it1.merge_join_by(it2, |blk1, blk2| {
+                        blk1[0].haplotype_pair().cmp(&blk2[0].haplotype_pair())
+                    }) {
+                        // haplotype pairs, segments are not overlapping
+                        // only need sum them up per haplotype pair
+                        match e {
+                            itertools::EitherOrBoth::Left(blk1) => {
+                                let total1: f32 =
+                                    blk1.iter().map(|seg| seg.get_seg_len_cm(&gmap)).sum();
+                                total1_vec.push(total1);
+                                total2_vec.push(0.0f32);
+                            }
+                            itertools::EitherOrBoth::Right(blk2) => {
+                                let total2: f32 =
+                                    blk2.iter().map(|seg| seg.get_seg_len_cm(&gmap)).sum();
+                                total2_vec.push(total2);
+                                total1_vec.push(0.0f32);
+                            }
+                            itertools::EitherOrBoth::Both(blk1, blk2) => {
+                                let total1: f32 =
+                                    blk1.iter().map(|seg| seg.get_seg_len_cm(&gmap)).sum();
+                                total1_vec.push(total1);
+                                let total2: f32 =
+                                    blk2.iter().map(|seg| seg.get_seg_len_cm(&gmap)).sum();
+                                total2_vec.push(total2);
+                            }
+                        }
                     }
                 }
             }
 
-            let inds = ibd1.get_inds();
-
-            let mat1 = ibd1.get_gw_total_ibd_matrix(ignore_hap);
-            let mat2 = ibd2.get_gw_total_ibd_matrix(ignore_hap);
-            let mut n = inds.v().len();
-            if !ignore_hap {
-                n *= 2; // n is the number of haplotypes if not ignore_hap
-            }
-            let pairs = (0..n - 1).flat_map(|i| ((i + 1)..n).map(move |j| (i, j)));
-            let it1 = pairs
-                .clone()
-                .map(|(i, j)| mat1.get_by_positions(i as u32, j as u32));
-            let it2 = pairs
-                .clone()
-                .map(|(i, j)| mat2.get_by_positions(i as u32, j as u32));
-
             write_pair_total(
-                it1,
-                it2,
+                total1_vec,
+                total2_vec,
                 "PairTotIbdA",
                 "PairTotIbdB",
                 out.with_extension("pairtotibdpq"),
@@ -267,4 +320,30 @@ pub fn main_compare(args: &Commands) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// calculate sample-pair total IBD in cM
+///
+/// Assumes (1) all segments are from the same sample pair;
+/// (2) they are sorted by coordinates
+///
+/// When there are overlapping segments, merged IBD segment length is
+/// calculated and accumulated.
+fn get_sample_pair_total_ibd(blk: &[IbdSeg], gmap: &GeneticMap) -> f32 {
+    let mut total = 0.0f32;
+    let mut cur_seg = blk[0];
+    blk.iter().skip(1).for_each(|seg| {
+        if seg.s > cur_seg.e {
+            total += cur_seg.get_seg_len_cm(gmap);
+            cur_seg.s = seg.s;
+            cur_seg.e = seg.e;
+        } else {
+            cur_seg.e = seg.e;
+        }
+    });
+    if cur_seg.s < cur_seg.e {
+        total += cur_seg.get_seg_len_cm(gmap);
+    }
+
+    total
 }
