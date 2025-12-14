@@ -1,4 +1,8 @@
 use super::ibdseg::IbdSeg;
+use super::{
+    BgzReadSnafu, CsvReadSnafu, InvalidEnumValueSnafu, InvalidFilenameSnafu, MissingDataSnafu,
+    ParseIntSnafu, ParseValueSnafu, ReadDirectorySnafu, ThreadPoolSnafu, Utf8ParseSnafu,
+};
 use crate::container::intervals::Intervals;
 use crate::container::intervaltree::IntervalTree;
 use crate::genome::GenomeInfo;
@@ -12,12 +16,12 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use rust_htslib::bgzf;
 use rust_htslib::tpool::ThreadPool;
+use snafu::prelude::*;
 use std::cmp::Ordering;
 use std::path::Path;
+use std::sync::Arc;
 use IbdSetPloidyStatus::*;
 use IbdSetSortStatus::*;
-use snafu::prelude::*;
-use super::{ReadDirectorySnafu, InvalidFilenameSnafu, Utf8ParseSnafu, ParseValueSnafu, ParseIntSnafu, CsvReadSnafu, BgzReadSnafu, ThreadPoolSnafu, MissingDataSnafu, InvalidEnumValueSnafu};
 
 type Result<T> = std::result::Result<T, super::Error>;
 
@@ -36,24 +40,24 @@ pub enum IbdSetSortStatus {
     Unsorted,
 }
 
-/// A struct representing a set of IBD segments with references to meta information
+/// A struct representing a set of IBD segments with smart pointers to meta information
 /// - GeneticMap
 /// - GenomeInfo
 /// - Individual info
 ///
 #[derive(Clone)]
-pub struct IbdSet<'a> {
+pub struct IbdSet {
     ibd: Vec<IbdSeg>,
-    gmap: &'a GeneticMap,
-    ginfo: &'a GenomeInfo,
-    inds: &'a Individuals,
+    gmap: Arc<GeneticMap>,
+    ginfo: Arc<GenomeInfo>,
+    inds: Arc<Individuals>,
     ploidy_status: IbdSetPloidyStatus,
     sort_status: IbdSetSortStatus,
 }
 
-impl<'a> IbdSet<'a> {
+impl IbdSet {
     /// Create an empty IBD set with meta infomation
-    pub fn new(gmap: &'a GeneticMap, ginfo: &'a GenomeInfo, inds: &'a Individuals) -> Self {
+    pub fn new(gmap: Arc<GeneticMap>, ginfo: Arc<GenomeInfo>, inds: Arc<Individuals>) -> Self {
         Self {
             ibd: vec![],
             gmap,
@@ -150,27 +154,35 @@ impl<'a> IbdSet<'a> {
     }
 
     /// return a reference of genetic map
-    pub fn get_gmap(&self) -> &GeneticMap {
-        self.gmap
+    pub fn get_gmap(&self) -> &Arc<GeneticMap> {
+        &self.gmap
     }
     /// return a reference of GenomeInfo
-    pub fn get_ginfo(&self) -> &GenomeInfo {
-        self.ginfo
+    pub fn get_ginfo(&self) -> &Arc<GenomeInfo> {
+        &self.ginfo
     }
     /// return a reference of Individuals
-    pub fn get_inds(&self) -> &Individuals {
-        self.inds
+    pub fn get_inds(&self) -> &Arc<Individuals> {
+        &self.inds
     }
 
     /// read all `*.ibd.gz` file (in hap-IBD format) into the IBD set
     /// by globing the folder and calling [IbdSet::read_hapibd_file]
     pub fn read_hapibd_dir(&mut self, p: impl AsRef<Path>) -> Result<()> {
         let path = p.as_ref().to_path_buf();
-        for entry in p.as_ref().read_dir().context(ReadDirectorySnafu { path: path.clone() })?.flatten() {
+        for entry in p
+            .as_ref()
+            .read_dir()
+            .context(ReadDirectorySnafu { path: path.clone() })?
+            .flatten()
+        {
             let filename = entry.file_name();
-            let filename = filename.as_os_str().to_str().context(InvalidFilenameSnafu { 
-                filename: format!("{filename:?}") 
-            })?;
+            let filename = filename
+                .as_os_str()
+                .to_str()
+                .context(InvalidFilenameSnafu {
+                    filename: format!("{filename:?}"),
+                })?;
             if !filename.ends_with("ibd.gz") {
                 continue;
             }
@@ -228,7 +240,15 @@ impl<'a> IbdSet<'a> {
 
             // filter out very short segments
             if let Some(min_cm) = min_cm {
-                let cm: f32 = from_utf8(&record[7]).context(Utf8ParseSnafu)?.parse::<f32>().context(ParseValueSnafu { value: from_utf8(&record[7]).unwrap_or("<invalid utf8>").to_string(), type_name: "f32".to_string() })?;
+                let cm: f32 = from_utf8(&record[7])
+                    .context(Utf8ParseSnafu)?
+                    .parse::<f32>()
+                    .context(ParseValueSnafu {
+                        value: from_utf8(&record[7])
+                            .unwrap_or("<invalid utf8>")
+                            .to_string(),
+                        type_name: "f32".to_string(),
+                    })?;
                 if cm < min_cm {
                     continue;
                 }
@@ -241,21 +261,61 @@ impl<'a> IbdSet<'a> {
             }
             let i = *i.context(MissingDataSnafu)? as u32;
             let j = *j.context(MissingDataSnafu)? as u32;
-            let m: u8 = match from_utf8(&record[1]).context(Utf8ParseSnafu)?.parse::<u8>().context(ParseIntSnafu { value: from_utf8(&record[1]).unwrap_or("<invalid utf8>").to_string() })? {
+            let m: u8 = match from_utf8(&record[1])
+                .context(Utf8ParseSnafu)?
+                .parse::<u8>()
+                .context(ParseIntSnafu {
+                    value: from_utf8(&record[1])
+                        .unwrap_or("<invalid utf8>")
+                        .to_string(),
+                })? {
                 1 => 0,
                 2 => 1,
                 0 => 2,
-                value => return InvalidEnumValueSnafu { value: value.to_string() }.fail(),
+                value => {
+                    return InvalidEnumValueSnafu {
+                        value: value.to_string(),
+                    }
+                    .fail()
+                }
             };
-            let n: u8 = match from_utf8(&record[3]).context(Utf8ParseSnafu)?.parse::<u8>().context(ParseIntSnafu { value: from_utf8(&record[3]).unwrap_or("<invalid utf8>").to_string() })? {
+            let n: u8 = match from_utf8(&record[3])
+                .context(Utf8ParseSnafu)?
+                .parse::<u8>()
+                .context(ParseIntSnafu {
+                    value: from_utf8(&record[3])
+                        .unwrap_or("<invalid utf8>")
+                        .to_string(),
+                })? {
                 1 => 0,
                 2 => 1,
                 0 => 2,
-                value => return InvalidEnumValueSnafu { value: value.to_string() }.fail(),
+                value => {
+                    return InvalidEnumValueSnafu {
+                        value: value.to_string(),
+                    }
+                    .fail()
+                }
             };
             let chr = from_utf8(&record[4]).context(Utf8ParseSnafu)?;
-            let s = from_utf8(&record[5]).context(Utf8ParseSnafu)?.parse::<u32>().context(ParseIntSnafu { value: from_utf8(&record[5]).unwrap_or("<invalid utf8>").to_string() })? - 1;
-            let e = from_utf8(&record[6]).context(Utf8ParseSnafu)?.parse::<u32>().context(ParseIntSnafu { value: from_utf8(&record[6]).unwrap_or("<invalid utf8>").to_string() })? - 1;
+            let s = from_utf8(&record[5])
+                .context(Utf8ParseSnafu)?
+                .parse::<u32>()
+                .context(ParseIntSnafu {
+                    value: from_utf8(&record[5])
+                        .unwrap_or("<invalid utf8>")
+                        .to_string(),
+                })?
+                - 1;
+            let e = from_utf8(&record[6])
+                .context(Utf8ParseSnafu)?
+                .parse::<u32>()
+                .context(ParseIntSnafu {
+                    value: from_utf8(&record[6])
+                        .unwrap_or("<invalid utf8>")
+                        .to_string(),
+                })?
+                - 1;
 
             let chrid = self.ginfo.idx[chr];
             let pos_shift = self.ginfo.gwstarts[chrid];
@@ -328,16 +388,16 @@ impl<'a> IbdSet<'a> {
             };
 
             // allow converting floats to ints
-            let mut s = record[2].parse::<f32>().context(ParseValueSnafu { 
-                value: record[2].to_string(), 
-                type_name: "f32".to_string() 
+            let mut s = record[2].parse::<f32>().context(ParseValueSnafu {
+                value: record[2].to_string(),
+                type_name: "f32".to_string(),
             })? as u32;
             if s >= 1 {
                 s -= 1;
             }
-            let mut e = record[3].parse::<f32>().context(ParseValueSnafu { 
-                value: record[3].to_string(), 
-                type_name: "f32".to_string() 
+            let mut e = record[3].parse::<f32>().context(ParseValueSnafu {
+                value: record[3].to_string(),
+                type_name: "f32".to_string(),
             })? as u32;
             assert!(e <= chrmsize, "e={e}, chrmsize: {chrmsize}");
             if e >= 1 {
@@ -365,18 +425,28 @@ impl<'a> IbdSet<'a> {
     /// by globing the folder and calling [IbdSet::read_hapibd_file]
     pub fn read_tskibd_dir(&mut self, p: impl AsRef<Path>) -> Result<()> {
         let path = p.as_ref().to_path_buf();
-        for entry in p.as_ref().read_dir().context(ReadDirectorySnafu { path: path.clone() })?.flatten() {
+        for entry in p
+            .as_ref()
+            .read_dir()
+            .context(ReadDirectorySnafu { path: path.clone() })?
+            .flatten()
+        {
             let filename = entry.file_name();
-            let filename = filename.as_os_str().to_str().context(InvalidFilenameSnafu { 
-                filename: format!("{filename:?}") 
-            })?;
+            let filename = filename
+                .as_os_str()
+                .to_str()
+                .context(InvalidFilenameSnafu {
+                    filename: format!("{filename:?}"),
+                })?;
             if !filename.ends_with("ibd") {
                 continue;
             }
             let p = entry.path();
-            let chrname = p.file_stem().context(MissingDataSnafu)?.to_str().context(InvalidFilenameSnafu {
-                filename: format!("{:?}", p.file_stem())
-            })?;
+            let chrname = p.file_stem().context(MissingDataSnafu)?.to_str().context(
+                InvalidFilenameSnafu {
+                    filename: format!("{:?}", p.file_stem()),
+                },
+            )?;
             self.read_tskibd_file(&p, chrname)?;
         }
         Ok(())
@@ -386,11 +456,19 @@ impl<'a> IbdSet<'a> {
     /// by globing the folder and calling [IbdSet::read_hapibd_file]
     pub fn read_hmmibd_dir(&mut self, p: impl AsRef<Path>) -> Result<()> {
         let path = p.as_ref().to_path_buf();
-        for entry in p.as_ref().read_dir().context(ReadDirectorySnafu { path: path.clone() })?.flatten() {
+        for entry in p
+            .as_ref()
+            .read_dir()
+            .context(ReadDirectorySnafu { path: path.clone() })?
+            .flatten()
+        {
             let filename = entry.file_name();
-            let filename = filename.as_os_str().to_str().context(InvalidFilenameSnafu { 
-                filename: format!("{filename:?}") 
-            })?;
+            let filename = filename
+                .as_os_str()
+                .to_str()
+                .context(InvalidFilenameSnafu {
+                    filename: format!("{filename:?}"),
+                })?;
             if !filename.ends_with(".hmm.txt") {
                 continue;
             }
@@ -423,15 +501,21 @@ impl<'a> IbdSet<'a> {
             //  n_snp,
 
             // skip nonibd information
-            let ibd = to_str(&rec[5])?.parse::<u8>().context(ParseIntSnafu { value: to_str(&rec[5])?.to_string() })?;
+            let ibd = to_str(&rec[5])?.parse::<u8>().context(ParseIntSnafu {
+                value: to_str(&rec[5])?.to_string(),
+            })?;
             if ibd != 0 {
                 continue;
             }
 
             let chrname = to_str(&rec[2])?;
             let chrid = self.ginfo.idx[chrname];
-            let start_pos = to_str(&rec[3])?.parse::<u32>().context(ParseIntSnafu { value: to_str(&rec[3])?.to_string() })? - 1; // 1-based to 0-based
-            let end_pos = to_str(&rec[4])?.parse::<u32>().context(ParseIntSnafu { value: to_str(&rec[4])?.to_string() })? - 1; // 1-based to 0-based
+            let start_pos = to_str(&rec[3])?.parse::<u32>().context(ParseIntSnafu {
+                value: to_str(&rec[3])?.to_string(),
+            })? - 1; // 1-based to 0-based
+            let end_pos = to_str(&rec[4])?.parse::<u32>().context(ParseIntSnafu {
+                value: to_str(&rec[4])?.to_string(),
+            })? - 1; // 1-based to 0-based
             let s = self.ginfo.to_gw_pos(chrid, start_pos);
             let e = s + end_pos - start_pos;
 
@@ -505,7 +589,7 @@ impl<'a> IbdSet<'a> {
 
     pub fn covert_to_het_diploid(
         &mut self,
-        diploid_inds: &'a Individuals,
+        diploid_inds: Arc<Individuals>,
         ploidy_converter: &PloidyConverter,
     ) -> Result<()> {
         let is_haploid = matches!(self.ploidy_status, Haploid);
@@ -526,7 +610,7 @@ impl<'a> IbdSet<'a> {
     }
     pub fn covert_to_haploid(
         &mut self,
-        haploid_inds: &'a Individuals,
+        haploid_inds: Arc<Individuals>,
         ploidy_converter: &PloidyConverter,
     ) {
         // check ploidy
@@ -599,8 +683,8 @@ impl<'a> IbdSet<'a> {
         let is_diploid_unmerged = matches!(self.ploidy_status, Diploid);
 
         assert!(is_diploid_unmerged);
-        let ginfo = self.ginfo;
-        let gmap = self.gmap;
+        let ginfo = self.ginfo.clone();
+        let gmap = self.gmap.clone();
         let site_pos = site.get_gw_pos_slice();
 
         let mut pos_map = HashMap::new();
@@ -673,7 +757,7 @@ impl<'a> IbdSet<'a> {
     }
 
     pub fn get_gw_total_ibd_matrix(&self, ignore_hap: bool) -> NamedMatrix<f32> {
-        let gmap = self.gmap;
+        let gmap = &self.gmap;
         let mut mat;
         if ignore_hap {
             assert!(self.is_sorted_by_samples());
@@ -735,7 +819,7 @@ impl<'a> IbdSet<'a> {
     pub fn filter_segments_by_min_cm(&mut self, min_cm: f64) {
         // mark short ibd segments for deletion
         for seg in self.ibd.as_mut_slice() {
-            let cm = seg.get_seg_len_cm(self.gmap);
+            let cm = seg.get_seg_len_cm(&self.gmap);
             if (cm as f64) < min_cm {
                 seg.i = 0;
                 seg.j = 0;
@@ -765,11 +849,14 @@ impl<'a> IbdSet<'a> {
         // get complement of regions
         let mut regions = regions.clone();
         let genome_size = self.get_ginfo().get_total_len_bp();
-        regions.complement(0, genome_size)
-            .map_err(|e| crate::share::ibd::Error::ContainerOperation { details: e.to_string() })?;
+        regions.complement(0, genome_size).map_err(|e| {
+            crate::share::ibd::Error::ContainerOperation {
+                details: e.to_string(),
+            }
+        })?;
         // generate ibdseg that intersect the complement regions
         let tree = IntervalTree::from_iter(regions.iter().map(|x| (x.to_owned(), ())));
-        let gmap = self.gmap;
+        let gmap = &self.gmap;
         for seg in self.iter() {
             for element in tree.query(seg.e..seg.i) {
                 let mut seg = *seg;
@@ -958,12 +1045,15 @@ fn test_ibdset_iter() {
     ginfo
         .idx
         .extend(vec![("chr1".to_owned(), 0), ("chr2".to_owned(), 1)]);
+    let ginfo = Arc::new(ginfo);
 
     let gmap = GeneticMap::from_bp_cm_pair_iter(vec![(0, 0.0), (200_000_000, 200.0)].into_iter());
+    let gmap = Arc::new(gmap);
     let inds = Individuals::from_str_iter(vec!["a", "b", "c", "d"].into_iter());
+    let inds = Arc::new(inds);
 
-    let mut ibd1 = IbdSet::new(&gmap, &ginfo, &inds);
-    let mut ibd2 = IbdSet::new(&gmap, &ginfo, &inds);
+    let mut ibd1 = IbdSet::new(gmap.clone(), ginfo.clone(), inds.clone());
+    let mut ibd2 = IbdSet::new(gmap, ginfo, inds);
     ibd1.add(IbdSeg::new(0, 0, 1, 0, 10, 100, 0));
     ibd1.add(IbdSeg::new(0, 0, 1, 0, 90, 110, 0));
     ibd1.add(IbdSeg::new(0, 0, 1, 1, 90, 110, 0));
@@ -1021,13 +1111,13 @@ mod test {
 
     use super::*;
 
-    fn get_gt_sites_ibd<'a>(
+    fn get_gt_sites_ibd(
         gt_array: &[Vec<u8>],
         sit_pos: &[u32],
         ibds: &[(u32, u32, u32, u32)],
-        genome: &'a Genome,
-        inds: &'a Individuals,
-    ) -> (GenotypeMatrix, Sites, IbdSet<'a>) {
+        genome: Arc<Genome>,
+        inds: Arc<Individuals>,
+    ) -> (GenotypeMatrix, Sites, IbdSet) {
         let slice_lengths = gt_array.iter().all(|row| row.len() == sit_pos.len());
         assert!(slice_lengths);
         let mut gt_mat = GenotypeMatrix::new(5);
@@ -1037,7 +1127,11 @@ mod test {
         for pos in sit_pos {
             sites.add_site_with_bytes(*pos, &[]).unwrap();
         }
-        let mut ibd = IbdSet::new(genome.gmap(), genome.ginfo(), inds);
+        let mut ibd = IbdSet::new(
+            Arc::from(genome.gmap().clone()),
+            Arc::from(genome.ginfo().clone()),
+            inds,
+        );
 
         for (i, j, s, e) in ibds.iter() {
             let seg = IbdSeg {
@@ -1060,7 +1154,9 @@ mod test {
             0.001,
         )
         .unwrap();
+        let genome = Arc::new(genome);
         let inds = Individuals::from_str_iter(["sample1", "sample2"].into_iter());
+        let inds = Arc::new(inds);
 
         let (gt_mat, sites, mut ibd) = get_gt_sites_ibd(
             &[
@@ -1071,15 +1167,17 @@ mod test {
             ],
             &[10, 30, 50, 70, 90],
             &[(0, 4, 20, 40), (1, 5, 71, 90)],
-            &genome,
-            &inds,
+            genome,
+            inds,
         );
         ibd.infer_ploidy();
         let mut ibd1 = ibd.clone();
-        ibd1.merge_using_browning_method(100.0, 2, &gt_mat, &sites).unwrap();
+        ibd1.merge_using_browning_method(100.0, 2, &gt_mat, &sites)
+            .unwrap();
         assert_eq!(ibd1.ibd.len(), 1);
         let mut ibd2 = ibd.clone();
-        ibd2.merge_using_browning_method(100.0, 1, &gt_mat, &sites).unwrap();
+        ibd2.merge_using_browning_method(100.0, 1, &gt_mat, &sites)
+            .unwrap();
         assert_eq!(ibd2.ibd.len(), 2);
     }
 }
@@ -1111,27 +1209,32 @@ mod comprehensive_tests {
 
         #[test]
         fn test_new_ibdset() {
-            let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let genome = Arc::new(create_test_genome());
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let ibdset = IbdSet::new(gmap, ginfo, inds.clone());
+
             assert_eq!(ibdset.ibd.len(), 0);
             assert_eq!(ibdset.get_ploidy_status(), UnknownPloidy);
             assert_eq!(ibdset.get_sort_status(), Unsorted);
-            assert_eq!(ibdset.get_gmap() as *const _, genome.gmap() as *const _);
-            assert_eq!(ibdset.get_ginfo() as *const _, genome.ginfo() as *const _);
-            assert_eq!(ibdset.get_inds() as *const _, &inds as *const _);
+            assert_eq!(ibdset.get_gmap().as_ref(), genome.gmap());
+            assert_eq!(ibdset.get_ginfo().as_ref(), genome.ginfo());
+            assert_eq!(ibdset.get_inds().as_ref(), inds.as_ref());
         }
 
         #[test]
         fn test_add_segment() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             let seg = IbdSeg::new(0, 0, 1, 0, 1000, 2000, 0);
             ibdset.add(seg);
-            
+
             assert_eq!(ibdset.ibd.len(), 1);
             assert_eq!(ibdset.get_ploidy_status(), UnknownPloidy);
             assert_eq!(ibdset.get_sort_status(), Unsorted);
@@ -1140,31 +1243,37 @@ mod comprehensive_tests {
         #[test]
         fn test_add_multiple_segments() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             ibdset.add(IbdSeg::new(0, 0, 1, 0, 1000, 2000, 0));
             ibdset.add(IbdSeg::new(0, 1, 1, 1, 3000, 4000, 0));
             ibdset.add(IbdSeg::new(1, 0, 2, 0, 5000, 6000, 0));
-            
+
             assert_eq!(ibdset.ibd.len(), 3);
         }
 
         #[test]
         fn test_into_parts_and_update_parts() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             ibdset.add(IbdSeg::new(0, 0, 1, 0, 1000, 2000, 0));
             ibdset.add(IbdSeg::new(0, 1, 1, 1, 3000, 4000, 0));
-            
+
             let (parts, ploidy, sort) = ibdset.into_parts();
             assert_eq!(parts.len(), 2);
             assert_eq!(ploidy, UnknownPloidy);
             assert_eq!(sort, Unsorted);
             assert_eq!(ibdset.ibd.len(), 0);
-            
+
             ibdset.update_parts(parts, Diploid, SortedByIndividaulPair);
             assert_eq!(ibdset.ibd.len(), 2);
             assert_eq!(ibdset.get_ploidy_status(), Diploid);
@@ -1174,12 +1283,15 @@ mod comprehensive_tests {
         #[test]
         fn test_into_vec() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             ibdset.add(IbdSeg::new(0, 0, 1, 0, 1000, 2000, 0));
             ibdset.add(IbdSeg::new(0, 1, 1, 1, 3000, 4000, 0));
-            
+
             let vec = ibdset.into_vec();
             assert_eq!(vec.len(), 2);
         }
@@ -1187,16 +1299,19 @@ mod comprehensive_tests {
         #[test]
         fn test_iter_and_as_slice() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             ibdset.add(IbdSeg::new(0, 0, 1, 1, 1000, 2000, 0));
             ibdset.add(IbdSeg::new(1, 0, 2, 0, 3000, 4000, 0));
-            
+
             // Test iterator
             let iter_count = ibdset.iter().count();
             assert_eq!(iter_count, 2);
-            
+
             // Test as_slice
             let slice = ibdset.as_slice();
             assert_eq!(slice.len(), 2);
@@ -1211,13 +1326,16 @@ mod comprehensive_tests {
         #[test]
         fn test_infer_haploid_ploidy() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             // Add haploid segments (m=3, n=3)
             ibdset.add(IbdSeg::new(0, 3, 1, 3, 1000, 2000, 0));
             ibdset.add(IbdSeg::new(1, 3, 2, 3, 3000, 4000, 0));
-            
+
             ibdset.infer_ploidy();
             assert_eq!(ibdset.get_ploidy_status(), Haploid);
         }
@@ -1225,13 +1343,16 @@ mod comprehensive_tests {
         #[test]
         fn test_infer_diploid_ploidy() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             // Add diploid segments (m/n = 0 or 1)
             ibdset.add(IbdSeg::new(0, 0, 1, 1, 1000, 2000, 0));
             ibdset.add(IbdSeg::new(1, 1, 2, 0, 3000, 4000, 0));
-            
+
             ibdset.infer_ploidy();
             assert_eq!(ibdset.get_ploidy_status(), Diploid);
         }
@@ -1239,13 +1360,15 @@ mod comprehensive_tests {
         #[test]
         fn test_infer_diploid_merged_ploidy() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
             // Add merged diploid segments (m/n = 2)
             ibdset.add(IbdSeg::new(0, 2, 1, 2, 1000, 2000, 0));
             ibdset.add(IbdSeg::new(1, 2, 2, 2, 3000, 4000, 0));
-            
+
             ibdset.infer_ploidy();
             assert_eq!(ibdset.get_ploidy_status(), DiploidMerged);
         }
@@ -1253,13 +1376,16 @@ mod comprehensive_tests {
         #[test]
         fn test_infer_unknown_ploidy() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             // Add mixed segments that don't fit any pattern
             ibdset.add(IbdSeg::new(0, 0, 1, 3, 1000, 2000, 0));
             ibdset.add(IbdSeg::new(1, 3, 2, 1, 3000, 4000, 0));
-            
+
             ibdset.infer_ploidy();
             assert_eq!(ibdset.get_ploidy_status(), UnknownPloidy);
         }
@@ -1267,22 +1393,25 @@ mod comprehensive_tests {
         #[test]
         fn test_ploidy_validation_methods() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             // Test haploid validation
             ibdset.add(IbdSeg::new(0, 3, 1, 3, 1000, 2000, 0));
             assert!(ibdset.is_valid_haploid_ibd());
             assert!(!ibdset.is_valid_diploid_ibd());
             assert!(!ibdset.has_merged_ibd());
-            
+
             // Clear and test diploid
             ibdset.ibd.clear();
             ibdset.add(IbdSeg::new(0, 0, 1, 1, 1000, 2000, 0));
             assert!(!ibdset.is_valid_haploid_ibd());
             assert!(ibdset.is_valid_diploid_ibd());
             assert!(!ibdset.has_merged_ibd());
-            
+
             // Clear and test merged diploid
             ibdset.ibd.clear();
             ibdset.add(IbdSeg::new(0, 2, 1, 2, 1000, 2000, 0));
@@ -1294,9 +1423,12 @@ mod comprehensive_tests {
         #[test]
         fn test_empty_ibdset_ploidy() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             // Empty IBD set - infer_ploidy() behavior might be different than expected
             ibdset.infer_ploidy();
             // The actual behavior seems to be that empty sets get inferred as Haploid
@@ -1310,18 +1442,21 @@ mod comprehensive_tests {
         #[test]
         fn test_sort_by_samples() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             // Add segments in reverse order
             ibdset.add(IbdSeg::new(2, 0, 3, 1, 5000, 6000, 0));
             ibdset.add(IbdSeg::new(1, 0, 2, 0, 3000, 4000, 0));
             ibdset.add(IbdSeg::new(0, 0, 1, 1, 1000, 2000, 0));
-            
+
             ibdset.sort_by_samples();
             assert_eq!(ibdset.get_sort_status(), SortedByIndividaulPair);
             assert!(ibdset.is_sorted_by_samples());
-            
+
             let pairs: Vec<_> = ibdset.iter().map(|s| s.individual_pair()).collect();
             assert_eq!(pairs, vec![(0, 1), (1, 2), (2, 3)]);
         }
@@ -1329,18 +1464,21 @@ mod comprehensive_tests {
         #[test]
         fn test_sort_by_haplotypes() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             // Add segments in reverse order
             ibdset.add(IbdSeg::new(2, 1, 3, 0, 5000, 6000, 0));
             ibdset.add(IbdSeg::new(1, 1, 2, 0, 3000, 4000, 0));
             ibdset.add(IbdSeg::new(0, 0, 1, 1, 1000, 2000, 0));
-            
+
             ibdset.sort_by_haplotypes();
             assert_eq!(ibdset.get_sort_status(), SortedByHaplotypePair);
             assert!(ibdset.is_sorted_by_haplotypes());
-            
+
             let pairs: Vec<_> = ibdset.iter().map(|s| s.haplotype_pair()).collect();
             assert_eq!(pairs, vec![(0, 0, 1, 1), (1, 1, 2, 0), (2, 1, 3, 0)]);
         }
@@ -1348,20 +1486,23 @@ mod comprehensive_tests {
         #[test]
         fn test_infer_sort_status() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             // Add unsorted segments
             ibdset.add(IbdSeg::new(2, 0, 3, 1, 5000, 6000, 0));
             ibdset.add(IbdSeg::new(0, 0, 1, 1, 1000, 2000, 0));
-            
+
             ibdset.infer_sort_status();
             assert_eq!(ibdset.get_sort_status(), Unsorted);
-            
+
             // Sort by samples and infer - the sort_by_* methods set the status
             ibdset.sort_by_samples(); // This sets the status directly
             assert_eq!(ibdset.get_sort_status(), SortedByIndividaulPair);
-            
+
             // Sort by haplotypes - this will also set the status directly
             ibdset.sort_by_haplotypes();
             assert_eq!(ibdset.get_sort_status(), SortedByHaplotypePair);
@@ -1370,13 +1511,16 @@ mod comprehensive_tests {
         #[test]
         fn test_sorted_status_after_add() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             ibdset.add(IbdSeg::new(0, 0, 1, 1, 1000, 2000, 0));
             ibdset.sort_by_samples();
             assert_eq!(ibdset.get_sort_status(), SortedByIndividaulPair);
-            
+
             // Adding another segment should reset sort status
             ibdset.add(IbdSeg::new(2, 0, 3, 1, 5000, 6000, 0));
             assert_eq!(ibdset.get_sort_status(), Unsorted);
@@ -1385,14 +1529,17 @@ mod comprehensive_tests {
         #[test]
         fn test_sort_empty_ibdset() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             // Sorting empty IBD set should work
             ibdset.sort_by_samples();
             assert_eq!(ibdset.get_sort_status(), SortedByIndividaulPair);
             assert!(ibdset.is_sorted_by_samples());
-            
+
             ibdset.sort_by_haplotypes();
             assert_eq!(ibdset.get_sort_status(), SortedByHaplotypePair);
             assert!(ibdset.is_sorted_by_haplotypes());
@@ -1405,21 +1552,24 @@ mod comprehensive_tests {
         #[test]
         fn test_filter_segments_by_min_cm() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             // Add segments of different lengths
             ibdset.add(IbdSeg::new(0, 0, 1, 1, 1000, 2000, 0)); // ~1 cM
             ibdset.add(IbdSeg::new(1, 0, 2, 0, 3000, 8000, 0)); // ~5 cM
             ibdset.add(IbdSeg::new(2, 0, 3, 1, 10000, 12000, 0)); // ~2 cM
-            
+
             assert_eq!(ibdset.ibd.len(), 3);
-            
+
             // Filter segments shorter than 3 cM - but the filtering seems to work differently
             // Let's test actual behavior
             let initial_count = ibdset.ibd.len();
             ibdset.filter_segments_by_min_cm(3.0);
-            
+
             // Verify some segments were removed
             assert!(ibdset.ibd.len() <= initial_count);
         }
@@ -1427,19 +1577,22 @@ mod comprehensive_tests {
         #[test]
         fn test_filter_all_segments_too_short() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             // Add only short segments
             ibdset.add(IbdSeg::new(0, 0, 1, 1, 1000, 1500, 0));
             ibdset.add(IbdSeg::new(1, 0, 2, 0, 3000, 3300, 0));
-            
+
             assert_eq!(ibdset.ibd.len(), 2);
-            
+
             // Filter with high threshold - but filtering may work differently
             let initial_count = ibdset.ibd.len();
             ibdset.filter_segments_by_min_cm(10.0);
-            
+
             // Verify filtering was applied (could be 0 segments or fewer than initial)
             assert!(ibdset.ibd.len() <= initial_count);
         }
@@ -1447,15 +1600,18 @@ mod comprehensive_tests {
         #[test]
         fn test_filter_no_segments_removed() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             // Add long segments
             ibdset.add(IbdSeg::new(0, 0, 1, 1, 1000, 10000, 0));
             ibdset.add(IbdSeg::new(1, 0, 2, 0, 20000, 30000, 0));
-            
+
             assert_eq!(ibdset.ibd.len(), 2);
-            
+
             // Filter with low threshold
             ibdset.filter_segments_by_min_cm(0.5);
             assert_eq!(ibdset.ibd.len(), 2);
@@ -1464,9 +1620,12 @@ mod comprehensive_tests {
         #[test]
         fn test_filter_empty_ibdset() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             // Filter empty IBD set should work
             ibdset.filter_segments_by_min_cm(5.0);
             assert_eq!(ibdset.ibd.len(), 0);
@@ -1479,23 +1638,31 @@ mod comprehensive_tests {
         #[test]
         fn test_get_gw_total_ibd_matrix_samples() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             // Add some IBD segments
             ibdset.add(IbdSeg::new(0, 0, 1, 0, 1000, 3000, 0));
             ibdset.add(IbdSeg::new(1, 1, 2, 1, 4000, 6000, 0));
             ibdset.sort_by_samples();
-            
+
             let matrix = ibdset.get_gw_total_ibd_matrix(true);
             let (nrows, ncols) = matrix.shape();
             assert_eq!(nrows, 4); // 4 individuals
             assert_eq!(ncols, 4);
-            
+
             // Matrix should be symmetric
             for i in 0..4 {
                 for j in 0..4 {
-                    assert!((matrix.get_by_positions(i as u32, j as u32) - matrix.get_by_positions(j as u32, i as u32)).abs() < 1e-6);
+                    assert!(
+                        (matrix.get_by_positions(i as u32, j as u32)
+                            - matrix.get_by_positions(j as u32, i as u32))
+                        .abs()
+                            < 1e-6
+                    );
                 }
             }
         }
@@ -1503,23 +1670,31 @@ mod comprehensive_tests {
         #[test]
         fn test_get_gw_total_ibd_matrix_haplotypes() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             // Add some IBD segments
             ibdset.add(IbdSeg::new(0, 0, 1, 0, 1000, 3000, 0));
             ibdset.add(IbdSeg::new(1, 1, 2, 1, 4000, 6000, 0));
             ibdset.sort_by_haplotypes();
-            
+
             let matrix = ibdset.get_gw_total_ibd_matrix(false);
             let (nrows, ncols) = matrix.shape();
             assert_eq!(nrows, 8); // 4 individuals * 2 haplotypes
             assert_eq!(ncols, 8);
-            
+
             // Matrix should be symmetric
             for i in 0..8 {
                 for j in 0..8 {
-                    assert!((matrix.get_by_positions(i as u32, j as u32) - matrix.get_by_positions(j as u32, i as u32)).abs() < 1e-6);
+                    assert!(
+                        (matrix.get_by_positions(i as u32, j as u32)
+                            - matrix.get_by_positions(j as u32, i as u32))
+                        .abs()
+                            < 1e-6
+                    );
                 }
             }
         }
@@ -1527,15 +1702,18 @@ mod comprehensive_tests {
         #[test]
         fn test_matrix_generation_empty_ibdset() {
             let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
             let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let inds = Arc::new(inds);
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             ibdset.sort_by_samples();
             let matrix = ibdset.get_gw_total_ibd_matrix(true);
             let (nrows, ncols) = matrix.shape();
             assert_eq!(nrows, 4);
             assert_eq!(ncols, 4);
-            
+
             // All values should be 0.0
             for i in 0..4 {
                 for j in 0..4 {
@@ -1551,14 +1729,18 @@ mod comprehensive_tests {
         #[test]
         fn test_has_same_individuals() {
             let genome = create_test_genome();
-            let inds1 = create_test_individuals();
-            let inds2 = create_test_individuals();
-            let inds3 = Individuals::from_str_iter(["different", "samples"].into_iter());
-            
-            let ibdset1 = IbdSet::new(genome.gmap(), genome.ginfo(), &inds1);
-            let ibdset2 = IbdSet::new(genome.gmap(), genome.ginfo(), &inds2);
-            let ibdset3 = IbdSet::new(genome.gmap(), genome.ginfo(), &inds3);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds1 = Arc::new(create_test_individuals());
+            let inds2 = Arc::new(create_test_individuals());
+            let inds3 = Arc::new(Individuals::from_str_iter(
+                ["different", "samples"].into_iter(),
+            ));
+
+            let ibdset1 = IbdSet::new(gmap.clone(), ginfo.clone(), inds1);
+            let ibdset2 = IbdSet::new(gmap.clone(), ginfo.clone(), inds2);
+            let ibdset3 = IbdSet::new(gmap, ginfo, inds3);
+
             assert!(ibdset1.has_same_individuals(&ibdset2));
             assert!(!ibdset1.has_same_individuals(&ibdset3));
         }
@@ -1566,12 +1748,18 @@ mod comprehensive_tests {
         #[test]
         fn test_has_same_individuals_different_order() {
             let genome = create_test_genome();
-            let inds1 = Individuals::from_str_iter(["sample1", "sample2", "sample3"].into_iter());
-            let inds2 = Individuals::from_str_iter(["sample3", "sample1", "sample2"].into_iter());
-            
-            let ibdset1 = IbdSet::new(genome.gmap(), genome.ginfo(), &inds1);
-            let ibdset2 = IbdSet::new(genome.gmap(), genome.ginfo(), &inds2);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds1 = Arc::new(Individuals::from_str_iter(
+                ["sample1", "sample2", "sample3"].into_iter(),
+            ));
+            let inds2 = Arc::new(Individuals::from_str_iter(
+                ["sample3", "sample1", "sample2"].into_iter(),
+            ));
+
+            let ibdset1 = IbdSet::new(gmap.clone(), ginfo.clone(), inds1);
+            let ibdset2 = IbdSet::new(gmap, ginfo, inds2);
+
             // Different order should result in false
             assert!(!ibdset1.has_same_individuals(&ibdset2));
         }
@@ -1583,12 +1771,14 @@ mod comprehensive_tests {
         #[test]
         fn test_read_hapibd_file_with_missing_file() {
             let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             let temp_dir = TempDir::new().unwrap();
             let file_path = temp_dir.path().join("nonexistent.ibd.gz");
-            
+
             let result = ibdset.read_hapibd_file(&file_path, None);
             assert!(result.is_err());
         }
@@ -1596,11 +1786,13 @@ mod comprehensive_tests {
         #[test]
         fn test_read_hapibd_dir_empty() {
             let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             let temp_dir = TempDir::new().unwrap();
-            
+
             let result = ibdset.read_hapibd_dir(temp_dir.path());
             assert!(result.is_ok());
             assert_eq!(ibdset.ibd.len(), 0);
@@ -1609,11 +1801,13 @@ mod comprehensive_tests {
         #[test]
         fn test_read_tskibd_dir_empty() {
             let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             let temp_dir = TempDir::new().unwrap();
-            
+
             let result = ibdset.read_tskibd_dir(temp_dir.path());
             assert!(result.is_ok());
             assert_eq!(ibdset.ibd.len(), 0);
@@ -1622,11 +1816,13 @@ mod comprehensive_tests {
         #[test]
         fn test_read_hmmibd_dir_empty() {
             let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             let temp_dir = TempDir::new().unwrap();
-            
+
             let result = ibdset.read_hmmibd_dir(temp_dir.path());
             assert!(result.is_ok());
             assert_eq!(ibdset.ibd.len(), 0);
@@ -1635,9 +1831,10 @@ mod comprehensive_tests {
         #[test]
         fn test_read_nonexistent_directory() {
             let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
             let result = ibdset.read_hapibd_dir("/nonexistent/path");
             assert!(result.is_err());
         }
@@ -1649,13 +1846,15 @@ mod comprehensive_tests {
         #[test]
         fn test_simple_merge() {
             let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             ibdset.add(IbdSeg::new(0, 0, 1, 0, 1000, 3000, 0));
             ibdset.add(IbdSeg::new(0, 1, 1, 1, 2000, 4000, 0));
             ibdset.update_parts(ibdset.ibd.clone(), Diploid, Unsorted);
-            
+
             let result = ibdset.merge();
             assert!(result.is_ok());
             assert_eq!(ibdset.get_ploidy_status(), DiploidMerged);
@@ -1664,46 +1863,58 @@ mod comprehensive_tests {
         #[test]
         fn test_merge_requires_diploid_status() {
             let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             ibdset.add(IbdSeg::new(0, 3, 1, 3, 1000, 3000, 0));
             ibdset.update_parts(ibdset.ibd.clone(), Haploid, Unsorted);
-            
+
             // The merge function requires Diploid status - it will panic with Haploid
             // This is expected behavior for the assert! in the merge function
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _ = ibdset.merge();
             }));
-            assert!(result.is_err(), "merge() should panic when ploidy is not Diploid");
+            assert!(
+                result.is_err(),
+                "merge() should panic when ploidy is not Diploid"
+            );
         }
 
-        #[test] 
+        #[test]
         fn test_merge_browning_requires_diploid() {
             let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
             let sites = Sites::new();
             let gt_mat = GenotypeMatrix::new(4);
-            
+
             ibdset.add(IbdSeg::new(0, 3, 1, 3, 1000, 3000, 0));
             ibdset.update_parts(ibdset.ibd.clone(), Haploid, Unsorted);
-            
+
             // The browning method merge also requires Diploid status - will panic with Haploid
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _ = ibdset.merge_using_browning_method(1.0, 1, &gt_mat, &sites);
             }));
-            assert!(result.is_err(), "merge_using_browning_method() should panic when ploidy is not Diploid");
+            assert!(
+                result.is_err(),
+                "merge_using_browning_method() should panic when ploidy is not Diploid"
+            );
         }
 
         #[test]
         fn test_merge_empty_ibdset() {
             let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
             ibdset.update_parts(vec![], Diploid, Unsorted);
-            
+
             let result = ibdset.merge();
             assert!(result.is_ok());
             assert_eq!(ibdset.get_ploidy_status(), DiploidMerged);
@@ -1714,20 +1925,22 @@ mod comprehensive_tests {
     mod ploidy_conversion {
         use super::*;
 
-        #[test] 
+        #[test]
         fn test_ploidy_conversion_functions_exist() {
             // This test verifies that the ploidy conversion methods exist
             // and can be called with appropriate parameters
             // Full integration testing would require proper PloidyConverter setup
             let genome = create_test_genome();
-            let diploid_inds = create_test_individuals();
-            let haploid_inds = Individuals::from_str_iter(
-                ["sample1_h1", "sample1_h2", "sample2_h1", "sample2_h2"].into_iter()
-            );
-            
-            let ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &diploid_inds);
-            let _ibdset2 = IbdSet::new(genome.gmap(), genome.ginfo(), &haploid_inds);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let diploid_inds = Arc::new(create_test_individuals());
+            let haploid_inds = Arc::new(Individuals::from_str_iter(
+                ["sample1_h1", "sample1_h2", "sample2_h1", "sample2_h2"].into_iter(),
+            ));
+
+            let ibdset = IbdSet::new(gmap.clone(), ginfo.clone(), diploid_inds);
+            let _ibdset2 = IbdSet::new(gmap, ginfo, haploid_inds);
+
             // Verify the methods exist and take the expected parameters
             // Note: Actual conversion would need proper PloidyConverter instance
             assert_eq!(ibdset.get_ploidy_status(), UnknownPloidy);
@@ -1740,16 +1953,18 @@ mod comprehensive_tests {
         #[test]
         fn test_remove_regions_basic() {
             let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            let mut result_ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap.clone(), ginfo.clone(), inds.clone());
+            let mut result_ibdset = IbdSet::new(gmap, ginfo, inds);
+
             ibdset.add(IbdSeg::new(0, 0, 1, 1, 1000, 5000, 0));
             ibdset.add(IbdSeg::new(1, 0, 2, 0, 8000, 12000, 0));
-            
+
             let mut regions = Intervals::new();
             regions.push(2000..6000);
-            
+
             let result = ibdset.remove_regions(&regions, &mut result_ibdset, None);
             assert!(result.is_ok());
         }
@@ -1757,15 +1972,17 @@ mod comprehensive_tests {
         #[test]
         fn test_remove_regions_with_min_cm_filter() {
             let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            let mut result_ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap.clone(), ginfo.clone(), inds.clone());
+            let mut result_ibdset = IbdSet::new(gmap, ginfo, inds);
+
             ibdset.add(IbdSeg::new(0, 0, 1, 1, 1000, 5000, 0));
-            
+
             let mut regions = Intervals::new();
             regions.push(2000..3000);
-            
+
             // With minimum cM threshold
             let result = ibdset.remove_regions(&regions, &mut result_ibdset, Some(2.0));
             assert!(result.is_ok());
@@ -1774,14 +1991,16 @@ mod comprehensive_tests {
         #[test]
         fn test_remove_regions_empty_regions() {
             let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            let mut result_ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap.clone(), ginfo.clone(), inds.clone());
+            let mut result_ibdset = IbdSet::new(gmap, ginfo, inds);
+
             ibdset.add(IbdSeg::new(0, 0, 1, 1, 1000, 5000, 0));
-            
+
             let regions = Intervals::new(); // Empty regions
-            
+
             let result = ibdset.remove_regions(&regions, &mut result_ibdset, None);
             assert!(result.is_ok());
         }
@@ -1793,18 +2012,20 @@ mod comprehensive_tests {
         #[test]
         fn test_add_segment_preserves_status_transitions() {
             let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap.clone(), ginfo.clone(), inds.clone());
+
             // Initially unknown ploidy and unsorted
             assert_eq!(ibdset.get_ploidy_status(), UnknownPloidy);
             assert_eq!(ibdset.get_sort_status(), Unsorted);
-            
+
             // Set to known status
             ibdset.update_parts(vec![], Diploid, SortedByIndividaulPair);
             assert_eq!(ibdset.get_ploidy_status(), Diploid);
             assert_eq!(ibdset.get_sort_status(), SortedByIndividaulPair);
-            
+
             // Adding segment should reset to unknown/unsorted
             ibdset.add(IbdSeg::new(0, 0, 1, 0, 1000, 2000, 0));
             assert_eq!(ibdset.get_ploidy_status(), UnknownPloidy);
@@ -1814,13 +2035,15 @@ mod comprehensive_tests {
         #[test]
         fn test_large_coordinate_values() {
             let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap.clone(), ginfo.clone(), inds.clone());
+
             // Test with large coordinate values
             let large_start = 1_000_000_000;
             let large_end = 2_000_000_000;
-            
+
             ibdset.add(IbdSeg::new(0, 0, 1, 0, large_start, large_end, 0));
             assert_eq!(ibdset.ibd.len(), 1);
             assert_eq!(ibdset.ibd[0].s, large_start);
@@ -1830,13 +2053,15 @@ mod comprehensive_tests {
         #[test]
         fn test_zero_length_segments() {
             let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap.clone(), ginfo.clone(), inds.clone());
+
             // Zero-length segment (start == end)
             ibdset.add(IbdSeg::new(0, 0, 1, 0, 5000, 5000, 0));
             assert_eq!(ibdset.ibd.len(), 1);
-            
+
             // Should be filterable by minimum cM
             ibdset.filter_segments_by_min_cm(0.1);
             assert_eq!(ibdset.ibd.len(), 0);
@@ -1845,15 +2070,17 @@ mod comprehensive_tests {
         #[test]
         fn test_single_segment_operations() {
             let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap.clone(), ginfo.clone(), inds.clone());
+
             ibdset.add(IbdSeg::new(0, 0, 1, 0, 1000, 2000, 0));
-            
+
             // Single segment should be considered sorted
             assert!(ibdset.is_sorted_by_samples());
             assert!(ibdset.is_sorted_by_haplotypes());
-            
+
             // Matrix generation with single segment
             ibdset.sort_by_samples();
             let matrix = ibdset.get_gw_total_ibd_matrix(true);
@@ -1865,17 +2092,19 @@ mod comprehensive_tests {
         #[test]
         fn test_identical_segments() {
             let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap.clone(), ginfo.clone(), inds.clone());
+
             // Add identical segments
             let seg = IbdSeg::new(0, 0, 1, 0, 1000, 2000, 0);
             ibdset.add(seg);
             ibdset.add(seg);
             ibdset.add(seg);
-            
+
             assert_eq!(ibdset.ibd.len(), 3);
-            
+
             // Should still sort correctly
             ibdset.sort_by_samples();
             assert!(ibdset.is_sorted_by_samples());
@@ -1884,13 +2113,15 @@ mod comprehensive_tests {
         #[test]
         fn test_maximum_individual_indices() {
             let genome = create_test_genome();
-            let inds = create_test_individuals();
-            let mut ibdset = IbdSet::new(genome.gmap(), genome.ginfo(), &inds);
-            
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap.clone(), ginfo.clone(), inds.clone());
+
             // Test with maximum valid individual indices (3 for 4 individuals)
             ibdset.add(IbdSeg::new(3, 1, 3, 0, 1000, 2000, 0));
             assert_eq!(ibdset.ibd.len(), 1);
-            
+
             let (ind1, _, ind2, _) = ibdset.ibd[0].haplotype_pair();
             assert_eq!(ind1, 3);
             assert_eq!(ind2, 3);

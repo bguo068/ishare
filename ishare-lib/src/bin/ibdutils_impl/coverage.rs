@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::super::Commands;
 
 use ishare::{
@@ -51,17 +53,17 @@ pub fn main_coverage(args: &Commands) -> Result<()> {
         out,
     } = args
     {
-        let ginfo = genome::GenomeInfo::from_toml_file(genome_info)?;
-        let gmap = gmap::GeneticMap::from_genome_info(&ginfo)?;
+        let ginfo = Arc::new(genome::GenomeInfo::from_toml_file(genome_info)?);
+        let gmap = Arc::new(gmap::GeneticMap::from_genome_info(&ginfo)?);
 
         let (inds1, inds1_opt) = Individuals::from_txt_file(sample_lst)?;
-        let mut ibd1 = IbdSet::new(&gmap, &ginfo, &inds1);
+        let mut ibd1 = IbdSet::new(gmap.clone(), ginfo.clone(), Arc::new(inds1));
 
         for (((ibd, fmt), dir), inds_opt) in [&mut ibd1]
             .iter_mut()
             .zip([fmt])
             .zip([ibd_dir])
-            .zip([&inds1_opt])
+            .zip(vec![inds1_opt].into_iter())
         {
             if fmt.as_str() == "hapibd" {
                 ibd.read_hapibd_dir(dir)?;
@@ -88,12 +90,12 @@ pub fn main_coverage(args: &Commands) -> Result<()> {
             // Adding it here seems to be convenient
             ibd.filter_segments_by_min_cm(*min_cm);
 
-            match inds_opt.as_ref() {
+            match inds_opt {
                 Some((converter, ind_, PloidConvertDirection::Diploid2Haploid)) => {
-                    ibd.covert_to_haploid(ind_, converter);
+                    ibd.covert_to_haploid(Arc::new(ind_), &converter);
                 }
                 Some((converter, ind_, PloidConvertDirection::Haploid2Diploid)) => {
-                    ibd.covert_to_het_diploid(ind_, converter)?;
+                    ibd.covert_to_het_diploid(Arc::new(ind_), &converter)?;
                 }
                 None => {}
             }

@@ -49,7 +49,7 @@ pub enum Error {
     },
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct Individuals {
     vec: Vec<String>,
     map: HashMap<String, usize>,

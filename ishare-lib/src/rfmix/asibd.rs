@@ -9,6 +9,7 @@ use crate::{
     },
 };
 use snafu::{ensure, ResultExt, Snafu};
+use std::sync::Arc;
 
 use super::fb::LASet;
 
@@ -44,21 +45,21 @@ pub struct ASIbdSeg {
     pub anc2: u8,
 }
 
-pub struct ASIBDSet<'a> {
+pub struct ASIBDSet {
     asibd: Vec<ASIbdSeg>,
-    gmap: &'a GeneticMap,
-    ginfo: &'a GenomeInfo,
-    inds: &'a Individuals,
-    ancs: &'a [String],
+    gmap: Arc<GeneticMap>,
+    ginfo: Arc<GenomeInfo>,
+    inds: Arc<Individuals>,
+    ancs: Arc<[String]>,
 }
 
-impl<'a> ASIBDSet<'a> {
+impl ASIBDSet {
     /// Create an empty IBD set with meta infomation
     pub fn new(
-        gmap: &'a GeneticMap,
-        ginfo: &'a GenomeInfo,
-        inds: &'a Individuals,
-        ancs: &'a [String],
+        gmap: Arc<GeneticMap>,
+        ginfo: Arc<GenomeInfo>,
+        inds: Arc<Individuals>,
+        ancs: Arc<[String]>,
     ) -> Self {
         Self {
             asibd: vec![],
@@ -91,7 +92,7 @@ impl<'a> ASIBDSet<'a> {
 
     pub fn get_asibd_from_ibdsets_and_laset(
         &mut self,
-        ibdset: &IbdSet<'a>,
+        ibdset: &IbdSet,
         la_set: &LASet,
     ) -> Result<()> {
         let mut tree = IntervalTree::new(1000);
@@ -204,6 +205,7 @@ mod tests {
         },
     };
     use ahash::{HashMap, HashMapExt};
+    use std::sync::Arc;
 
     fn create_test_genome() -> GenomeInfo {
         let mut idx = HashMap::new();
@@ -277,12 +279,12 @@ mod tests {
 
     #[test]
     fn test_asibdset_new() {
-        let ginfo = create_test_genome();
-        let gmap = create_test_genetic_map();
-        let inds = create_test_individuals();
-        let ancs = vec!["AFR".to_string(), "EUR".to_string()];
+        let ginfo = Arc::new(create_test_genome());
+        let gmap = Arc::new(create_test_genetic_map());
+        let inds = Arc::new(create_test_individuals());
+        let ancs = Arc::from(vec!["AFR".to_string(), "EUR".to_string()]);
 
-        let asibd_set = ASIBDSet::new(&gmap, &ginfo, &inds, &ancs);
+        let asibd_set = ASIBDSet::new(gmap, ginfo, inds, ancs);
 
         assert_eq!(asibd_set.asibd.len(), 0);
         assert_eq!(asibd_set.ancs.len(), 2);
@@ -292,13 +294,12 @@ mod tests {
 
     #[test]
     fn test_asibdset_add() {
-        let ginfo = create_test_genome();
-        let gmap = create_test_genetic_map();
-        let inds = create_test_individuals();
-        let ancs = vec!["AFR".to_string(), "EUR".to_string()];
+        let ginfo = Arc::new(create_test_genome());
+        let gmap = Arc::new(create_test_genetic_map());
+        let inds = Arc::new(create_test_individuals());
+        let ancs = Arc::from(vec!["AFR".to_string(), "EUR".to_string()]);
 
-        let mut asibd_set = ASIBDSet::new(&gmap, &ginfo, &inds, &ancs);
-
+        let mut asibd_set = ASIBDSet::new(gmap, ginfo, inds, ancs);
         let ibd_seg = IbdSeg {
             i: 0,
             j: 1,
@@ -323,12 +324,12 @@ mod tests {
 
     #[test]
     fn test_asibdset_flush_empty() {
-        let ginfo = create_test_genome();
-        let gmap = create_test_genetic_map();
-        let inds = create_test_individuals();
-        let ancs = vec!["AFR".to_string(), "EUR".to_string()];
+        let ginfo = Arc::new(create_test_genome());
+        let gmap = Arc::new(create_test_genetic_map());
+        let inds = Arc::new(create_test_individuals());
+        let ancs = Arc::from(vec!["AFR".to_string(), "EUR".to_string()]);
 
-        let mut asibd_set = ASIBDSet::new(&gmap, &ginfo, &inds, &ancs);
+        let mut asibd_set = ASIBDSet::new(gmap, ginfo, inds, ancs);
 
         let mut output = Vec::new();
         let result = asibd_set.flush(&mut output);
@@ -339,12 +340,12 @@ mod tests {
 
     #[test]
     fn test_asibdset_flush_with_data() {
-        let ginfo = create_test_genome();
-        let gmap = create_test_genetic_map();
-        let inds = create_test_individuals();
-        let ancs = vec!["AFR".to_string(), "EUR".to_string()];
+        let ginfo = Arc::new(create_test_genome());
+        let gmap = Arc::new(create_test_genetic_map());
+        let inds = Arc::new(create_test_individuals());
+        let ancs = Arc::from(vec!["AFR".to_string(), "EUR".to_string()]);
 
-        let mut asibd_set = ASIBDSet::new(&gmap, &ginfo, &inds, &ancs);
+        let mut asibd_set = ASIBDSet::new(gmap, ginfo, inds, ancs);
 
         // Create IbdSeg with encoded values: individual 0 haplotype 1, individual 1 haplotype 0
         // i = (individual << 2) + haplotype = (0 << 2) + 1 = 1
@@ -388,15 +389,15 @@ mod tests {
 
     #[test]
     fn test_get_asibd_from_ibdsets_and_laset() {
-        let ginfo = create_test_genome();
-        let gmap = create_test_genetic_map();
-        let inds = create_test_individuals();
-        let ancs = vec!["AFR".to_string(), "EUR".to_string()];
+        let ginfo = Arc::new(create_test_genome());
+        let gmap = Arc::new(create_test_genetic_map());
+        let inds = Arc::new(create_test_individuals());
+        let ancs = Arc::from(vec!["AFR".to_string(), "EUR".to_string()]);
 
-        let mut asibd_set = ASIBDSet::new(&gmap, &ginfo, &inds, &ancs);
+        let mut asibd_set = ASIBDSet::new(gmap.clone(), ginfo.clone(), inds.clone(), ancs);
 
         // Create test IBD set
-        let mut ibd_set = IbdSet::new(&gmap, &ginfo, &inds);
+        let mut ibd_set = IbdSet::new(gmap.clone(), ginfo.clone(), inds.clone());
         let ibd_seg = IbdSeg {
             i: 0,
             j: 1,
@@ -418,15 +419,15 @@ mod tests {
 
     #[test]
     fn test_error_propagation() {
-        let ginfo = create_test_genome();
-        let gmap = create_test_genetic_map();
-        let inds = create_test_individuals();
-        let ancs = vec!["AFR".to_string(), "EUR".to_string()];
+        let ginfo = Arc::new(create_test_genome());
+        let gmap = Arc::new(create_test_genetic_map());
+        let inds = Arc::new(create_test_individuals());
+        let ancs = Arc::from(vec!["AFR".to_string(), "EUR".to_string()]);
 
-        let mut asibd_set = ASIBDSet::new(&gmap, &ginfo, &inds, &ancs);
+        let mut asibd_set = ASIBDSet::new(gmap.clone(), ginfo.clone(), inds.clone(), ancs);
 
         // Create IBD set with invalid data that might cause LA error
-        let mut ibd_set = IbdSet::new(&gmap, &ginfo, &inds);
+        let mut ibd_set = IbdSet::new(gmap.clone(), ginfo.clone(), inds.clone());
         let ibd_seg = IbdSeg {
             i: 0,
             j: 1,
@@ -457,12 +458,12 @@ mod tests {
 
     #[test]
     fn test_multiple_asibd_segments() {
-        let ginfo = create_test_genome();
-        let gmap = create_test_genetic_map();
-        let inds = create_test_individuals();
-        let ancs = vec!["AFR".to_string(), "EUR".to_string(), "EAS".to_string()];
+        let ginfo = Arc::new(create_test_genome());
+        let gmap = Arc::new(create_test_genetic_map());
+        let inds = Arc::new(create_test_individuals());
+        let ancs = Arc::from(vec!["AFR".to_string(), "EUR".to_string()]);
 
-        let mut asibd_set = ASIBDSet::new(&gmap, &ginfo, &inds, &ancs);
+        let mut asibd_set = ASIBDSet::new(gmap.clone(), ginfo.clone(), inds.clone(), ancs);
 
         // Add multiple segments with different ancestry combinations
         let seg1 = ASIbdSeg {
@@ -523,12 +524,12 @@ mod tests {
 
         #[test]
         fn test_zero_length_ibd_segment() {
-            let ginfo = create_test_genome();
-            let gmap = create_test_genetic_map();
-            let inds = create_test_individuals();
-            let ancs = vec!["AFR".to_string()];
+            let ginfo = Arc::new(create_test_genome());
+            let gmap = Arc::new(create_test_genetic_map());
+            let inds = Arc::new(create_test_individuals());
+            let ancs = Arc::from(vec!["AFR".to_string()]);
 
-            let mut asibd_set = ASIBDSet::new(&gmap, &ginfo, &inds, &ancs);
+            let mut asibd_set = ASIBDSet::new(gmap.clone(), ginfo.clone(), inds.clone(), ancs);
 
             let zero_length_seg = ASIbdSeg {
                 ibd: IbdSeg {
@@ -554,12 +555,12 @@ mod tests {
 
         #[test]
         fn test_boundary_positions() {
-            let ginfo = create_test_genome();
-            let gmap = create_test_genetic_map();
-            let inds = create_test_individuals();
-            let ancs = vec!["AFR".to_string()];
+            let ginfo = Arc::new(create_test_genome());
+            let gmap = Arc::new(create_test_genetic_map());
+            let inds = Arc::new(create_test_individuals());
+            let ancs = Arc::from(vec!["AFR".to_string()]);
 
-            let mut asibd_set = ASIBDSet::new(&gmap, &ginfo, &inds, &ancs);
+            let mut asibd_set = ASIBDSet::new(gmap.clone(), ginfo.clone(), inds.clone(), ancs);
 
             // Test segment at chromosome boundary
             let boundary_seg = ASIbdSeg {
@@ -585,12 +586,12 @@ mod tests {
 
         #[test]
         fn test_cross_chromosome_segment() {
-            let ginfo = create_test_genome();
-            let gmap = create_test_genetic_map();
-            let inds = create_test_individuals();
-            let ancs = vec!["AFR".to_string()];
+            let ginfo = Arc::new(create_test_genome());
+            let gmap = Arc::new(create_test_genetic_map());
+            let inds = Arc::new(create_test_individuals());
+            let ancs = Arc::from(vec!["AFR".to_string()]);
 
-            let mut asibd_set = ASIBDSet::new(&gmap, &ginfo, &inds, &ancs);
+            let mut asibd_set = ASIBDSet::new(gmap.clone(), ginfo.clone(), inds.clone(), ancs);
 
             // Segment spanning chromosome boundary (1000 is start of chr2)
             let cross_chr_seg = ASIbdSeg {
@@ -620,12 +621,12 @@ mod tests {
 
         #[test]
         fn test_invalid_ancestry_index() {
-            let ginfo = create_test_genome();
-            let gmap = create_test_genetic_map();
-            let inds = create_test_individuals();
-            let ancs = vec!["AFR".to_string()]; // Only one ancestry
+            let ginfo = Arc::new(create_test_genome());
+            let gmap = Arc::new(create_test_genetic_map());
+            let inds = Arc::new(create_test_individuals());
+            let ancs = Arc::from(vec!["AFR".to_string()]);
 
-            let mut asibd_set = ASIBDSet::new(&gmap, &ginfo, &inds, &ancs);
+            let mut asibd_set = ASIBDSet::new(gmap.clone(), ginfo.clone(), inds.clone(), ancs);
 
             // Try to add segment with invalid ancestry index
             let invalid_seg = ASIbdSeg {
@@ -656,12 +657,12 @@ mod tests {
 
         #[test]
         fn test_invalid_individual_index() {
-            let ginfo = create_test_genome();
-            let gmap = create_test_genetic_map();
-            let inds = create_test_individuals(); // 3 individuals (0, 1, 2)
-            let ancs = vec!["AFR".to_string()];
+            let ginfo = Arc::new(create_test_genome());
+            let gmap = Arc::new(create_test_genetic_map());
+            let inds = Arc::new(create_test_individuals());
+            let ancs = Arc::from(vec!["AFR".to_string()]);
 
-            let mut asibd_set = ASIBDSet::new(&gmap, &ginfo, &inds, &ancs);
+            let mut asibd_set = ASIBDSet::new(gmap.clone(), ginfo.clone(), inds.clone(), ancs);
 
             // Need raw IbdSeg values that decode to invalid individual indices
             // Individual index 10 would be: 10 << 2 = 40 (plus haplotype bits)
