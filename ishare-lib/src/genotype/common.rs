@@ -1,9 +1,13 @@
-use arrow::array::*;
-use arrow::buffer::BooleanBuffer;
+use arrow_array::builder::BooleanBufferBuilder;
+use arrow_array::ArrayRef;
+use arrow_array::BooleanArray;
+use arrow_array::RecordBatch;
+use arrow_buffer::BooleanBuffer;
+use arrow_schema::ArrowError;
+
 use snafu::prelude::*;
 
 use crate::site::Sites;
-use arrow::record_batch::RecordBatch;
 use bitvec::prelude::*;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::arrow_writer::ArrowWriter;
@@ -29,7 +33,7 @@ type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Snafu)]
 pub enum Error {
     Arrow {
-        source: arrow::error::ArrowError,
+        source: ArrowError,
         backtrace: Option<Backtrace>,
     },
     Parquet {
@@ -236,6 +240,7 @@ impl GenotypeMatrix {
         for i in 0..self.bv.len() {
             builder.append(self.bv[i]);
         }
+
         let buffer: BooleanBuffer = builder.finish();
         let arr = BooleanArray::new(buffer, None);
 

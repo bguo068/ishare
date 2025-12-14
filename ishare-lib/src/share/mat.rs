@@ -1,7 +1,7 @@
 use crate::io::{self, FromArrowArray, FromParquet, IntoArrowArray, IntoParquet};
 use ahash::HashMap;
-use arrow::array::*;
-use arrow::record_batch::RecordBatch;
+use arrow_array::ArrayRef;
+use arrow_array::RecordBatch;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
@@ -16,15 +16,17 @@ use std::sync::Arc;
 pub enum Error {
     #[snafu(transparent)]
     Io { source: io::Error },
-    
+
     #[snafu(display("Failed to create file: {}", path.display()))]
     CreateFile {
         source: std::io::Error,
         path: std::path::PathBuf,
     },
-    
+
     #[snafu(display("Parquet operation failed"))]
-    Parquet { source: parquet::errors::ParquetError },
+    Parquet {
+        source: parquet::errors::ParquetError,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -217,7 +219,8 @@ where
             let file = BufWriter::new(File::create(p).context(StdIoSnafu)?);
             // -- default writer properties
             let props = WriterProperties::builder().build();
-            let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props)).context(ParquetSnafu)?;
+            let mut writer =
+                ArrowWriter::try_new(file, batch.schema(), Some(props)).context(ParquetSnafu)?;
             // write batch
             writer.write(&batch).context(ParquetSnafu)?;
             // writer must be closed to write footer

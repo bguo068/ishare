@@ -1,7 +1,11 @@
-use arrow::array::*;
-use arrow::datatypes::GenericBinaryType;
+use arrow_array::builder::GenericByteBuilder;
+use arrow_array::types::GenericBinaryType;
+use arrow_array::ArrayRef;
+use arrow_array::GenericByteArray;
+use arrow_array::RecordBatch;
+use arrow_array::UInt32Array;
+use arrow_schema::ArrowError;
 
-use arrow::record_batch::RecordBatch;
 use bstr::BString;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::arrow_writer::ArrowWriter;
@@ -20,7 +24,7 @@ type Result<T> = std::result::Result<T, Error>;
 #[derive(Snafu, Debug)]
 pub enum Error {
     Arrow {
-        source: arrow::error::ArrowError,
+        source: ArrowError,
         backtrace: Option<Backtrace>,
     },
     StdIo {

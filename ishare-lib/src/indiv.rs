@@ -2,12 +2,12 @@
 #![cfg_attr(not(test), warn(clippy::expect_used))]
 
 use ahash::{HashMap, HashMapExt};
-use arrow::array::*;
+use arrow_array::{ArrayRef, RecordBatch, StringArray};
+use arrow_schema::ArrowError;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::path::Path;
 
-use arrow::record_batch::RecordBatch;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
@@ -21,7 +21,7 @@ type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Snafu)]
 pub enum Error {
     Arrow {
-        source: arrow::error::ArrowError,
+        source: ArrowError,
         backtrace: Option<Backtrace>,
     },
     Parquet {

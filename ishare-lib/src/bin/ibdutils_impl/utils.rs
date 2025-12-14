@@ -1,11 +1,10 @@
-use arrow::array::{ArrayRef, Float32Array};
-use arrow::record_batch::RecordBatch;
+use arrow_array::{ArrayRef, Float32Array, RecordBatch};
+use arrow_schema::ArrowError;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
 use std::fs::File;
 use std::sync::Arc;
 
-use arrow::error::ArrowError;
 use parquet::errors::ParquetError;
 use snafu::prelude::*;
 #[derive(Debug, Snafu)]

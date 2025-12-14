@@ -1,7 +1,6 @@
 use super::super::Commands;
-use arrow::array::{ArrayRef, UInt32Array};
-use arrow::error::ArrowError;
-use arrow::record_batch::RecordBatch;
+use arrow_array::{ArrayRef, RecordBatch, UInt32Array};
+use arrow_schema::ArrowError;
 use ishare::indiv::Individuals;
 use ishare::{genotype::rare::GenotypeRecords, utils::path::from_prefix};
 use itertools::{EitherOrBoth, Itertools};

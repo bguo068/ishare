@@ -721,7 +721,7 @@ impl IntoParquet for XirsResult {
         p: impl AsRef<std::path::Path>,
     ) -> std::result::Result<(), crate::io::Error> {
         use crate::io::*;
-        use arrow::record_batch::RecordBatch;
+        use arrow_array::RecordBatch;
         use parquet::arrow::arrow_writer::ArrowWriter;
         use parquet::file::properties::WriterProperties;
         use std::fs::File;

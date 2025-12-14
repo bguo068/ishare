@@ -1,5 +1,11 @@
 use crate::container::intervaltree::{Element, IntervalTree};
+use arrow_array::RecordBatch;
+use arrow_array::{ArrayRef, UInt32Array, UInt64Array};
+use arrow_schema::ArrowError;
+use parquet::arrow::arrow_writer::ArrowWriter;
+use parquet::file::properties::WriterProperties;
 use snafu::{ResultExt, Snafu};
+use std::sync::Arc;
 use std::{backtrace::Backtrace, ops::Range};
 
 #[derive(Debug, Snafu)]
@@ -9,7 +15,7 @@ pub enum Error {
         backtrace: Option<Backtrace>,
     },
     ArrowError {
-        source: arrow::error::ArrowError,
+        source: ArrowError,
         backtrace: Option<Backtrace>,
     },
     ParquetError {
@@ -89,12 +95,6 @@ impl CovCounter {
     }
 
     pub fn into_parquet(&mut self, p: impl AsRef<std::path::Path>) -> Result<()> {
-        use arrow::array::*;
-        use arrow::record_batch::RecordBatch;
-        use parquet::arrow::arrow_writer::ArrowWriter;
-        use parquet::file::properties::WriterProperties;
-        use std::sync::Arc;
-
         let starts: Vec<u32> = self.tree.iter_sorted().map(|x| x.range.start).collect();
         let starts = Arc::new(UInt32Array::from(starts)) as ArrayRef;
 

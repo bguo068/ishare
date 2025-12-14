@@ -1,4 +1,5 @@
-use arrow::array::*;
+use arrow_array::{Array, ArrayRef, Float32Array, Float64Array, UInt32Array, UInt8Array};
+use arrow_schema::ArrowError;
 use snafu::prelude::*;
 use std::backtrace::Backtrace;
 use std::path::Path;
@@ -21,7 +22,7 @@ pub enum Error {
         backtrace: Option<Backtrace>,
     },
     Arrow {
-        source: arrow::error::ArrowError,
+        source: ArrowError,
         backtrace: Option<Backtrace>,
     },
 }

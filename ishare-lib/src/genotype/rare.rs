@@ -1,6 +1,5 @@
-use arrow::{array::*, error::ArrowError};
-
-use arrow::record_batch::RecordBatch;
+use arrow_array::{ArrayRef, RecordBatch, UInt64Array};
+use arrow_schema::ArrowError;
 use bitvec::prelude::*;
 use itertools::{
     EitherOrBoth::{self, Both, Left, Right},
