@@ -686,15 +686,12 @@ mod tests {
             let result = asibd_set.flush(&mut output);
 
             // Should get an error for invalid individual index
-            assert!(result.is_err(), "Expected error but got: {:?}", result);
+            assert!(result.is_err(), "Expected error but got: {result:?}");
             match result {
                 Err(Error::IndividualIndexOutOfBounds { index, .. }) => {
                     assert_eq!(index, 3); // 12 >> 2 = 3
                 }
-                Err(other) => panic!(
-                    "Expected IndividualIndexOutOfBounds error, got: {:?}",
-                    other
-                ),
+                Err(other) => panic!("Expected IndividualIndexOutOfBounds error, got: {other:?}",),
                 Ok(_) => panic!("Expected error but operation succeeded"),
             }
         }

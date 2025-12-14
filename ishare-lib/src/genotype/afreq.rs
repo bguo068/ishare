@@ -338,7 +338,7 @@ chr2	250	.	C	G	60	PASS	.	GT	1/1	1/1
                 result[i - 1].0 <= result[i].0,
                 "Results should be sorted by genome-wide position"
             );
-}
+        }
 
         // Check that positions are correctly converted
         // chr1 positions should be < 1000 (first chromosome size)
@@ -394,7 +394,7 @@ chr2	250	.	C	G	60	PASS	.	GT	1/1	1/1
         let _utf8_snafu_error = Error::Utf8Error {
             source: utf8_error,
             backtrace: None,
-};
+        };
 
         let _vcf_missing_rid_error = Error::VcfMissingRid;
 
@@ -500,7 +500,7 @@ chr1	200	.	G	C	60	PASS	.	GT	0/1	1/1
         fn test_with_real_bcf_files() {
             let testdata_path = get_testdata_path();
             if !testdata_path.exists() {
-                eprintln!("Skipping test: testdata not found at {:?}", testdata_path);
+                eprintln!("Skipping test: testdata not found at {testdata_path:?}");
                 return;
             }
 
@@ -520,32 +520,28 @@ chr1	200	.	G	C	60	PASS	.	GT	0/1	1/1
                         println!("Chromosome {}: {} positions", chrom, positions.len());
                         assert!(
                             !positions.is_empty(),
-                            "Should have position data for {}",
-                            chrom
-);
+                            "Should have position data for {chrom}",
+                        );
 
                         // Verify positions are sorted
                         for i in 1..positions.len() {
                             assert!(
                                 positions[i - 1].0 <= positions[i].0,
-                                "Positions should be sorted in chromosome {}",
-                                chrom
+                                "Positions should be sorted in chromosome {chrom}",
                             );
-}
+                        }
 
                         // Verify allele frequencies are in valid range
                         for (pos, freq) in positions {
                             assert!(
                                 *freq >= 0.0 && *freq <= 1.0,
-                                "Invalid allele frequency {} at position {}",
-                                freq,
-                                pos
+                                "Invalid allele frequency {freq} at position {pos}",
                             );
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("Test failed with error: {:?}", e);
+                    eprintln!("Test failed with error: {e:?}");
                     panic!("Failed to process real BCF file");
                 }
             }
@@ -588,22 +584,20 @@ chr1	200	.	G	C	60	PASS	.	GT	0/1	1/1
                             data[i - 1].0 <= data[i].0,
                             "Genome-wide positions should be sorted"
                         );
-}
+                    }
 
                     // Verify allele frequencies
                     for (gw_pos, freq) in &data {
                         assert!(
                             *freq >= 0.0 && *freq <= 1.0,
-                            "Invalid allele frequency {} at genome-wide position {}",
-                            freq,
-                            gw_pos
+                            "Invalid allele frequency {freq} at genome-wide position {gw_pos}",
                         );
-}
+                    }
 
                     println!("Successfully processed {} variants", data.len());
                 }
                 Err(e) => {
-                    eprintln!("Test failed with error: {:?}", e);
+                    eprintln!("Test failed with error: {e:?}");
                     panic!("Failed genome-wide conversion test");
                 }
             }

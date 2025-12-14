@@ -847,9 +847,7 @@ mod tests {
                 records.sort_status = sort_status;
 
                 let temp_dir = tempdir().unwrap();
-                let temp_path = temp_dir
-                    .path()
-                    .join(format!("test_{}.parquet", sort_status));
+                let temp_path = temp_dir.path().join(format!("test_{sort_status}.parquet"));
 
                 records.clone().into_parquet_file(&temp_path)?;
                 let loaded = GenotypeRecords::from_parquet_file(&temp_path)?;

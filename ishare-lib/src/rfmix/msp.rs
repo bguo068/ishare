@@ -140,7 +140,7 @@ mod tests {
                     1 => Ancestry::Eas,
                     2 => Ancestry::Eur,
                     3 => Ancestry::Nat,
-                    _ => panic!("Invalid ancestry code: {}", code),
+                    _ => panic!("Invalid ancestry code: {code}"),
                 }
             }
         }
@@ -272,13 +272,13 @@ mod tests {
             let valid_codes = [0u8, 1, 2, 3];
 
             for &code in &valid_codes {
-                assert!(code <= 3, "Ancestry code {} should be valid", code);
+                assert!(code <= 3, "Ancestry code {code} should be valid");
             }
 
             // Test that codes outside range would be invalid
             let invalid_codes = [4u8, 255];
             for &code in &invalid_codes {
-                assert!(code > 3, "Code {} should be considered invalid", code);
+                assert!(code > 3, "Code {code} should be considered invalid");
             }
         }
 
@@ -321,8 +321,7 @@ mod tests {
                 let parse_result = pos_str.parse::<u32>();
                 assert!(
                     parse_result.is_err(),
-                    "Position '{}' should fail to parse",
-                    pos_str
+                    "Position '{pos_str}' should fail to parse",
                 );
             }
         }
@@ -336,8 +335,7 @@ mod tests {
                 let parse_result = genetic_str.parse::<f64>();
                 assert!(
                     parse_result.is_err() || !parse_result.unwrap().is_finite(),
-                    "Genetic position '{}' should fail or be non-finite",
-                    genetic_str
+                    "Genetic position '{genetic_str}' should fail or be non-finite",
                 );
             }
         }
@@ -406,22 +404,17 @@ mod tests {
                 let fields: Vec<&str> = line.split('\t').collect();
 
                 // All lines should have same number of fields
-                assert_eq!(fields.len(), 11, "Line {} should have 11 fields", i);
+                assert_eq!(fields.len(), 11, "Line {i} should have 11 fields");
 
                 // Chromosome should be consistent
-                assert_eq!(
-                    fields[0], "chr22",
-                    "Chromosome should be chr22 in line {}",
-                    i
-                );
+                assert_eq!(fields[0], "chr22", "Chromosome should be chr22 in line {i}",);
 
                 // Positions should parse as numbers
                 let start_pos: u32 = fields[1].parse().unwrap();
                 let end_pos: u32 = fields[2].parse().unwrap();
                 assert!(
                     end_pos > start_pos,
-                    "End position should be greater than start in line {}",
-                    i
+                    "End position should be greater than start in line {i}",
                 );
 
                 // Genetic positions should parse as floats
@@ -429,8 +422,7 @@ mod tests {
                 let end_genetic: f64 = fields[4].parse().unwrap();
                 assert!(
                     end_genetic >= start_genetic,
-                    "End genetic position should be >= start in line {}",
-                    i
+                    "End genetic position should be >= start in line {i}",
                 );
 
                 // Ancestry codes should be valid (0-3)
@@ -438,10 +430,7 @@ mod tests {
                     let ancestry: u8 = field.parse().unwrap();
                     assert!(
                         ancestry <= 3,
-                        "Ancestry code {} should be 0-3 in line {} field {}",
-                        ancestry,
-                        i,
-                        j
+                        "Ancestry code {ancestry} should be 0-3 in line {i} field {j}",
                     );
                 }
             }

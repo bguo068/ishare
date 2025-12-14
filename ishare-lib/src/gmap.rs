@@ -1,4 +1,5 @@
 use crate::genome::{self, GenomeInfo};
+use bincode::{Decode, Encode};
 use csv;
 use serde::{Deserialize, Serialize};
 use snafu::{ensure, OptionExt, ResultExt, Snafu};
@@ -56,7 +57,7 @@ type Result<T> = std::result::Result<T, Error>;
 
 /// Genetic Map represented as vector of 2-tuple: 0-based bp position and the
 /// corresponding cM coordinatesg
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Decode, Encode, Deserialize, PartialEq)]
 pub struct GeneticMap(Vec<(u32, f32)>);
 
 impl GeneticMap {
@@ -80,7 +81,7 @@ impl GeneticMap {
         let dir = ginfo
             .map_root
             .as_ref()
-            .map_or(Path::new("."), |p| p.as_path());
+            .map_or(Path::new("."), |p| Path::new(p));
         for (chrlen, plinkmap_fn) in ginfo.chromsize.iter().zip(ginfo.gmaps.iter()) {
             let p = dir.join(plinkmap_fn);
             let mut chrmap = GeneticMap::from_plink_map(p, *chrlen)?;
@@ -217,7 +218,9 @@ impl GeneticMap {
         let (x2, y2) = match self.0.get(idx + 1) {
             Some(x) => *x,
             None => {
-                let max_cm = self.get_size_cm().unwrap_or_else(|_| unreachable!("get_size_cm should not fail as we checked length"));
+                let max_cm = self.get_size_cm().unwrap_or_else(|_| {
+                    unreachable!("get_size_cm should not fail as we checked length")
+                });
                 eprintln!("WARN get_cm: idx={idx}, bp={bp}, cm>={max_cm}");
                 return max_cm;
             }
@@ -268,7 +271,7 @@ impl GeneticMap {
         let dir = ginfo
             .map_root
             .as_ref()
-            .map_or(Path::new("."), |s| s.as_path());
+            .map_or(Path::new("."), |s| Path::new(s));
 
         for (i, chrname) in ginfo.chromnames.iter().enumerate() {
             let p = dir.join(&ginfo.gmaps[i]);

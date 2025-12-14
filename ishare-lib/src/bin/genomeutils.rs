@@ -168,7 +168,7 @@ fn main_entry() -> Result<()> {
         } => {
             let p = to_toml.unwrap_or(from_bin.with_extension("bin"));
             let mut genome = Genome::load_from_bincode_file(&from_bin)?;
-            genome.save_to_text_files(&p, to_map_prefix)?;
+            genome.save_to_text_files(&p.to_string_lossy(), &to_map_prefix.to_string_lossy())?;
         }
         Commands::GenerateByName {
             name,
@@ -180,7 +180,10 @@ fn main_entry() -> Result<()> {
             if let Some(to_bin) = to_bin {
                 genome.save_to_bincode_file(&to_bin)?;
             } else if let Some(to_toml) = to_toml {
-                genome.save_to_text_files(&to_toml, to_map_prefix)?;
+                genome.save_to_text_files(
+                    &to_toml.to_string_lossy(),
+                    &to_map_prefix.to_string_lossy(),
+                )?;
             } else {
                 eprintln!("Error: one of --to-bin and --to-toml has to be set");
                 std::process::exit(-1);
@@ -211,7 +214,10 @@ fn main_entry() -> Result<()> {
             if let Some(to_bin) = to_bin {
                 genome.save_to_bincode_file(&to_bin)?;
             } else if let Some(to_toml) = to_toml {
-                genome.save_to_text_files(&to_toml, to_map_prefix)?;
+                genome.save_to_text_files(
+                    &to_toml.to_string_lossy(),
+                    &to_map_prefix.to_string_lossy(),
+                )?;
             } else {
                 eprintln!("Error: one of --to-bin and --to-toml has to be set");
                 std::process::exit(-1);

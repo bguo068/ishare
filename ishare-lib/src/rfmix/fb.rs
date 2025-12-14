@@ -534,7 +534,7 @@ chr1\t301\t0.3\t10\t0.0\t1.0\t0.0\t0.0\t0.0\t0.0\t1.0\t0.0\t0.0\t1.0\t0.0\t0.0\t
 chr1\t401\t0.4\t15\t0.0\t1.0\t0.0\t0.0\t0.0\t1.0\t0.0\t0.0\t0.0\t1.0\t0.0\t0.0\t1.0\t0.0\t0.0\t0.0
 chr1\t501\t0.5\t20\t0.0\t0.0\t1.0\t0.0\t0.0\t1.0\t0.0\t0.0\t0.0\t1.0\t0.0\t0.0\t0.0\t1.0\t0.0\t0.0
 ";
-        format!("{}{}{}", header, columns, data)
+        format!("{header}{columns}{data}")
     }
 
     fn create_temp_fb_file() -> std::io::Result<std::path::PathBuf> {
@@ -548,7 +548,7 @@ chr1\t501\t0.5\t20\t0.0\t0.0\t1.0\t0.0\t0.0\t1.0\t0.0\t0.0\t0.0\t1.0\t0.0\t0.0\t
             .unwrap_or_default()
             .as_nanos();
         let pid = process::id();
-        let temp_file = temp_dir.join(format!("test_fb_{}_{}.tsv", timestamp, pid));
+        let temp_file = temp_dir.join(format!("test_fb_{timestamp}_{pid}.tsv"));
 
         let mut file = std::fs::File::create(&temp_file)?;
         file.write_all(create_test_fb_data().as_bytes())?;
@@ -681,11 +681,7 @@ chr1\t501\t0.5\t20\t0.0\t0.0\t1.0\t0.0\t0.0\t1.0\t0.0\t0.0\t0.0\t1.0\t0.0\t0.0\t
         // Each haplotype should have segments
         for hap_idx in 0..la_set.hap_start_idx.len() {
             let segs = la_set.get_lasegs(hap_idx as u32).unwrap();
-            assert!(
-                !segs.is_empty(),
-                "Haplotype {} should have segments",
-                hap_idx
-            );
+            assert!(!segs.is_empty(), "Haplotype {hap_idx} should have segments",);
         }
 
         std::fs::remove_file(temp_file).ok();
@@ -869,7 +865,7 @@ chr1\t101\t0.1\t0\t1.0\t0.0\t0.0\t1.0\n";
             // Should error due to no valid columns for known individuals
             assert!(result.is_err());
             if let Err(e) = result {
-                let error_msg = format!("{}", e);
+                let error_msg = format!("{e}");
                 // Should be an error about no ancestry populations or empty data
                 assert!(
                     error_msg.contains("NoAncestryPopulations")

@@ -10,7 +10,7 @@ type Result<T> = std::result::Result<T, Error>;
 #[derive(Snafu, Debug)]
 pub enum Error {
     Stats {
-        source: statrs::StatsError,
+        source: statrs::distribution::GammaError,
         backtrace: Option<Backtrace>,
     },
     PositionsNotSorted {

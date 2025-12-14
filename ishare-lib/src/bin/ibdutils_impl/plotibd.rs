@@ -102,9 +102,11 @@ pub fn main_plotibd(args: &Commands) -> Result<()> {
                     .route("/searchid", get(handler_searchid))
                     .route("/plotibd", get(handler_plotibd))
                     .with_state(state);
-                axum::Server::bind(&url.parse().context(AddressSnafu)?)
-                    .serve(app.into_make_service())
-                    .await?;
+
+                let listener = tokio::net::TcpListener::bind(&url)
+                    .await
+                    .context(StdIOSnafu)?;
+                axum::serve(listener, app).await.context(StdIOSnafu)?;
                 Ok::<(), Error>(())
             })?;
         }
@@ -144,18 +146,20 @@ fn prepare_app_state(args: &Commands) -> Result<AppState> {
     } = args
     {
         let ginfo = Arc::new(genome::GenomeInfo::from_toml_file(genome_info)?);
-        let gmap = gmap::GeneticMap::from_genome_info(&ginfo)?;
+        let gmap = Arc::new(gmap::GeneticMap::from_genome_info(&ginfo)?);
 
         let (inds1, inds1_opt) = Individuals::from_txt_file(sample_lst1)?;
+        let inds1 = Arc::new(inds1);
         let (inds2, inds2_opt) = Individuals::from_txt_file(sample_lst2)?;
-        let mut ibd1 = IbdSet::new(&gmap, &ginfo, &inds1);
-        let mut ibd2 = IbdSet::new(&gmap, &ginfo, &inds2);
+        let inds2 = Arc::new(inds2);
+        let mut ibd1 = IbdSet::new(gmap.clone(), ginfo.clone(), inds1.clone());
+        let mut ibd2 = IbdSet::new(gmap, ginfo.clone(), inds2);
 
         for (((ibd, fmt), dir), inds_opt) in [&mut ibd1, &mut ibd2]
             .iter_mut()
             .zip([fmt1, fmt2])
             .zip([ibd1_dir, ibd2_dir])
-            .zip([&inds1_opt, &inds2_opt])
+            .zip([inds1_opt, inds2_opt].into_iter())
         {
             if fmt.as_str() == "hapibd" {
                 ibd.read_hapibd_dir(dir)?;
@@ -172,12 +176,12 @@ fn prepare_app_state(args: &Commands) -> Result<AppState> {
             } else {
                 panic!("format {fmt} is not supported.");
             }
-            match inds_opt.as_ref() {
+            match inds_opt {
                 Some((converter, ind_, PloidConvertDirection::Diploid2Haploid)) => {
-                    ibd.covert_to_haploid(ind_, converter);
+                    ibd.covert_to_haploid(Arc::new(ind_), &converter);
                 }
                 Some((converter, ind_, PloidConvertDirection::Haploid2Diploid)) => {
-                    ibd.covert_to_het_diploid(ind_, converter)?;
+                    ibd.covert_to_het_diploid(Arc::new(ind_), &converter)?;
                 }
                 None => {}
             }
@@ -226,7 +230,7 @@ fn prepare_app_state(args: &Commands) -> Result<AppState> {
         Ok(AppState {
             ibd1: Arc::from(ibd1.into_vec().into_boxed_slice()),
             ibd2: Arc::from(ibd2.into_vec().into_boxed_slice()),
-            inds: Arc::new(inds1.clone()),
+            inds: inds1.clone(),
             port: *port,
             id1,
             id2,
@@ -353,7 +357,9 @@ fn plot_svg(
             .whatever_context("error in draw")?;
 
         // To avoid the IO failure being ignored silently, we manually call the present function
-        root_area.present().expect("Unable to write result to file");
+        root_area
+            .present()
+            .whatever_context("Unable to write result to file")?;
     }
 
     Ok(ret)
@@ -396,9 +402,9 @@ async fn handler_plotibd(
     let mut id2: u32 = ids.id2.parse()?;
     let n = inds.v().len();
     if (id1 == 0) && (id2 == 0) {
-        let mut rng = rand::thread_rng();
-        id1 = rng.gen_range(1..n) as u32;
-        id2 = rng.gen_range(0..id1) as u32;
+        let mut rng = rand::rng();
+        id1 = rng.random_range(1..n) as u32;
+        id2 = rng.random_range(0..id1) as u32;
     }
     if id1 < id2 {
         std::mem::swap(&mut id1, &mut id2);

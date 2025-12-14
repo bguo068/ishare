@@ -328,7 +328,7 @@ mod tests {
         fn test_statistical_distribution() {
             // Simulate normal distribution-like data
             let bins = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
-            let val = vec![
+            let val = [
                 5, 15, 25, 35, 45, 55, 65, 75, 85, 95, // One per bin
                 25, 35, 45, 55, 65, // Extra in middle bins
                 45, 55, // Even more in center

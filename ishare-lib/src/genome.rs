@@ -1,13 +1,13 @@
 use crate::container::intervals::Intervals;
 use crate::gmap::{self, GeneticMap};
 use ahash::{HashMap, HashMapExt};
+use bincode::{Decode, Encode};
 use clap::ValueEnum;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::backtrace::Backtrace;
 use std::io::{BufWriter, Read, Write};
-use std::path::{Path, PathBuf};
-use std::str::FromStr;
+use std::path::Path;
 
 use snafu::{OptionExt, ResultExt, Snafu};
 #[derive(Debug, Snafu)]
@@ -27,8 +27,12 @@ pub enum Error {
     EmptySliceError {
         backtrace: Option<Backtrace>,
     },
-    BincodeError {
-        source: bincode::Error,
+    BincodeDecodeError {
+        source: bincode::error::DecodeError,
+        backtrace: Option<Backtrace>,
+    },
+    BincodeEncodeError {
+        source: bincode::error::EncodeError,
         backtrace: Option<Backtrace>,
     },
     InferMapFilePrefixError {
@@ -50,8 +54,8 @@ struct GenomeFile {
     chromsize: Vec<u32>,
     idx: HashMap<String, usize>,
     chromnames: Vec<String>,
-    map_root: Option<PathBuf>,
-    gmaps: Vec<PathBuf>,
+    map_root: Option<String>,
+    gmaps: Vec<String>,
 }
 
 impl GenomeFile {
@@ -72,15 +76,15 @@ fn test_genome() {
     let _: GenomeFile = toml::from_str(&s).unwrap();
 }
 
-#[derive(Deserialize, Debug, Clone, Serialize, PartialEq, Eq, Default)]
+#[derive(Deserialize, Debug, Encode, Decode, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct GenomeInfo {
     pub name: String,
     pub chromsize: Vec<u32>,
     pub chromnames: Vec<String>,
     pub idx: HashMap<String, usize>,
     pub gwstarts: Vec<u32>,
-    pub map_root: Option<PathBuf>,
-    pub gmaps: Vec<PathBuf>,
+    pub map_root: Option<String>,
+    pub gmaps: Vec<String>,
 }
 
 impl GenomeInfo {
@@ -114,7 +118,10 @@ impl GenomeInfo {
             name: self.name.clone(),
             chromnames: self.chromnames.clone(),
             chromsize: self.chromsize.clone(),
-            map_root: p.as_ref().parent().map(|p| p.to_path_buf()),
+            map_root: p
+                .as_ref()
+                .parent()
+                .map(|p| p.to_string_lossy().into_owned()),
             gmaps: self.gmaps.clone(),
             idx: self.idx.clone(),
         };
@@ -154,7 +161,10 @@ impl GenomeInfo {
             let last = ginfo.gwstarts.last().context(EmptySliceSnafu {})?;
             ginfo.gwstarts.push(*chrlen + *last);
         }
-        ginfo.map_root = path.as_ref().parent().map(|p| p.to_path_buf());
+        ginfo.map_root = path
+            .as_ref()
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned());
         Ok(ginfo)
     }
     pub fn to_gw_pos(&self, chrid: usize, pos: u32) -> u32 {
@@ -259,7 +269,7 @@ impl GenomeInfo {
 ///
 /// used to save and read both of genome info and genetic map from from binary or text files
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Decode, Encode, Debug, PartialEq)]
 pub struct Genome {
     ginfo: GenomeInfo,
     gmap: GeneticMap,
@@ -333,7 +343,7 @@ impl Genome {
         genome_name: &str,
         chromsizes: &[u32],
         chromnames: &[String],
-        plink_files: &[PathBuf],
+        plink_files: &[String],
     ) -> Result<Self> {
         let mut gfile = GenomeFile {
             name: genome_name.to_owned(),
@@ -369,7 +379,8 @@ impl Genome {
         let mut reader = std::fs::File::open(p)
             .map(std::io::BufReader::new)
             .context(IoSnafu {})?;
-        bincode::deserialize_from(&mut reader).context(BincodeSnafu {})
+        bincode::decode_from_reader(&mut reader, bincode::config::standard())
+            .context(BincodeDecodeSnafu {})
     }
 
     /// save to single bincode file, for ease of use
@@ -377,22 +388,20 @@ impl Genome {
         if let Some(parent) = Path::new(p.as_ref()).parent() {
             std::fs::create_dir_all(parent).context(IoSnafu {})?;
         }
-        let reader = std::fs::File::create(p)
+        let mut writer = std::fs::File::create(p)
             .map(std::io::BufWriter::new)
             .context(IoSnafu {})?;
-        bincode::serialize_into(reader, &self).context(BincodeSnafu {})
+        bincode::encode_into_std_write(self, &mut writer, bincode::config::standard())
+            .context(BincodeEncodeSnafu {})?;
+        Ok(())
     }
 
     /// save to readable text file,  including the genome info toml file and a list of per chr recombinaton rate in plink map format
-    pub fn save_to_text_files(
-        &mut self,
-        toml_path: impl AsRef<Path>,
-        gmap_path: impl AsRef<Path>,
-    ) -> Result<()> {
-        if let Some(parent) = toml_path.as_ref().parent() {
+    pub fn save_to_text_files(&mut self, toml_path: &str, gmap_path: &str) -> Result<()> {
+        if let Some(parent) = Path::new(toml_path).parent() {
             std::fs::create_dir_all(parent).context(IoSnafu {})?;
         }
-        self.ginfo.to_toml_file(toml_path.as_ref())?;
+        self.ginfo.to_toml_file(toml_path)?;
         self.set_gmap_path(toml_path, gmap_path);
         self.gmap.to_plink_map_files(&self.ginfo)?;
         Ok(())
@@ -412,16 +421,18 @@ impl Genome {
         &self.gmap
     }
 
-    pub fn set_gmap_path(&mut self, toml_path: impl AsRef<Path>, gmap_path: impl AsRef<Path>) {
+    pub fn set_gmap_path(&mut self, toml_path: impl AsRef<Path>, gmap_path: &str) {
         let dir = &toml_path.as_ref().parent().unwrap_or(Path::new("."));
-        self.ginfo.map_root = Some(dir.to_path_buf());
+        self.ginfo.map_root = Some(dir.to_string_lossy().into_owned());
         self.ginfo.gmaps = self
             .ginfo
             .chromnames
             .iter()
             .map(|chrname| {
-                dir.join(gmap_path.as_ref())
-                    .join(PathBuf::from_str(&format!("{chrname}.map")).unwrap())
+                dir.join(gmap_path)
+                    .join(format!("{chrname}.map"))
+                    .to_string_lossy()
+                    .into_owned()
             })
             .collect::<Vec<_>>();
     }
@@ -473,15 +484,15 @@ name = "test_genome"
 chromsize = [1000, 2000
 # Missing closing bracket and other required fields
 "#;
-        
+
         let temp_file = "test_malformed.toml";
         let mut file = std::fs::File::create(temp_file).unwrap();
         file.write_all(malformed_content.as_bytes()).unwrap();
-        
+
         let result = GenomeInfo::from_toml_file(temp_file);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), Error::TomlDeError { .. }));
-        
+
         std::fs::remove_file(temp_file).unwrap();
     }
 
@@ -491,14 +502,14 @@ chromsize = [1000, 2000
 name = "test_genome"
 # Missing chromsize, chromnames, idx, gmaps
 "#;
-        
+
         let temp_file = "test_incomplete.toml";
         let mut file = std::fs::File::create(temp_file).unwrap();
         file.write_all(incomplete_content.as_bytes()).unwrap();
-        
+
         let result = GenomeInfo::from_toml_file(temp_file);
         assert!(result.is_err());
-        
+
         std::fs::remove_file(temp_file).unwrap();
     }
 
@@ -511,16 +522,17 @@ chromnames = ["chr1", "chr2", "chr3"]
 gmaps = ["chr1.map", "chr2.map"]
 idx = {"chr1" = 0, "chr2" = 1}
 "#;
-        
+
         let temp_file = "test_invalid_sizes.toml";
         let mut file = std::fs::File::create(temp_file).unwrap();
         file.write_all(invalid_content.as_bytes()).unwrap();
-        
+
         // This should panic during the check() call due to mismatched lengths
         assert!(std::panic::catch_unwind(|| {
             GenomeInfo::from_toml_file(temp_file).unwrap();
-        }).is_err());
-        
+        })
+        .is_err());
+
         std::fs::remove_file(temp_file).unwrap();
     }
 
@@ -540,9 +552,12 @@ idx = {"chr1" = 0, "chr2" = 1}
             ("chr1".to_string(), 0),
             ("chr2".to_string(), 1),
             ("chr3".to_string(), 2),
-        ].iter().cloned().collect();
+        ]
+        .iter()
+        .cloned()
+        .collect();
         let gwstarts = vec![0, 1000, 3000];
-        
+
         let ginfo = GenomeInfo::new_from_parts(
             "test_genome".to_string(),
             chromsizes,
@@ -590,12 +605,12 @@ idx = {"chr1" = 0, "chr2" = 1}
     fn test_chromosome_boundary_conversion() {
         let chromsizes = vec![100, 200];
         let chromnames = vec!["chr1".to_string(), "chr2".to_string()];
-        let idx: HashMap<String, usize> = [
-            ("chr1".to_string(), 0),
-            ("chr2".to_string(), 1),
-        ].iter().cloned().collect();
+        let idx: HashMap<String, usize> = [("chr1".to_string(), 0), ("chr2".to_string(), 1)]
+            .iter()
+            .cloned()
+            .collect();
         let gwstarts = vec![0, 100];
-        
+
         let ginfo = GenomeInfo::new_from_parts(
             "test_genome".to_string(),
             chromsizes,
@@ -620,7 +635,7 @@ idx = {"chr1" = 0, "chr2" = 1}
         let chromnames = vec!["chr1".to_string()];
         let idx: HashMap<String, usize> = [("chr1".to_string(), 0)].iter().cloned().collect();
         let gwstarts = vec![0];
-        
+
         let ginfo = GenomeInfo::new_from_parts(
             "test_genome".to_string(),
             chromsizes,
@@ -646,9 +661,12 @@ idx = {"chr1" = 0, "chr2" = 1}
             ("chr1".to_string(), 0),
             ("chr2".to_string(), 1),
             ("chr3".to_string(), 2),
-        ].iter().cloned().collect();
+        ]
+        .iter()
+        .cloned()
+        .collect();
         let gwstarts = vec![0, 1000, 3000];
-        
+
         let ginfo = GenomeInfo::new_from_parts(
             "test_genome".to_string(),
             chromsizes,
@@ -658,16 +676,17 @@ idx = {"chr1" = 0, "chr2" = 1}
         );
 
         let partitions = ginfo.partition_genome(Some(600));
-        
+
         // Should create multiple partitions for larger chromosomes
         assert!(!partitions.is_empty());
-        
+
         // First chromosome (1000bp) with 600bp chunks should create 2 partitions
-        let chr1_partitions: Vec<_> = partitions.iter()
+        let chr1_partitions: Vec<_> = partitions
+            .iter()
             .filter(|p| p.is_some() && p.unwrap().0 == 0)
             .collect();
         assert_eq!(chr1_partitions.len(), 2);
-        
+
         // Verify partition boundaries
         if let Some(Some((chrid, start, end))) = partitions.first() {
             assert_eq!(*chrid, 0);
@@ -680,12 +699,12 @@ idx = {"chr1" = 0, "chr2" = 1}
     fn test_partition_genome_no_chunking() {
         let chromsizes = vec![1000, 2000];
         let chromnames = vec!["chr1".to_string(), "chr2".to_string()];
-        let idx: HashMap<String, usize> = [
-            ("chr1".to_string(), 0),
-            ("chr2".to_string(), 1),
-        ].iter().cloned().collect();
+        let idx: HashMap<String, usize> = [("chr1".to_string(), 0), ("chr2".to_string(), 1)]
+            .iter()
+            .cloned()
+            .collect();
         let gwstarts = vec![0, 1000];
-        
+
         let ginfo = GenomeInfo::new_from_parts(
             "test_genome".to_string(),
             chromsizes,
@@ -695,7 +714,7 @@ idx = {"chr1" = 0, "chr2" = 1}
         );
 
         let partitions = ginfo.partition_genome(None);
-        
+
         // Should return single None partition when no chunking
         assert_eq!(partitions.len(), 1);
         assert!(partitions[0].is_none());
@@ -714,7 +733,7 @@ idx = {"chr1" = 0, "chr2" = 1}
         let chromnames = vec!["chr1".to_string()];
         let idx: HashMap<String, usize> = [("chr1".to_string(), 0)].iter().cloned().collect();
         let gwstarts = vec![0];
-        
+
         let ginfo = GenomeInfo::new_from_parts(
             "test_genome".to_string(),
             chromsizes,
@@ -724,23 +743,22 @@ idx = {"chr1" = 0, "chr2" = 1}
         );
 
         let partitions = ginfo.partition_genome(Some(50));
-        
+
         // 100bp chromosome with 50bp chunks should create 2 partitions
         assert_eq!(partitions.len(), 2);
-        
+
         if let Some(Some((chrid, start, end))) = partitions.first() {
             assert_eq!(*chrid, 0);
             assert_eq!(*start, 0);
             assert_eq!(end.unwrap(), 50);
         }
-        
+
         if let Some(Some((chrid, start, end))) = partitions.get(1) {
             assert_eq!(*chrid, 0);
             assert_eq!(*start, 51);
             assert_eq!(end.unwrap(), 100);
         }
     }
-
 }
 
 #[cfg(test)]
@@ -754,47 +772,47 @@ mod comprehensive_tests_group2 {
         {
             let genome = Genome::new_from_name(BuiltinGenome::Pf3d7Const15k).unwrap();
             let ginfo = genome.ginfo();
-            
+
             assert_eq!(ginfo.name, "pf3d7_const15k");
             assert_eq!(ginfo.chromsize.len(), 14);
             assert_eq!(ginfo.chromnames.len(), 14);
             assert_eq!(ginfo.gwstarts.len(), 14);
-            
+
             // Verify chromosome names format (first few)
             assert_eq!(ginfo.chromnames[0], "Pf3D7_01_v3");
             assert_eq!(ginfo.chromnames[1], "Pf3D7_02_v3");
             assert_eq!(ginfo.chromnames[13], "Pf3D7_14_v3");
-            
+
             // Verify chromosome sizes match PF3D7CHRLENS (first and last)
             assert_eq!(ginfo.chromsize[0], PF3D7CHRLENS[0]);
             assert_eq!(ginfo.chromsize[13], PF3D7CHRLENS[13]);
-            
+
             // Verify gwstarts calculation
             assert_eq!(ginfo.gwstarts[0], 0);
-            
+
             // Verify genetic map exists
             assert!(!genome.gmap().as_slice().is_empty());
         } // Pf3d7 genome dropped here
-        
-        // Test simulated genome 
+
+        // Test simulated genome
         {
             let genome = Genome::new_from_name(BuiltinGenome::Sim14chr100cmConst15k).unwrap();
             let ginfo = genome.ginfo();
-            
+
             assert_eq!(ginfo.name, "sim14chr100cm_const15k");
             assert_eq!(ginfo.chromsize.len(), 14);
             assert_eq!(ginfo.chromnames.len(), 14);
-            
+
             // Verify all chromosomes have same size
             for &size in &ginfo.chromsize {
                 assert_eq!(size, 1_500_000);
             }
-            
+
             // Verify chromosome names are numbered 1-14 (check first few)
             assert_eq!(ginfo.chromnames[0], "1");
             assert_eq!(ginfo.chromnames[1], "2");
             assert_eq!(ginfo.chromnames[13], "14");
-            
+
             // Verify genetic map exists
             assert!(!genome.gmap().as_slice().is_empty());
         } // Sim genome dropped here
@@ -805,7 +823,7 @@ mod comprehensive_tests_group2 {
         let chromsizes = vec![1000, 2000];
         let chromnames = vec!["chr1".to_string(), "chr2".to_string()];
         let const_recom_rate = 0.01 / 15000.0;
-        
+
         // Create genome in limited scope to ensure cleanup
         {
             let genome = Genome::new_from_constant_recombination_rate(
@@ -813,20 +831,21 @@ mod comprehensive_tests_group2 {
                 &chromsizes,
                 &chromnames,
                 const_recom_rate,
-            ).unwrap();
-            
+            )
+            .unwrap();
+
             let ginfo = genome.ginfo();
             assert_eq!(ginfo.name, "test_genome");
             assert_eq!(ginfo.chromsize, chromsizes);
             assert_eq!(ginfo.chromnames, chromnames);
-            
+
             // Verify genetic map has data for 2 chromosomes
             let gmap = genome.gmap();
             assert!(!gmap.as_slice().is_empty());
         } // genome is dropped here
     }
 
-    #[test] 
+    #[test]
     fn test_total_genome_length() {
         let chromsizes = vec![1000, 2000, 1500];
         let chromnames = vec!["chr1".to_string(), "chr2".to_string(), "chr3".to_string()];
@@ -834,9 +853,12 @@ mod comprehensive_tests_group2 {
             ("chr1".to_string(), 0),
             ("chr2".to_string(), 1),
             ("chr3".to_string(), 2),
-        ].iter().cloned().collect();
+        ]
+        .iter()
+        .cloned()
+        .collect();
         let gwstarts = vec![0, 1000, 3000];
-        
+
         let ginfo = GenomeInfo::new_from_parts(
             "test_genome".to_string(),
             chromsizes.clone(),
@@ -849,7 +871,6 @@ mod comprehensive_tests_group2 {
         let expected_len: u32 = chromsizes.iter().sum();
         assert_eq!(total_len, expected_len);
     }
-
 }
 
 #[cfg(test)]
@@ -860,40 +881,38 @@ mod comprehensive_tests_group3 {
     #[test]
     fn test_bincode_serialization_round_trip() {
         let temp_file = "test_bincode_roundtrip.bincode";
-        
+
         let genome = Genome::new_from_name(BuiltinGenome::Pf3d7Const15k).unwrap();
         genome.save_to_bincode_file(temp_file).unwrap();
         let loaded_genome = Genome::load_from_bincode_file(temp_file).unwrap();
-        
+
         assert_eq!(genome, loaded_genome);
         std::fs::remove_file(temp_file).unwrap();
     }
-
 }
 
 #[cfg(test)]
 mod comprehensive_tests_group5 {
     use super::*;
 
-    #[test] 
+    #[test]
     fn test_text_serialization_round_trip() {
         let toml_file = "test_text_roundtrip2.toml";
         let gmap_dir = "test_text_gmap2";
-        
+
         let mut genome = Genome::new_from_name(BuiltinGenome::Sim14chr100cmConst15k).unwrap();
         genome.set_gmap_path(toml_file, gmap_dir);
-        
+
         genome.save_to_text_files(toml_file, gmap_dir).unwrap();
         let loaded_genome = Genome::load_from_text_file(toml_file).unwrap();
-        
+
         assert_eq!(genome.ginfo().name, loaded_genome.ginfo().name);
         assert_eq!(genome.ginfo().chromsize, loaded_genome.ginfo().chromsize);
         assert_eq!(genome.ginfo().chromnames, loaded_genome.ginfo().chromnames);
-        
+
         std::fs::remove_file(toml_file).unwrap();
         std::fs::remove_dir_all(gmap_dir).unwrap();
     }
-
 }
 
 #[cfg(test)]
@@ -910,20 +929,19 @@ mod comprehensive_tests_group6 {
             [("chr1".to_string(), 0)].iter().cloned().collect(),
             vec![0],
         );
-        
+
         // Create parent directories manually
         if let Some(parent) = std::path::Path::new(deep_path).parent() {
             std::fs::create_dir_all(parent).unwrap();
         }
-        
+
         ginfo.to_toml_file(deep_path).unwrap();
-        
+
         assert!(std::path::Path::new(deep_path).exists());
-        
+
         // Cleanup
         std::fs::remove_dir_all("test_dir").unwrap();
     }
-
 }
 
 #[cfg(test)]
@@ -937,11 +955,14 @@ mod comprehensive_tests_group7 {
         let mut file = std::fs::File::create(temp_file).unwrap();
         // Use a shorter invalid sequence that won't trigger massive allocations
         file.write_all(b"\x00\x01\x02\x03").unwrap();
-        
+
         let result = Genome::load_from_bincode_file(temp_file);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::BincodeError { .. }));
-        
+        assert!(matches!(
+            result.unwrap_err(),
+            Error::BincodeDecodeError { .. }
+        ));
+
         std::fs::remove_file(temp_file).unwrap();
     }
 
@@ -962,18 +983,18 @@ chromnames = ["chr1", "chr2"]
 gmaps = ["nonexistent1.map", "nonexistent2.map"]
 idx = {"chr1" = 0, "chr2" = 1}
 "#;
-        
+
         let temp_file = "test_missing_maps.toml";
         let mut file = std::fs::File::create(temp_file).unwrap();
         file.write_all(valid_content.as_bytes()).unwrap();
-        
+
         // Loading the genome info should work
         let _ginfo = GenomeInfo::from_toml_file(temp_file).unwrap();
-        
+
         // But loading a full genome should fail when trying to read genetic maps
         let result = Genome::load_from_text_file(temp_file);
         assert!(result.is_err());
-        
+
         std::fs::remove_file(temp_file).unwrap();
     }
 
@@ -985,22 +1006,22 @@ chromsize = [1000, 2000
 chromnames = ["chr1", "chr2"]
 # Missing closing bracket
 "#;
-        
+
         let temp_file = "test_invalid_syntax.toml";
         let mut file = std::fs::File::create(temp_file).unwrap();
         file.write_all(invalid_content.as_bytes()).unwrap();
-        
+
         let result = GenomeInfo::from_toml_file(temp_file);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), Error::TomlDeError { .. }));
-        
+
         std::fs::remove_file(temp_file).unwrap();
     }
 
     #[test]
     fn test_genome_from_empty_parts() {
         let ginfo = GenomeInfo::new();
-        
+
         assert!(ginfo.name.is_empty());
         assert!(ginfo.chromsize.is_empty());
         assert!(ginfo.chromnames.is_empty());
@@ -1013,16 +1034,16 @@ chromnames = ["chr1", "chr2"]
     #[test]
     fn test_split_chromosomes_by_regions() {
         use crate::container::intervals::Intervals;
-        
+
         // Use smaller data to reduce memory usage
         let chromsizes = vec![100, 200];
         let chromnames = vec!["chr1".to_string(), "chr2".to_string()];
-        let idx: HashMap<String, usize> = [
-            ("chr1".to_string(), 0),
-            ("chr2".to_string(), 1),
-        ].iter().cloned().collect();
+        let idx: HashMap<String, usize> = [("chr1".to_string(), 0), ("chr2".to_string(), 1)]
+            .iter()
+            .cloned()
+            .collect();
         let gwstarts = vec![0, 100];
-        
+
         let ginfo = GenomeInfo::new_from_parts(
             "test_genome".to_string(),
             chromsizes,
@@ -1033,13 +1054,13 @@ chromnames = ["chr1", "chr2"]
 
         // Create small regions to split on (genome-wide coordinates)
         let regions = Intervals::from_tuples(&[(50, 60), (150, 160)]);
-        
+
         let split_ginfo = ginfo.split_chromosomes_by_regions(&regions);
-        
+
         // Should have more chromosomes after splitting
         assert!(split_ginfo.chromnames.len() > ginfo.chromnames.len());
         assert_eq!(split_ginfo.name, "test_genome_rmpeaks");
-        
+
         // Verify new chromosome names include position info
         assert!(split_ginfo.chromnames.iter().any(|name| name.contains("_")));
     }

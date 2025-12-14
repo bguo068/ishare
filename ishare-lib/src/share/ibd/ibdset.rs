@@ -639,7 +639,7 @@ impl IbdSet {
         self.sort_by_samples();
         self.ibd
             .iter_mut()
-            .group_by(|x| x.individual_pair())
+            .chunk_by(|x| x.individual_pair())
             .into_iter()
             .try_for_each(|(_pair, mut grp)| -> Result<()> {
                 let mut ibd1 = grp.next().context(MissingDataSnafu)?;
@@ -700,7 +700,7 @@ impl IbdSet {
         self.sort_by_samples();
         self.ibd
             .iter_mut()
-            .group_by(|x| x.individual_pair())
+            .chunk_by(|x| x.individual_pair())
             .into_iter()
             .try_for_each(|(ind_pair, mut grp)| -> Result<()> {
                 let mut ibd1 = grp.next().context(MissingDataSnafu)?;
