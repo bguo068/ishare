@@ -494,5 +494,5 @@ fn test_skato_example() {
     let t_pval = calculator.get_t_p_value(&quantiles, &t_params);
 
     assert!((t_pval - 0.0843).abs() < 0.001);
-    println!("t_pval = {}", t_pval);
+    println!("t_pval = {t_pval}");
 }

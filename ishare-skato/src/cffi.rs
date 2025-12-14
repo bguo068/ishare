@@ -83,6 +83,6 @@ fn test_qfc() {
         &mut res,
     ) {
         Ok(()) => println!("Successfully called qfc_1"),
-        Err(e) => println!("Error: {}", e),
+        Err(e) => println!("Error: {e}"),
     }
 }
