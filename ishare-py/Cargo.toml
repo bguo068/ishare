@@ -9,13 +9,13 @@ name = "isharepy"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.19.0"
-arrow = { version = "41.0.0", features = ["pyarrow"] }
+pyo3 = "0.27"
+# arrow = { version = "41.0.0", features = ["pyarrow"] }
 ishare = { path = "../ishare-lib" }
 chrono = "0.4.42"
-ahash = "*"
-numpy = "0.19.0"
-itertools = "0.10.5"
-rayon = "1.7.0"
-snafu = "0.8.6"
+ahash = "0.8.12"
+numpy = "0.27.0"
+itertools = "0.14.0"
+rayon = "1.11.0"
+snafu = "0.8.9"
 

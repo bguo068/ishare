@@ -142,12 +142,11 @@ impl GMap {
     }
 
     #[staticmethod]
-    fn from_list_of_gmap<'py>(lst_gmap: &'py PyList, _py: Python<'py>) -> PyResult<Self> {
+    fn from_list_of_gmap<'py>(lst_gmap: Bound<'py, PyList>) -> PyResult<Self> {
         let (mut bp_offset, mut cm_offset) = (0, 0.0);
         let mut out = vec![];
         for gmap in lst_gmap.into_iter() {
-            let gmap: &PyCell<GMap> = gmap.extract()?;
-            let gmap = gmap.borrow();
+            let gmap: PyRefMut<GMap> = gmap.extract()?;
             let v = gmap.gmap.as_slice();
             // add data
             for (chr_bp, chr_cm) in v {
@@ -230,7 +229,7 @@ impl Ibd {
         })
     }
 
-    fn get_coverage<'py>(&self, py: Python<'py>, step: u32) -> PyResult<&'py PyDict> {
+    fn get_coverage<'py>(&self, py: Python<'py>, step: u32) -> PyResult<Py<PyDict>> {
         let genomesize = self.ginfo.get_total_len_bp();
         let mut cov_counter = CovCounter::from_range(0, genomesize, step);
         for seg in self.ibd.iter() {
@@ -255,7 +254,7 @@ impl Ibd {
         dict.set_item("ChrPos", ch_bp.into_pyarray(py))?;
         dict.set_item("GwPos", gw_bp.into_pyarray(py))?;
         dict.set_item("Coverage", cov.into_pyarray(py))?;
-        Ok(dict)
+        Ok(dict.unbind())
     }
 
     fn get_xirs<'py>(
@@ -264,7 +263,7 @@ impl Ibd {
         vcf_files: Vec<String>,
         min_maf: f32,
         method: u32,
-    ) -> PyResult<&'py PyDict> {
+    ) -> PyResult<Py<PyDict>> {
         // get allele frequency and site postion vectors from the vec files
         let mut pos_afreq_vec =
             get_afreq_from_vcf_genome_wide(&vcf_files, &self.ginfo).map_err(convert_err)?;
@@ -303,7 +302,7 @@ impl Ibd {
         // return ibd vec back to PyIbdSet
         self.ibd = ibdset.into_parts().0;
 
-        let res_dict: &PyDict = PyDict::new(py);
+        let res_dict: Bound<'_, PyDict> = PyDict::new(py);
         res_dict.set_item("ChrId", xirs_res.chr_id.into_pyarray(py))?;
         res_dict.set_item("ChrPos", xirs_res.chr_pos.into_pyarray(py))?;
         res_dict.set_item("GwPos", xirs_res.gw_pos.into_pyarray(py))?;
@@ -311,7 +310,7 @@ impl Ibd {
         res_dict.set_item("Xirs", xirs_res.xirs.into_pyarray(py))?;
         res_dict.set_item("Pvalue", xirs_res.pval.into_pyarray(py))?;
 
-        Ok(res_dict)
+        Ok(res_dict.unbind())
     }
 
     fn cmp_with(&self) {}
@@ -350,7 +349,7 @@ impl RVar {
                 // (sites, individuals, GenotypeRecords)
                 let res = read_vcf(&target_samples, ginfo, vcf, max_maf, region);
                 if region.is_some() {
-                    println!("{:?}", region);
+                    println!("{region:?}");
                 }
                 res
             })
@@ -494,7 +493,7 @@ impl RVar {
         }
     }
 
-    fn get_genotype_table<'py>(&self, py: Python<'py>) -> PyResult<&'py PyDict> {
+    fn get_genotype_table<'py>(&self, py: Python<'py>) -> PyResult<Py<PyDict>> {
         self.check_genotype()?;
         let d = PyDict::new(py);
         let recs = self.records.as_ref().unwrap();
@@ -511,13 +510,13 @@ impl RVar {
         d.set_item("GenomeId", gid.into_pyarray(py))?;
         d.set_item("GenomeWidePosition", pos.into_pyarray(py))?;
         d.set_item("AlleleID", gt.into_pyarray(py))?;
-        Ok(d)
+        Ok(d.unbind())
     }
     fn get_individuals_lst(&self) -> PyResult<Vec<String>> {
         self.check_individuals()?;
         Ok(self.inds.as_ref().unwrap().v().clone())
     }
-    fn get_sites_table<'py>(&self, py: Python<'py>) -> PyResult<&'py PyDict> {
+    fn get_sites_table<'py>(&self, py: Python<'py>) -> PyResult<Py<PyDict>> {
         self.check_sites()?;
         let sites = self.sits.as_ref().unwrap();
         let d = PyDict::new(py);
@@ -530,7 +529,7 @@ impl RVar {
         }
         d.set_item("GenomeWidePosition", p.to_pyarray(py))?;
         d.set_item("Alleles", alleles_v)?;
-        Ok(d)
+        Ok(d.unbind())
     }
 
     fn calculate_jaccard_matrix<'py>(
@@ -540,7 +539,7 @@ impl RVar {
         chunksize: Option<u32>,
         copy_chunk: Option<bool>,
         py: Python<'py>,
-    ) -> PyResult<&'py PyDict> {
+    ) -> PyResult<Py<PyDict>> {
         // check
         self.check_genotype()?;
         self.check_individuals()?;
@@ -637,16 +636,21 @@ impl RVar {
         d.set_item("RowIds", row_ids.into_pyarray(py))?;
         d.set_item("ColumnIds", col_ids.into_pyarray(py))?;
         d.set_item("Matrix", data.into_pyarray(py))?;
-        Ok(d)
+        Ok(d.unbind())
     }
 }
 
 /// A Python module implemented in Rust.
+
 #[pymodule]
-fn isharepy(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<Ibd>()?;
-    m.add_class::<GMap>()?;
-    m.add_class::<GInfo>()?;
-    m.add_class::<RVar>()?;
-    Ok(())
+mod isharepy {
+    use super::*;
+    #[pymodule_init]
+    fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
+        m.add_class::<Ibd>()?;
+        m.add_class::<GMap>()?;
+        m.add_class::<GInfo>()?;
+        m.add_class::<RVar>()?;
+        Ok(())
+    }
 }
