@@ -126,7 +126,7 @@ pub fn main_encode(args: &Commands) -> Result<()> {
             let rid2 = match ireader.header().name2rid(chrname.as_bytes()) {
                 Ok(rid2) => rid2,
                 _ => {
-                    nfail += 1;
+                    // ignore regions of which chromsome name not present in the vcf header
                     return false;
                 }
             };
