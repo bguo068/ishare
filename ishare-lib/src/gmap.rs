@@ -16,8 +16,10 @@ pub enum Error {
     GnomeError {
         source: genome::Error,
     },
+    #[snafu(display("{source:?}, {path:?}"))]
     CsvError {
         source: csv::Error,
+        path: String,
         backtrace: Option<Backtrace>,
     },
     IoError {
@@ -165,13 +167,18 @@ impl GeneticMap {
         let mut v = vec![(0, 0.0)];
         let mut record = csv::StringRecord::new();
 
+        let p_str = p.as_ref().to_string_lossy().into_owned();
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(false)
             .delimiter(b' ')
             .from_path(&p)
-            .context(CsvSnafu {})?;
+            .context(CsvSnafu {
+                path: p_str.clone(),
+            })?;
 
-        while reader.read_record(&mut record).context(CsvSnafu {})? {
+        while reader.read_record(&mut record).context(CsvSnafu {
+            path: p_str.clone(),
+        })? {
             // println!("{:?}", record);
             let cm = record[2].parse::<f32>().context(ParseFloatErrSnafu {})?;
 
