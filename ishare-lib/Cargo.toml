@@ -9,7 +9,7 @@ edition = "2021"
 arrow-array = "57.1.0"
 arrow-schema = "57.1.0"
 arrow-buffer = "57.1.0"
-parquet = {version = "57.1.0", default-features = false, features = ["arrow"]}
+parquet = {version = "57.1.0", default-features = false, features = ["arrow", "snap"]}
 bitvec = { version = "1.0.1", features = ["serde"] }
 bstr = "1.12.1"
 itertools = "0.14.0"
