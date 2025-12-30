@@ -11,13 +11,25 @@ use snafu::prelude::*;
 #[snafu(visibility)]
 pub enum Error {
     #[snafu(transparent)]
-    IbdutilsEncode { source: encode::Error },
+    IbdutilsEncode {
+        #[snafu(source(from(encode::Error, Box::new)))]
+        source: Box<encode::Error>,
+    },
     #[snafu(transparent)]
-    IbdutilsCompare { source: compare::Error },
+    IbdutilsCompare {
+        #[snafu(source(from(compare::Error, Box::new)))]
+        source: Box<compare::Error>,
+    },
     #[snafu(transparent)]
-    IbdutilsUnrelated { source: unrelated::Error },
+    IbdutilsUnrelated {
+        #[snafu(source(from(unrelated::Error, Box::new)))]
+        source: Box<unrelated::Error>,
+    },
     #[snafu(transparent)]
-    IbdutilsCoverage { source: coverage::Error },
+    IbdutilsCoverage {
+        #[snafu(source(from(coverage::Error, Box::new)))]
+        source: Box<coverage::Error>,
+    },
     #[cfg(feature = "plotibd")]
     #[snafu(transparent)]
     IbdutilsPlotibd { source: plotibd::Error },

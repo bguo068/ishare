@@ -4,8 +4,8 @@ use std::backtrace::Backtrace;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    BoundaryNotUniqueError { backtrace: Option<Backtrace> },
-    EmptyBoundaryError { backtrace: Option<Backtrace> },
+    BoundaryNotUniqueError { backtrace: Box<Option<Backtrace>> },
+    EmptyBoundaryError { backtrace: Box<Option<Backtrace>> },
 }
 type Result<T> = std::result::Result<T, Error>;
 

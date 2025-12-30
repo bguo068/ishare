@@ -19,63 +19,67 @@ use snafu::{ensure, OptionExt, ResultExt, Snafu};
 pub enum Error {
     #[snafu(transparent)]
     GmapError {
-        source: gmap::Error,
+        #[snafu(backtrace, source(from(gmap::Error, Box::new)))]
+        source: Box<gmap::Error>,
     },
     #[snafu(transparent)]
     SiteError {
-        source: crate::site::Error,
+        #[snafu(backtrace, source(from(crate::site::Error, Box::new)))]
+        source: Box<crate::site::Error>,
     },
 
     // #[snafu(transparent)]
     HtslibError {
-        source: rust_htslib::errors::Error,
-        backtrace: Option<Backtrace>,
+        #[snafu(source(from(rust_htslib::errors::Error, Box::new)))]
+        source: Box<rust_htslib::errors::Error>,
+        backtrace: Box<Option<Backtrace>>,
     },
     Utf8Error {
         source: Utf8Error,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     SampleNameUtf8Error {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     VcfRidError {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     VcfPosUnsorted {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     IoError {
         source: std::io::Error,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     ReadPosFileMissingChrname {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     ReadPosFileMissingPos {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     ParseIntError {
         source: ParseIntError,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     RefInconsistAtSamePos {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     FmtGtError {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     AlleleIdError {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     MissingGenotype {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     MissingRid {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     BcfError {
-        source: rust_htslib::errors::Error,
-        backtrace: Option<Backtrace>,
+        #[snafu(source(from(rust_htslib::errors::Error, Box::new)))]
+        source: Box<rust_htslib::errors::Error>,
+        backtrace: Box<Option<Backtrace>>,
     },
 }
 

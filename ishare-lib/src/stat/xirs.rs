@@ -11,35 +11,35 @@ type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     Stats {
         source: statrs::distribution::GammaError,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     PositionsNotSorted {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     PositionsNotUnique {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     PositionsEmpty {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     PositionsOutOfRange {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     AlleleFrequenciesOutOfRange {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     UnequalLengthOfVectors {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     IbdNotSorted {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     IbdInvalidOrMerged {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     InvalidPloidyStatus {
-        status: String,
-        backtrace: Option<Backtrace>,
+        status: Box<String>,
+        backtrace: Box<Option<Backtrace>>,
     },
 }
 

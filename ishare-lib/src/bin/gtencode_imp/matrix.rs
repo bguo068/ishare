@@ -8,7 +8,8 @@ pub enum Error {
     // non-local
     #[snafu(transparent)]
     Matrix {
-        source: ishare::genotype::common::Error,
+        #[snafu(source(from(ishare::genotype::common::Error, Box::new)))]
+        source: Box<ishare::genotype::common::Error>,
     },
 
     #[snafu(transparent)]

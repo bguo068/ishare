@@ -1,3 +1,5 @@
+use std::backtrace::Backtrace;
+
 use super::super::Commands;
 use ishare::{
     genome::{Genome, GenomeInfo},
@@ -35,7 +37,8 @@ pub enum Error {
     },
     #[snafu(transparent)]
     GenotypeCommon {
-        source: ishare::genotype::common::Error,
+        #[snafu(backtrace, source(from(ishare::genotype::common::Error, Box::new)))]
+        source: Box<ishare::genotype::common::Error>,
     },
     #[snafu(transparent)]
     GenotypeRare {
@@ -49,11 +52,12 @@ pub enum Error {
     // this module
     StdIo {
         source: std::io::Error,
-        backtrace: Option<std::backtrace::Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     Hts {
-        source: rust_htslib::errors::Error,
-        backtrace: Option<std::backtrace::Backtrace>,
+        #[snafu(source(from(rust_htslib::errors::Error, Box::new)))]
+        source: Box<rust_htslib::errors::Error>,
+        backtrace: Box<Option<Backtrace>>,
     },
     RegionFilter,
     EmptyVec,

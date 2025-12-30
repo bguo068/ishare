@@ -9,30 +9,33 @@ use crate::{
     },
 };
 use snafu::{ensure, ResultExt, Snafu};
-use std::sync::Arc;
+use std::{backtrace::Backtrace, sync::Arc};
 
 use super::fb::LASet;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(transparent)]
-    LASegError { source: super::fb::Error },
+    LASegError {
+        #[snafu(backtrace, source(from(super::fb::Error, Box::new)))]
+        source: Box<super::fb::Error>,
+    },
     #[snafu(display("Individual index {} is out of bounds (max: {})", index, max_index))]
     IndividualIndexOutOfBounds {
         index: u32,
         max_index: usize,
-        backtrace: Option<std::backtrace::Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("Ancestry index {} is out of bounds (max: {})", index, max_index))]
     AncestryIndexOutOfBounds {
         index: u8,
         max_index: usize,
-        backtrace: Option<std::backtrace::Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("IO error during output"))]
     OutputError {
         source: std::io::Error,
-        backtrace: Option<std::backtrace::Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
 }
 
@@ -100,9 +103,7 @@ impl ASIBDSet {
             let (i, m, j, n) = blk[0].haplotype_pair();
             let hap1 = (i << 1) + m as u32;
             let hap2 = (j << 1) + n as u32;
-            tree = la_set
-                .get_hap_pair_la_segs2(hap1, hap2, tree)
-                .map_err(|source| Error::LASegError { source })?;
+            tree = la_set.get_hap_pair_la_segs2(hap1, hap2, tree)?;
 
             for ibdseg in blk {
                 for elem in tree.query(ibdseg.s..ibdseg.e) {

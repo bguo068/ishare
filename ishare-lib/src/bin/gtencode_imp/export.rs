@@ -31,13 +31,14 @@ pub enum Error {
     #[snafu(transparent)]
     PathUtils { source: ishare::utils::path::Error },
     Hts {
-        source: rust_htslib::errors::Error,
-        backtrace: Backtrace,
+        #[snafu(source(from(rust_htslib::errors::Error, Box::new)))]
+        source: Box<rust_htslib::errors::Error>,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(transparent)]
     StdIo {
         source: std::io::Error,
-        backtrace: Backtrace,
+        backtrace: Box<Option<Backtrace>>,
     },
 }
 

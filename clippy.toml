@@ -1,3 +1,3 @@
 # Warn if any variant makes the enum larger than 64 bytes (default is 200)
 # enum-variant-size-threshold = 24
-large-error-threshold = 24
+large-error-threshold = 25

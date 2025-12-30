@@ -14,29 +14,31 @@ use snafu::{OptionExt, ResultExt, Snafu};
 pub enum Error {
     IoError {
         source: std::io::Error,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     TomlSerError {
         source: Box<toml::ser::Error>,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     TomlDeError {
         source: Box<toml::de::Error>,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     EmptySliceError {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     BincodeDecodeError {
-        source: bincode::error::DecodeError,
-        backtrace: Option<Backtrace>,
+        #[snafu(source(from(bincode::error::DecodeError, Box::new)))]
+        source: Box<bincode::error::DecodeError>,
+        backtrace: Box<Option<Backtrace>>,
     },
     BincodeEncodeError {
-        source: bincode::error::EncodeError,
-        backtrace: Option<Backtrace>,
+        #[snafu(source(from(bincode::error::EncodeError, Box::new)))]
+        source: Box<bincode::error::EncodeError>,
+        backtrace: Box<Option<Backtrace>>,
     },
     InferMapFilePrefixError {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(transparent)]
     GmapError {
@@ -230,7 +232,7 @@ impl GenomeInfo {
 
     /// return a vector of non-overlapping genome intervals that covers the
     /// whole genomes. This can be use to divide large indexed bcf/vcf files
-    /// into smaller chunks for reading in parallel.  
+    /// into smaller chunks for reading in parallel.
     ///
     /// Each vector element is a 3-tuple, Some(chrid, start_gw_bp,
     /// Option<end_gw_bp>) the end position is can be which means to end of the

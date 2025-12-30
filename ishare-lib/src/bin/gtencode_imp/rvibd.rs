@@ -13,6 +13,7 @@ use log::{info, LevelFilter};
 use rayon::prelude::*;
 use slice_group_by::*;
 use snafu::prelude::*;
+use std::backtrace::Backtrace;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -29,7 +30,8 @@ pub enum Error {
     },
     #[snafu(transparent)]
     Gmap {
-        source: ishare::gmap::Error,
+        #[snafu(source(from(ishare::gmap::Error, Box::new)))]
+        source: Box<ishare::gmap::Error>,
     },
     #[snafu(transparent)]
     GenotypeRare {
@@ -45,17 +47,17 @@ pub enum Error {
     },
     StdIo {
         source: std::io::Error,
-        backtrace: Option<std::backtrace::Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(transparent)]
     UtilsPath {
         source: ishare::utils::path::Error,
     },
     RwLock {
-        backtrace: Option<std::backtrace::Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     GenomeSpan {
-        backtrace: Option<std::backtrace::Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(transparent)]
     GtencodeUtil {

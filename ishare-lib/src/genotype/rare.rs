@@ -23,30 +23,32 @@ type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Snafu)]
 pub enum Error {
     GenomeIdsNotSorted {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     Io {
         source: std::io::Error,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     Parquet {
-        source: parquet::errors::ParquetError,
-        backtrace: Option<Backtrace>,
+        #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
+        source: Box<parquet::errors::ParquetError>,
+        backtrace: Box<Option<Backtrace>>,
     },
     ParseInt {
         source: std::num::ParseIntError,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     Arrow {
-        source: ArrowError,
-        backtrace: Option<Backtrace>,
+        #[snafu(source(from(ArrowError, Box::new)))]
+        source: Box<ArrowError>,
+        backtrace: Box<Option<Backtrace>>,
     },
     Downcast {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     InvalidSortStatus {
         status: i32,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
 }
 

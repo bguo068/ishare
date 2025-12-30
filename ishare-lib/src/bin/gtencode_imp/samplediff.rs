@@ -16,11 +16,13 @@ use std::sync::Arc;
 pub enum Error {
     #[snafu(transparent)]
     Arrow {
-        source: ArrowError,
+        #[snafu(source(from(ArrowError, Box::new)))]
+        source: Box<ArrowError>,
     },
     #[snafu(transparent)]
     Parquet {
-        source: parquet::errors::ParquetError,
+        #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
+        source: Box<parquet::errors::ParquetError>,
     },
     #[snafu(transparent)]
     GenotypeRare {

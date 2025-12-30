@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use ahash::{AHashSet, HashMap};
 
 use ishare::{
@@ -641,7 +643,6 @@ impl RVar {
 }
 
 /// A Python module implemented in Rust.
-
 #[pymodule]
 mod isharepy {
     use super::*;

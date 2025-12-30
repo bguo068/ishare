@@ -7,7 +7,13 @@ use snafu::prelude::*;
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(transparent)]
-    Mat { source: mat::Error },
+    Mat {
+        #[snafu(backtrace)]
+        source: mat::Error,
+    },
     #[snafu(transparent)]
-    Ibd { source: ibd::Error },
+    Ibd {
+        #[snafu(backtrace)]
+        source: ibd::Error,
+    },
 }

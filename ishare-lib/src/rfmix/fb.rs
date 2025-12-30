@@ -16,51 +16,51 @@ use std::{
 pub enum Error {
     IoError {
         source: std::io::Error,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     ParseFloatError {
         source: std::num::ParseFloatError,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     ParseIntError {
         source: std::num::ParseIntError,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     InvalidFormat {
-        message: String,
-        backtrace: Option<Backtrace>,
+        message: Box<String>,
+        backtrace: Box<Option<Backtrace>>,
     },
     EmptyData {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     BinarySearchError {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("No ancestry populations found in header"))]
     NoAncestryPopulations {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("Too many ancestry populations: {} (max: {})", count, max))]
     TooManyAncestryPopulations {
         count: usize,
         max: usize,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("Invalid chunk size: expected {}, got {}", expected, actual))]
     InvalidChunkSize {
         expected: usize,
         actual: usize,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("Haplotype index {} is out of bounds (max: {})", index, max_index))]
     HaplotypeIndexOutOfBounds {
         index: u32,
         max_index: usize,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("Corrupted segment indices"))]
     CorruptedSegmentIndices {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
 }
 
@@ -168,7 +168,7 @@ impl FbMatrix {
         ensure!(step_size > 0, NoAncestryPopulationsSnafu); // This should already be caught, but double-check
         for field in buf.trim().split("\t").skip(4).step_by(step_size) {
             let sam = field.split(":::").next().context(InvalidFormatSnafu {
-                message: "Expected sample format with :::",
+                message: "Expected sample format with :::".to_owned(),
             })?;
             let samid = match inds.m().get(sam) {
                 Some(samid) => *samid as u32,
@@ -189,13 +189,13 @@ impl FbMatrix {
             }
             let mut fields = buf.trim().split("\t");
             let chrname = fields.next().context(InvalidFormatSnafu {
-                message: "Missing chromosome name",
+                message: "Missing chromosome name".to_owned(),
             })?;
             let chrid = ginfo.idx[chrname];
             let pos: u32 = fields
                 .next()
                 .context(InvalidFormatSnafu {
-                    message: "Missing position",
+                    message: "Missing position".to_owned(),
                 })?
                 .parse::<u32>()
                 .context(ParseIntSnafu)?
@@ -203,12 +203,12 @@ impl FbMatrix {
             let gw_pos = ginfo.to_gw_pos(chrid, pos);
             win_snp_pos.push(gw_pos);
             fields.next().context(InvalidFormatSnafu {
-                message: "Missing genetic position column",
+                message: "Missing genetic position column".to_owned(),
             })?; // skip col 2
             let _idx: u32 = fields
                 .next()
                 .context(InvalidFormatSnafu {
-                    message: "Missing genetic marker index",
+                    message: "Missing genetic marker index".to_owned(),
                 })?
                 .parse()
                 .context(ParseIntSnafu)?; // skip col 3
@@ -268,7 +268,9 @@ impl FbMatrix {
             .map(|p| {
                 pos.binary_search(&p)
                     .map(|idx| idx as u32)
-                    .map_err(|_| Error::BinarySearchError { backtrace: None })
+                    .map_err(|_| Error::BinarySearchError {
+                        backtrace: Box::new(None),
+                    })
             })
             .collect();
         win_snp_idx.extend(snp_indices?);

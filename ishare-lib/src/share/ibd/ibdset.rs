@@ -208,9 +208,16 @@ impl IbdSet {
         use csv::ByteRecord;
         use csv::ReaderBuilder;
 
-        let tpool = ThreadPool::new(10).context(ThreadPoolSnafu)?;
-        let mut reader = bgzf::Reader::from_path(p.as_ref()).context(BgzReadSnafu)?;
-        reader.set_thread_pool(&tpool).context(BgzReadSnafu)?;
+        let tpool = ThreadPool::new(10)
+            .map_err(Box::new)
+            .context(ThreadPoolSnafu {})?;
+        let mut reader = bgzf::Reader::from_path(p.as_ref())
+            .map_err(Box::new)
+            .context(BgzReadSnafu)?;
+        reader
+            .set_thread_pool(&tpool)
+            .map_err(Box::new)
+            .context(BgzReadSnafu)?;
 
         let mut reader = ReaderBuilder::new()
             .delimiter(b'\t')
@@ -244,10 +251,10 @@ impl IbdSet {
                     .context(Utf8ParseSnafu)?
                     .parse::<f32>()
                     .context(ParseValueSnafu {
-                        value: from_utf8(&record[7])
-                            .unwrap_or("<invalid utf8>")
-                            .to_string(),
-                        type_name: "f32".to_string(),
+                        msg: format!(
+                            "{} as type f32",
+                            from_utf8(&record[7]).unwrap_or("<invalid utf8>")
+                        ),
                     })?;
                 if cm < min_cm {
                     continue;
@@ -346,7 +353,9 @@ impl IbdSet {
         use csv::ReaderBuilder;
         use csv::StringRecord;
 
-        let reader = bgzf::Reader::from_path(p.as_ref()).context(BgzReadSnafu)?;
+        let reader = bgzf::Reader::from_path(p.as_ref())
+            .map_err(Box::new)
+            .context(BgzReadSnafu)?;
 
         let mut reader = ReaderBuilder::new()
             .delimiter(b'\t')
@@ -389,15 +398,13 @@ impl IbdSet {
 
             // allow converting floats to ints
             let mut s = record[2].parse::<f32>().context(ParseValueSnafu {
-                value: record[2].to_string(),
-                type_name: "f32".to_string(),
+                msg: format!("{} as type f32", &record[2]),
             })? as u32;
             if s >= 1 {
                 s -= 1;
             }
             let mut e = record[3].parse::<f32>().context(ParseValueSnafu {
-                value: record[3].to_string(),
-                type_name: "f32".to_string(),
+                msg: format!("{} as type f32", &record[3]),
             })? as u32;
             assert!(e <= chrmsize, "e={e}, chrmsize: {chrmsize}");
             if e >= 1 {
@@ -851,7 +858,7 @@ impl IbdSet {
         let genome_size = self.get_ginfo().get_total_len_bp();
         regions.complement(0, genome_size).map_err(|e| {
             crate::share::ibd::Error::ContainerOperation {
-                details: e.to_string(),
+                details: Box::new(e.to_string()),
             }
         })?;
         // generate ibdseg that intersect the complement regions

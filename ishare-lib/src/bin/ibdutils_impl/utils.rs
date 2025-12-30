@@ -11,11 +11,13 @@ use snafu::prelude::*;
 pub enum Error {
     #[snafu(transparent)]
     Parquet {
-        source: ParquetError,
+        #[snafu(source(from(ParquetError, Box::new)))]
+        source: Box<ParquetError>,
     },
     #[snafu(transparent)]
     Arrow {
-        source: ArrowError,
+        #[snafu(source(from(ArrowError, Box::new)))]
+        source: Box<ArrowError>,
     },
     StdIo {
         source: std::io::Error,

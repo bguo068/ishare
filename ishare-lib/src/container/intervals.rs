@@ -105,8 +105,7 @@ impl<'a, T: TotalOrd + Copy + Default + Debug> Intervals<T> {
         // Validate contig range
         if contig_min > contig_max {
             return InvalidContigRangeSnafu {
-                contig_min: format!("{contig_min:?}"),
-                contig_max: format!("{contig_max:?}"),
+                msg: format!("contig_min ({contig_min:?}) must be <= contig_max ({contig_max:?}"),
             }
             .fail();
         }
@@ -121,20 +120,22 @@ impl<'a, T: TotalOrd + Copy + Default + Debug> Intervals<T> {
             // Validate that intervals are within contig bounds
             if the_min < contig_min {
                 return IntervalOutOfBoundsSnafu {
-                    start: format!("{the_min:?}"),
-                    end: format!("{:?}", first.end),
-                    contig_min: format!("{contig_min:?}"),
-                    contig_max: format!("{contig_max:?}"),
+                    msg: format!("interval [{the_min:?}, {:?}) is outside contig range [{contig_min:?}, {contig_max:?})", first.end),
+                    // start: format!("{the_min:?}"),
+                    // end: format!("{:?}", first.end),
+                    // contig_min: format!("{contig_min:?}"),
+                    // contig_max: format!("{contig_max:?}"),
                 }
                 .fail();
             }
 
             if the_max > contig_max {
                 return IntervalOutOfBoundsSnafu {
-                    start: format!("{:?}", last.start),
-                    end: format!("{the_max:?}"),
-                    contig_min: format!("{contig_min:?}"),
-                    contig_max: format!("{contig_max:?}"),
+                    msg: format!("interval [{:?}, {the_max:?}) is outside contig range [{contig_min:?}, {contig_max:?})", last.start),
+                    // start: format!("{:?}", last.start),
+                    // end: format!("{the_max:?}"),
+                    // contig_min: format!("{contig_min:?}"),
+                    // contig_max: format!("{contig_max:?}"),
                 }
                 .fail();
             }

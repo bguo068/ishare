@@ -102,7 +102,8 @@ pub enum Error {
     },
     #[snafu(transparent)]
     Gmap {
-        source: ishare::gmap::Error,
+        #[snafu(source(from(ishare::gmap::Error, Box::new)))]
+        source: Box<ishare::gmap::Error>,
     },
     #[snafu(transparent)]
     Ibd {
@@ -119,11 +120,12 @@ pub enum Error {
     },
     #[snafu(transparent)]
     RfmixFb {
-        source: ishare::rfmix::fb::Error,
+        #[snafu(source(from(ishare::rfmix::fb::Error, Box::new)))]
+        source: Box<ishare::rfmix::fb::Error>,
     },
 
     RecordNotSorted {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     ReadChrname,
     ReadChrpos,

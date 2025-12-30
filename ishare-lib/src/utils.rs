@@ -6,7 +6,7 @@ pub enum Error {
     #[snafu(transparent)]
     Path {
         source: path::Error,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
 }
 
@@ -19,7 +19,7 @@ pub mod path {
     pub enum Error {
         StdIo {
             source: std::io::Error,
-            backtrace: Option<Backtrace>,
+            backtrace: Box<Option<Backtrace>>,
         },
     }
 

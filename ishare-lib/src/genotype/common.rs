@@ -33,38 +33,40 @@ type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Snafu)]
 pub enum Error {
     Arrow {
-        source: ArrowError,
-        backtrace: Option<Backtrace>,
+        #[snafu(source(from(ArrowError, Box::new)))]
+        source: Box<ArrowError>,
+        backtrace: Box<Option<Backtrace>>,
     },
     Parquet {
-        source: parquet::errors::ParquetError,
-        backtrace: Option<Backtrace>,
+        #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
+        source: Box<parquet::errors::ParquetError>,
+        backtrace: Box<Option<Backtrace>>,
     },
     Io {
         source: std::io::Error,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     ParseInt {
         source: ParseIntError,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     DowncastToBoolArray {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("Row order length {row_order_len} does not match matrix rows {matrix_rows}"))]
     RowOrderLengthMismatch {
         row_order_len: usize,
         matrix_rows: usize,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     MissingGenotype {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("BitVec length mismatch after append: expected {expected}, got {actual}"))]
     BitVecLengthMismatch {
         expected: usize,
         actual: usize,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
 }
 

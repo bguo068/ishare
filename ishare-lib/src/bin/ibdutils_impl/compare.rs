@@ -24,11 +24,17 @@ pub enum Error {
     #[snafu(transparent)]
     Genome { source: ishare::genome::Error },
     #[snafu(transparent)]
-    Gmap { source: ishare::gmap::Error },
+    Gmap {
+        #[snafu(source(from(ishare::gmap::Error, Box::new)))]
+        source: Box<ishare::gmap::Error>,
+    },
     #[snafu(transparent)]
     Ibd { source: ishare::share::ibd::Error },
     #[snafu(transparent)]
-    IbdutilsUtil { source: super::utils::Error },
+    IbdutilsUtil {
+        #[snafu(source(from(super::utils::Error, Box::new)))]
+        source: Box<super::utils::Error>,
+    },
     // local
     #[snafu(transparent)]
     ParseFloat { source: ParseFloatError },

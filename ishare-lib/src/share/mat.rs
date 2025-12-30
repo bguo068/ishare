@@ -6,6 +6,7 @@ use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
 use snafu::prelude::*;
+use std::backtrace::Backtrace;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::BufWriter;
@@ -20,12 +21,14 @@ pub enum Error {
     #[snafu(display("Failed to create file: {}", path.display()))]
     CreateFile {
         source: std::io::Error,
-        path: std::path::PathBuf,
+        path: Box<std::path::PathBuf>,
     },
 
     #[snafu(display("Parquet operation failed"))]
     Parquet {
-        source: parquet::errors::ParquetError,
+        #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
+        source: Box<parquet::errors::ParquetError>,
+        backtrace: Box<Option<Backtrace>>,
     },
 }
 

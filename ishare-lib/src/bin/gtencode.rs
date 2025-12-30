@@ -10,19 +10,40 @@ use snafu::prelude::*;
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(transparent)]
-    GtencodeSampleDiff { source: samplediff::Error },
+    GtencodeSampleDiff {
+        #[snafu(source(from(samplediff::Error, Box::new)))]
+        source: Box<samplediff::Error>,
+    },
     #[snafu(transparent)]
-    GtencodeRvibd { source: rvibd::Error },
+    GtencodeRvibd {
+        #[snafu(source(from(rvibd::Error, Box::new)))]
+        source: Box<rvibd::Error>,
+    },
     #[snafu(transparent)]
-    Export { source: export::Error },
+    Export {
+        #[snafu(source(from(export::Error, Box::new)))]
+        source: Box<export::Error>,
+    },
     #[snafu(transparent)]
-    GtencodeSites { source: sites::Error },
+    GtencodeStes {
+        #[snafu(source(from(sites::Error, Box::new)))]
+        source: Box<sites::Error>,
+    },
     #[snafu(transparent)]
-    GtencodeCosine { source: cosine::Error },
+    GtencodeCosine {
+        #[snafu(source(from(cosine::Error, Box::new)))]
+        source: Box<cosine::Error>,
+    },
     #[snafu(transparent)]
-    GtencodeEncode { source: encode::Error },
+    GtencodeEncode {
+        #[snafu(source(from(encode::Error, Box::new)))]
+        source: Box<encode::Error>,
+    },
     #[snafu(transparent)]
-    GtencodeRecords { source: records::Error },
+    GtencodeRecords {
+        #[snafu(source(from(records::Error, Box::new)))]
+        source: Box<records::Error>,
+    },
     #[snafu(transparent)]
     GtencodeMatrix { source: matrix::Error },
     #[snafu(transparent)]
@@ -30,9 +51,15 @@ pub enum Error {
     #[snafu(transparent)]
     GtencodeShare { source: share::Error },
     #[snafu(transparent)]
-    GtencodeJaccard { source: jaccard::Error },
+    GtencodeJaccard {
+        #[snafu(source(from(jaccard::Error, Box::new)))]
+        source: Box<jaccard::Error>,
+    },
     #[snafu(transparent)]
-    GtencodeGrm { source: grm::Error },
+    GtencodeGrm {
+        #[snafu(source(from(grm::Error, Box::new)))]
+        source: Box<grm::Error>,
+    },
     #[cfg(feature = "skato")]
     #[snafu(transparent)]
     GtencodeSkato { source: skato::Error },

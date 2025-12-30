@@ -11,13 +11,14 @@ use crate::genome::GenomeInfo;
 #[derive(Snafu, Debug)]
 pub enum Error {
     HtslibError {
-        source: rust_htslib::errors::Error,
-        backtrace: Option<Backtrace>,
+        #[snafu(source(from(rust_htslib::errors::Error, Box::new)))]
+        source: Box<rust_htslib::errors::Error>,
+        backtrace: Box<Option<Backtrace>>,
     },
     VcfMissingRid,
     Utf8Error {
         source: std::str::Utf8Error,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
 }
 
@@ -393,7 +394,7 @@ chr2	250	.	C	G	60	PASS	.	GT	1/1	1/1
         let utf8_error = std::str::from_utf8(&invalid_bytes).unwrap_err();
         let _utf8_snafu_error = Error::Utf8Error {
             source: utf8_error,
-            backtrace: None,
+            backtrace: Box::new(None),
         };
 
         let _vcf_missing_rid_error = Error::VcfMissingRid;

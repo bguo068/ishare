@@ -24,37 +24,39 @@ type Result<T> = std::result::Result<T, Error>;
 #[derive(Snafu, Debug)]
 pub enum Error {
     Arrow {
-        source: ArrowError,
-        backtrace: Option<Backtrace>,
+        #[snafu(source(from(ArrowError, Box::new)))]
+        source: Box<ArrowError>,
+        backtrace: Box<Option<Backtrace>>,
     },
     StdIo {
         source: std::io::Error,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     Parquet {
-        source: parquet::errors::ParquetError,
-        backtrace: Option<Backtrace>,
+        #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
+        source: Box<parquet::errors::ParquetError>,
+        backtrace: Box<Option<Backtrace>>,
     },
     BinarySearchNotFound {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     Downcast {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     MissingGenotypeData {
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("Position {pos} is not greater than last position {last_pos} - sites must be added in order"))]
     PositionNotInOrder {
         pos: u32,
         last_pos: u32,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("Position {pos} is less than or equal to last position {last_pos} - sites must be added in strictly increasing order"))]
     PositionNotStrictlyIncreasing {
         pos: u32,
         last_pos: u32,
-        backtrace: Option<Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
 }
 

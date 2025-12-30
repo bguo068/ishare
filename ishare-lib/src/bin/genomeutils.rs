@@ -15,7 +15,8 @@ enum Error {
     },
     #[snafu(transparent)]
     Gmap {
-        source: gmap::Error,
+        #[snafu(source(from(gmap::Error, Box::new)))]
+        source: Box<gmap::Error>,
     },
     // local
     MissBothBppercmAndRate,

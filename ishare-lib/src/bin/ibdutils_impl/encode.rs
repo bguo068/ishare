@@ -25,7 +25,8 @@ pub enum Error {
     },
     #[snafu(transparent)]
     Gmap {
-        source: ishare::gmap::Error,
+        #[snafu(source(from(ishare::gmap::Error, Box::new)))]
+        source: Box<ishare::gmap::Error>,
     },
     #[snafu(transparent)]
     Ibd {
