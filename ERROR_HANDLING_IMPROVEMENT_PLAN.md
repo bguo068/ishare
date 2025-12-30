@@ -266,50 +266,53 @@ NotEnoughItemSnafu.fail()?;
 
 ## Implementation Phases
 
-### Phase 1: Enable Implicit Backtraces (Low Risk)
-**Estimated Impact**: Reduces memory overhead, improves consistency
+### ⚠️ IMPORTANT: Phase 1 Has Been Revised
 
-1. Update `ishare-lib/Cargo.toml`:
-   ```toml
-   snafu = { version = "0.8.9", features = ["backtrace"] }
+**See `PHASE1_DETAILED_ANALYSIS.md` for detailed testing and analysis.**
+
+The original Phase 1 proposal to enable "implicit backtraces" by removing `backtrace: Option<Backtrace>` fields **will not work**. Testing confirmed that removing these fields eliminates backtrace capture entirely, even with `RUST_BACKTRACE=1` set.
+
+### Phase 1A: Add Context and Display Messages (Low Risk) - REVISED
+**Estimated Impact**: Significantly improves debugging without losing backtraces
+
+1. Add `#[snafu(display())]` attributes to all error variants
+
+2. Add context fields (paths, values, types) to errors where helpful:
+   ```rust
+   // Before
+   IoError {
+       source: std::io::Error,
+       backtrace: Option<Backtrace>,
+   }
+   
+   // After
+   #[snafu(display("Failed to read file: {}", path.display()))]
+   ReadFile {
+       source: std::io::Error,
+       path: PathBuf,
+       backtrace: Option<Backtrace>,  // Keep this!
+   }
    ```
 
-2. Remove explicit `backtrace: Option<Backtrace>` fields from all error enums
+3. **Keep all existing backtrace fields** - do not remove them
 
-3. Remove manual backtrace imports: `use std::backtrace::Backtrace;`
+4. Test error messages are clear and informative
 
-4. Test that backtraces still work with `RUST_BACKTRACE=1`
+**Files affected**: All 47 files with error enums
 
-**Files affected**: ~47 Rust files
+### Phase 1B: Selective Backtrace Optimization (Optional, Medium Risk)
+**Estimated Impact**: Small memory savings for specific error types
 
-### Phase 2: Enhance Context in High-Traffic Errors (Medium Risk)
-**Estimated Impact**: Significantly improves debugging experience
+Only remove backtrace fields from:
+- Simple validation errors (e.g., "value out of range")
+- Errors that are self-explanatory with context alone
+- High-frequency leaf errors where memory matters
 
-1. Start with file I/O errors in:
-   - `io.rs`
-   - `gmap.rs`
-   - `genome.rs`
-   - `vcf.rs`
+**Requires case-by-case analysis and testing**
 
-2. Add `path: PathBuf` context to all file operations
+**Files affected**: ~10-15 files after careful analysis
 
-3. Add custom display messages with path information
-
-**Files affected**: ~10-15 files
-
-### Phase 3: Improve Error Display Messages (Low Risk)
-**Estimated Impact**: Better error messages for end users
-
-1. Add `#[snafu(display())]` attributes to all error variants without them
-
-2. Ensure messages follow a consistent format:
-   - Start with action: "Failed to...", "Unable to...", "Invalid..."
-   - Include relevant context: values, paths, types
-   - Keep messages concise but informative
-
-**Files affected**: All 47 files with errors
-
-### Phase 4: Organize Large Error Enums (Medium Risk)
+### Phase 2: Organize Large Error Enums (Medium Risk)
 **Estimated Impact**: Better code organization, maintainability
 
 1. Identify modules with >10 error variants
@@ -320,7 +323,7 @@ NotEnoughItemSnafu.fail()?;
 
 **Files affected**: ~5-8 large modules
 
-### Phase 5: Enhance Backtrace Display (Low Risk)
+### Phase 3: Enhance Backtrace Display (Low Risk)
 **Estimated Impact**: Better debugging experience
 
 1. Add configuration to `show_snafu_error()`
@@ -334,15 +337,19 @@ NotEnoughItemSnafu.fail()?;
 ## Memory Impact Analysis
 
 ### Current State
-- Each `Option<Backtrace>` field: ~8 bytes when None, ~kb when Some
+- Each `Option<Backtrace>` field: ~8-16 bytes when None, several KB when Some
 - 99 backtrace fields across codebase
-- Average error size: ~24-40 bytes per variant
+- Average error size: ~24-56 bytes per variant (depending on other fields)
 
-### After Phase 1
-- Remove 99 explicit backtrace fields
-- Memory savings: ~800 bytes per error instance (when no backtrace)
-- Backtraces only allocated when `RUST_BACKTRACE=1` is set
-- Average error size: ~16-32 bytes per variant
+### After Revised Phase 1A
+- **No memory changes** - all backtrace fields retained
+- Focus on better error context and messages
+- Debugging capability fully preserved
+
+### After Optional Phase 1B (Selective Removal)
+- If ~30 simple errors have backtraces removed: ~240-480 bytes saved per error instance
+- Complex/external errors keep backtraces
+- Trade-off: small memory savings vs. selective loss of debug info
 
 ## Testing Strategy
 
@@ -376,16 +383,28 @@ fn test_error_display_includes_context() {
 
 ## Best Practices Going Forward
 
-1. **Always add display messages** for new error variants
+1. **Always add display messages** for new error variants using `#[snafu(display())]`
 2. **Include relevant context** (paths, values, types) in error structs
 3. **Use transparent errors** for module boundaries
-4. **Don't add explicit backtrace fields** - rely on implicit backtraces
-5. **Test error messages** during code review
-6. **Document error handling patterns** in CONTRIBUTING.md
+4. **Keep `backtrace: Option<Backtrace>` fields** for most errors - the memory cost is worth the debugging capability
+5. **Only remove backtraces** from simple, self-explanatory validation errors after careful consideration
+6. **Test error messages** and backtrace capture during code review
+7. **Document error handling patterns** in CONTRIBUTING.md
 
-## Examples
+## Risks and Mitigation (Updated)
 
-### Before and After: io.rs
+### Risk 1: Breaking Changes
+**Mitigation**: Phase 1A only adds fields and attributes. External API remains the same. Test thoroughly.
+
+### Risk 2: Loss of Debugging Information (CRITICAL)
+**Previous Plan Risk**: Removing all backtraces would eliminate stack traces.
+**Mitigation**: Revised plan keeps backtraces. Only consider selective removal in Phase 1B with testing.
+
+### Risk 3: Existing Error Handling Code
+**Mitigation**: Most code uses `.context()` which continues to work. No changes needed.
+
+### Risk 4: Error Message Changes
+**Mitigation**: Adding display messages improves error output. Update tests if needed.
 
 ```rust
 // BEFORE
@@ -407,26 +426,32 @@ pub enum Error {
     },
 }
 
-// AFTER
+// AFTER (Phase 1A - Add context and messages, KEEP backtraces)
+use std::backtrace::Backtrace;
+
 #[derive(Snafu, Debug)]
 #[snafu(visibility(pub(crate)))]
 pub enum Error {
     #[snafu(display("Failed to downcast Arrow array to expected type"))]
-    Downcast,
+    Downcast {
+        backtrace: Option<Backtrace>,  // Kept!
+    },
     
     #[snafu(display("I/O operation failed: {source}"))]
     StdIo {
         source: std::io::Error,
+        backtrace: Option<Backtrace>,  // Kept!
     },
     
     #[snafu(display("Parquet operation failed: {source}"))]
     Parquet {
         source: parquet::errors::ParquetError,
+        backtrace: Option<Backtrace>,  // Kept!
     },
 }
 ```
 
-### Before and After: gmap.rs with Rich Context
+### Before and After: gmap.rs with Rich Context (Revised)
 
 ```rust
 // BEFORE
@@ -441,23 +466,40 @@ pub enum Error {
     },
 }
 
-// AFTER
+// AFTER (Phase 1A - Add context, keep backtraces)
+use std::path::PathBuf;
+
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(display("Failed to read genetic map file: {}", path.display()))]
     ReadMapFile {
         source: std::io::Error,
         path: PathBuf,
+        backtrace: Option<Backtrace>,  // Kept!
     },
     
     #[snafu(display("Failed to write genetic map file: {}", path.display()))]
     WriteMapFile {
         source: std::io::Error,
         path: PathBuf,
+        backtrace: Option<Backtrace>,  // Kept!
     },
     
     #[snafu(display("Genetic map has insufficient data points"))]
-    NotEnoughItem,
+    NotEnoughItem {
+        backtrace: Option<Backtrace>,  // Kept for now
+    },
+}
+
+// OPTIONAL Phase 1B - Remove backtrace from simple validation error
+#[derive(Debug, Snafu)]
+pub enum Error {
+    // ... file errors keep backtraces ...
+    
+    #[snafu(display("Genetic map has insufficient data points"))]
+    NotEnoughItem {
+        // Backtrace removed - validation error, context is clear
+    },
 }
 ```
 
@@ -475,12 +517,26 @@ pub enum Error {
 ### Risk 4: Error Message Changes
 **Mitigation**: If tests depend on exact error messages, update them. Consider semantic testing instead.
 
-## Conclusion
+## Conclusion (REVISED)
 
-This plan provides a structured approach to improve error handling:
-- **Reduced memory overhead** through implicit backtraces
-- **Better debugging** with rich context and clear messages
-- **Improved organization** with modular error hierarchies
-- **Enhanced user experience** with informative error messages
+**The original plan has been significantly revised based on testing.**
 
-The phases can be implemented incrementally with testing at each step, minimizing risk while delivering continuous improvements.
+### Key Changes:
+- **Phase 1 corrected**: Cannot remove backtrace fields without losing backtraces
+- **New focus**: Add context and display messages while keeping backtraces
+- **Memory trade-off acknowledged**: Debugging capability > memory savings
+
+### This Revised Plan Provides:
+- **Better debugging** with rich context (paths, values) and clear messages ✅
+- **Preserved stack traces** for all errors that currently have them ✅
+- **Improved organization** with modular error hierarchies (future phases) ✅
+- **Enhanced user experience** with informative error messages ✅
+- **Optional memory optimization** for simple validation errors only (Phase 1B) ⚠️
+
+### Implementation Strategy:
+1. **Start with Phase 1A**: Add context and messages (safe, high value)
+2. **Test thoroughly**: Ensure backtraces still work with `RUST_BACKTRACE=1`
+3. **Consider Phase 1B**: Only after 1A is complete and tested
+4. **Proceed incrementally**: Each phase with testing, minimizing risk
+
+See `PHASE1_DETAILED_ANALYSIS.md` for detailed test results and evidence.
