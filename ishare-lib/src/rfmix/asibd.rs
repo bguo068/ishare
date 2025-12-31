@@ -17,23 +17,27 @@ use super::fb::LASet;
 pub enum Error {
     #[snafu(transparent)]
     LASegError {
+        // non leaf, delegate backtrace
         #[snafu(backtrace, source(from(super::fb::Error, Box::new)))]
         source: Box<super::fb::Error>,
     },
     #[snafu(display("Individual index {} is out of bounds (max: {})", index, max_index))]
     IndividualIndexOutOfBounds {
+        // leaf
         index: u32,
         max_index: usize,
         backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("Ancestry index {} is out of bounds (max: {})", index, max_index))]
     AncestryIndexOutOfBounds {
+        // leaf
         index: u8,
         max_index: usize,
         backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("IO error during output"))]
     OutputError {
+        // leaf
         source: std::io::Error,
         backtrace: Box<Option<Backtrace>>,
     },

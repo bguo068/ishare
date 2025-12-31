@@ -13,37 +13,46 @@ use snafu::{OptionExt, ResultExt, Snafu};
 #[derive(Debug, Snafu)]
 pub enum Error {
     IoError {
+        // leaf
         source: std::io::Error,
         backtrace: Box<Option<Backtrace>>,
     },
     TomlSerError {
+        // leaf
         source: Box<toml::ser::Error>,
         backtrace: Box<Option<Backtrace>>,
     },
     TomlDeError {
+        // leaf
         source: Box<toml::de::Error>,
         backtrace: Box<Option<Backtrace>>,
     },
     EmptySliceError {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     BincodeDecodeError {
+        // leaf
         #[snafu(source(from(bincode::error::DecodeError, Box::new)))]
         source: Box<bincode::error::DecodeError>,
         backtrace: Box<Option<Backtrace>>,
     },
     BincodeEncodeError {
+        // leaf
         #[snafu(source(from(bincode::error::EncodeError, Box::new)))]
         source: Box<bincode::error::EncodeError>,
         backtrace: Box<Option<Backtrace>>,
     },
     InferMapFilePrefixError {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(transparent)]
     GmapError {
+        // non leaf
         // use Box here to avoid the circular dependency between two modules
         #[snafu(source(from(gmap::Error, Box::new)))]
+        #[snafu(backtrace)]
         source: Box<gmap::Error>,
     },
 }

@@ -11,58 +11,92 @@ use snafu::prelude::*;
 pub enum Error {
     #[snafu(transparent)]
     GtencodeSampleDiff {
+        // non leaf
         #[snafu(source(from(samplediff::Error, Box::new)))]
+        #[snafu(backtrace)]
         source: Box<samplediff::Error>,
     },
     #[snafu(transparent)]
     GtencodeRvibd {
+        // non leaf
         #[snafu(source(from(rvibd::Error, Box::new)))]
+        #[snafu(backtrace)]
         source: Box<rvibd::Error>,
     },
     #[snafu(transparent)]
     Export {
+        // non leaf
         #[snafu(source(from(export::Error, Box::new)))]
+        #[snafu(backtrace)]
         source: Box<export::Error>,
     },
     #[snafu(transparent)]
     GtencodeStes {
+        // non leaf
         #[snafu(source(from(sites::Error, Box::new)))]
+        #[snafu(backtrace)]
         source: Box<sites::Error>,
     },
     #[snafu(transparent)]
     GtencodeCosine {
+        // non leaf
         #[snafu(source(from(cosine::Error, Box::new)))]
+        #[snafu(backtrace)]
         source: Box<cosine::Error>,
     },
     #[snafu(transparent)]
     GtencodeEncode {
+        // non leaf
         #[snafu(source(from(encode::Error, Box::new)))]
+        #[snafu(backtrace)]
         source: Box<encode::Error>,
     },
     #[snafu(transparent)]
     GtencodeRecords {
+        // non leaf
         #[snafu(source(from(records::Error, Box::new)))]
+        #[snafu(backtrace)]
         source: Box<records::Error>,
     },
     #[snafu(transparent)]
-    GtencodeMatrix { source: matrix::Error },
+    GtencodeMatrix {
+        // non leaf
+        #[snafu(backtrace)]
+        source: matrix::Error,
+    },
     #[snafu(transparent)]
-    GtencodeSamples { source: samples::Error },
+    GtencodeSamples {
+        // non leaf
+        #[snafu(backtrace)]
+        source: samples::Error,
+    },
     #[snafu(transparent)]
-    GtencodeShare { source: share::Error },
+    GtencodeShare {
+        // non leaf
+        #[snafu(backtrace)]
+        source: share::Error,
+    },
     #[snafu(transparent)]
     GtencodeJaccard {
+        // non leaf
         #[snafu(source(from(jaccard::Error, Box::new)))]
+        #[snafu(backtrace)]
         source: Box<jaccard::Error>,
     },
     #[snafu(transparent)]
     GtencodeGrm {
+        // non leaf
         #[snafu(source(from(grm::Error, Box::new)))]
+        #[snafu(backtrace)]
         source: Box<grm::Error>,
     },
     #[cfg(feature = "skato")]
     #[snafu(transparent)]
-    GtencodeSkato { source: skato::Error },
+    GtencodeSkato {
+        // non leaf
+        #[snafu(backtrace)]
+        source: skato::Error,
+    },
 }
 
 type Result<T> = std::result::Result<T, Error>;

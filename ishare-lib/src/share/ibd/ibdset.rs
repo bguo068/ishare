@@ -9,6 +9,7 @@ use crate::genome::GenomeInfo;
 use crate::genotype::common::GenotypeMatrix;
 use crate::gmap::GeneticMap;
 use crate::indiv::{Individuals, PloidyConverter};
+use crate::share::ibd::ContainerOperationSnafu;
 use crate::share::mat::NamedMatrix;
 use crate::site::Sites;
 use ahash::{HashMap, HashMapExt};
@@ -857,9 +858,10 @@ impl IbdSet {
         let mut regions = regions.clone();
         let genome_size = self.get_ginfo().get_total_len_bp();
         regions.complement(0, genome_size).map_err(|e| {
-            crate::share::ibd::Error::ContainerOperation {
+            ContainerOperationSnafu {
                 details: Box::new(e.to_string()),
             }
+            .build()
         })?;
         // generate ibdseg that intersect the complement regions
         let tree = IntervalTree::from_iter(regions.iter().map(|x| (x.to_owned(), ())));

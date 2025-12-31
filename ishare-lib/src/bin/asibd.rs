@@ -78,57 +78,87 @@ use std::backtrace::Backtrace;
 pub enum Error {
     #[snafu(transparent)]
     Io {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::io::Error,
     },
     #[snafu(transparent)]
     Sites {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::site::Error,
     },
     #[snafu(transparent)]
     Indiv {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::indiv::Error,
     },
     #[snafu(transparent)]
     Genome {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::genome::Error,
     },
     #[snafu(transparent)]
     GenotypeRare {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
     #[snafu(transparent)]
     Vcf {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::vcf::Error,
     },
     #[snafu(transparent)]
     Gmap {
+        // non leaf
+        #[snafu(backtrace)]
         #[snafu(source(from(ishare::gmap::Error, Box::new)))]
         source: Box<ishare::gmap::Error>,
     },
     #[snafu(transparent)]
     Ibd {
-        source: ishare::share::ibd::Error,
+        // non leaf
+        #[snafu(backtrace)]
+        #[snafu(source(from(ishare::share::ibd::Error, Box::new)))]
+        source: Box<ishare::share::ibd::Error>,
     },
     #[snafu(transparent)]
     Asibd {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::rfmix::asibd::Error,
     },
 
     #[snafu(transparent)]
     StdIo {
+        // leaf
         source: std::io::Error,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(transparent)]
     RfmixFb {
+        // non-leaf
         #[snafu(source(from(ishare::rfmix::fb::Error, Box::new)))]
+        #[snafu(backtrace)]
         source: Box<ishare::rfmix::fb::Error>,
     },
 
     RecordNotSorted {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
-    ReadChrname,
-    ReadChrpos,
+    ReadChrname {
+        // leaf
+        backtrace: Box<Option<Backtrace>>,
+    },
+    ReadChrpos {
+        // leaf
+        backtrace: Box<Option<Backtrace>>,
+    },
 }
 fn main() {
     if let Err(e) = main_entry() {

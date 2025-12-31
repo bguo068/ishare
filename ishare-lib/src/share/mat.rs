@@ -16,16 +16,23 @@ use std::sync::Arc;
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(transparent)]
-    Io { source: io::Error },
+    Io {
+        // non-leaf
+        #[snafu(backtrace)]
+        source: io::Error,
+    },
 
     #[snafu(display("Failed to create file: {}", path.display()))]
     CreateFile {
+        // leaf
         source: std::io::Error,
         path: Box<std::path::PathBuf>,
+        backtrace: Box<Option<Backtrace>>,
     },
 
     #[snafu(display("Parquet operation failed"))]
     Parquet {
+        // leaf
         #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
         source: Box<parquet::errors::ParquetError>,
         backtrace: Box<Option<Backtrace>>,

@@ -33,37 +33,45 @@ type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Snafu)]
 pub enum Error {
     Arrow {
+        // leaf
         #[snafu(source(from(ArrowError, Box::new)))]
         source: Box<ArrowError>,
         backtrace: Box<Option<Backtrace>>,
     },
     Parquet {
+        // leaf
         #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
         source: Box<parquet::errors::ParquetError>,
         backtrace: Box<Option<Backtrace>>,
     },
     Io {
+        // leaf
         source: std::io::Error,
         backtrace: Box<Option<Backtrace>>,
     },
     ParseInt {
+        // leaf
         source: ParseIntError,
         backtrace: Box<Option<Backtrace>>,
     },
     DowncastToBoolArray {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("Row order length {row_order_len} does not match matrix rows {matrix_rows}"))]
     RowOrderLengthMismatch {
+        // leaf
         row_order_len: usize,
         matrix_rows: usize,
         backtrace: Box<Option<Backtrace>>,
     },
     MissingGenotype {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("BitVec length mismatch after append: expected {expected}, got {actual}"))]
     BitVecLengthMismatch {
+        // leaf
         expected: usize,
         actual: usize,
         backtrace: Box<Option<Backtrace>>,

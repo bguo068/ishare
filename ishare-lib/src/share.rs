@@ -8,11 +8,13 @@ use snafu::prelude::*;
 pub enum Error {
     #[snafu(transparent)]
     Mat {
+        // non leaf
         #[snafu(backtrace)]
         source: mat::Error,
     },
     #[snafu(transparent)]
     Ibd {
+        // non leaf
         #[snafu(backtrace)]
         source: ibd::Error,
     },

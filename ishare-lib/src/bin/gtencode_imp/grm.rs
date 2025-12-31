@@ -12,18 +12,41 @@ use snafu::prelude::*;
 pub enum Error {
     #[snafu(transparent)]
     GenotypeRare {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
     #[snafu(transparent)]
-    Individuals { source: ishare::indiv::Error },
+    Individuals {
+        // non leaf
+        #[snafu(backtrace)]
+        source: ishare::indiv::Error,
+    },
     #[snafu(transparent)]
-    Io { source: ishare::io::Error },
+    Io {
+        // non leaf
+        #[snafu(backtrace)]
+        source: ishare::io::Error,
+    },
     #[snafu(transparent)]
-    Sites { source: ishare::site::Error },
+    Sites {
+        // non leaf
+        #[snafu(backtrace)]
+        source: ishare::site::Error,
+    },
     #[snafu(transparent)]
-    Matrix { source: ishare::share::mat::Error },
+    Matrix {
+        // non leaf
+        #[snafu(backtrace)]
+        #[snafu(source(from(ishare::share::mat::Error, Box::new)))]
+        source: Box<ishare::share::mat::Error>,
+    },
     #[snafu(transparent)]
-    GtencodeUtils { source: super::utils::Error },
+    GtencodeUtils {
+        // non leaf
+        #[snafu(backtrace)]
+        source: super::utils::Error,
+    },
 }
 
 type Result<T> = std::result::Result<T, Error>;

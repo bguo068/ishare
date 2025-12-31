@@ -2,6 +2,7 @@ use ahash::AHashMap;
 use ishare::genotype::rare::{Error as GenotypeError, GenotypeRecords};
 use itertools::Itertools;
 use slice_group_by::GroupBy;
+use std::backtrace::Backtrace;
 use std::collections::HashSet;
 use std::num::ParseIntError;
 use std::path::{Path, PathBuf};
@@ -10,18 +11,27 @@ use snafu::prelude::*;
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    RecordIsEmpty,
+    RecordIsEmpty {
+        // leaf
+        backtrace: Box<Option<Backtrace>>,
+    },
     #[snafu(transparent)]
     Genotype {
+        // non leaf
+        #[snafu(backtrace)]
         source: GenotypeError,
     },
     #[snafu(transparent)]
     Io {
+        // leaf
         source: std::io::Error,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(transparent)]
     ParseInt {
+        // leaf
         source: ParseIntError,
+        backtrace: Box<Option<Backtrace>>,
     },
 }
 type Result<T> = std::result::Result<T, Error>;

@@ -8,6 +8,8 @@ pub enum Error {
     // non-local
     #[snafu(transparent)]
     GenotypeRare {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
 }

@@ -20,47 +20,69 @@ pub enum Error {
     // outside
     #[snafu(transparent)]
     Genome {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::genome::Error,
     },
     #[snafu(transparent)]
     UtilsPath {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::utils::path::Error,
     },
     #[snafu(transparent)]
     Vcf {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::vcf::Error,
     },
 
     #[snafu(transparent)]
     Sites {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::site::Error,
     },
     #[snafu(transparent)]
     GenotypeCommon {
-        #[snafu(backtrace, source(from(ishare::genotype::common::Error, Box::new)))]
+        // non leaf
+        #[snafu(backtrace)]
+        #[snafu(source(from(ishare::genotype::common::Error, Box::new)))]
         source: Box<ishare::genotype::common::Error>,
     },
     #[snafu(transparent)]
     GenotypeRare {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
     #[snafu(transparent)]
     Individual {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::indiv::Error,
     },
 
     // this module
     StdIo {
+        // leaf
         source: std::io::Error,
         backtrace: Box<Option<Backtrace>>,
     },
     Hts {
+        // leaf
         #[snafu(source(from(rust_htslib::errors::Error, Box::new)))]
         source: Box<rust_htslib::errors::Error>,
         backtrace: Box<Option<Backtrace>>,
     },
-    RegionFilter,
-    EmptyVec,
+    RegionFilter {
+        // leaf
+        backtrace: Box<Option<Backtrace>>,
+    },
+    EmptyVec {
+        // leaf
+        backtrace: Box<Option<Backtrace>>,
+    },
 }
 type Result<T> = std::result::Result<T, Error>;
 

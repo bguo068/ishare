@@ -5,7 +5,10 @@ use ishare::indiv::Individuals;
 use ishare::io::IntoParquet;
 use ishare::share::mat::NamedMatrix;
 use rayon::prelude::*;
-use std::path::{Path, PathBuf};
+use std::{
+    backtrace::Backtrace,
+    path::{Path, PathBuf},
+};
 
 // use snafu::prelude::*;
 // pub enum Error {}
@@ -15,18 +18,30 @@ use snafu::prelude::*;
 pub enum Error {
     #[snafu(transparent)]
     GenotypeRare {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
     #[snafu(transparent)]
     GtencodeUtils {
+        // non leaf
+        #[snafu(backtrace)]
         source: super::utils::Error,
     },
     #[snafu(transparent)]
     Matrix {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::io::Error,
     },
-    RecordNotSorted,
-    PathHasNoFilename,
+    RecordNotSorted {
+        // leaf
+        backtrace: Box<Option<Backtrace>>,
+    },
+    PathHasNoFilename {
+        // leaf
+        backtrace: Box<Option<Backtrace>>,
+    },
 }
 type Result<T> = std::result::Result<T, Error>;
 

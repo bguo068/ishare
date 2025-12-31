@@ -24,36 +24,44 @@ type Result<T> = std::result::Result<T, Error>;
 #[derive(Snafu, Debug)]
 pub enum Error {
     Arrow {
+        // non leaf
         #[snafu(source(from(ArrowError, Box::new)))]
         source: Box<ArrowError>,
         backtrace: Box<Option<Backtrace>>,
     },
     StdIo {
+        // non leaf
         source: std::io::Error,
         backtrace: Box<Option<Backtrace>>,
     },
     Parquet {
+        // non leaf
         #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
         source: Box<parquet::errors::ParquetError>,
         backtrace: Box<Option<Backtrace>>,
     },
     BinarySearchNotFound {
+        // non leaf
         backtrace: Box<Option<Backtrace>>,
     },
     Downcast {
+        // non leaf
         backtrace: Box<Option<Backtrace>>,
     },
     MissingGenotypeData {
+        // non leaf
         backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("Position {pos} is not greater than last position {last_pos} - sites must be added in order"))]
     PositionNotInOrder {
+        // non leaf
         pos: u32,
         last_pos: u32,
         backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("Position {pos} is less than or equal to last position {last_pos} - sites must be added in strictly increasing order"))]
     PositionNotStrictlyIncreasing {
+        // non leaf
         pos: u32,
         last_pos: u32,
         backtrace: Box<Option<Backtrace>>,

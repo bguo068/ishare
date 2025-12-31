@@ -5,6 +5,7 @@ use std::backtrace::Backtrace;
 pub enum Error {
     #[snafu(transparent)]
     Path {
+        // leaf
         source: path::Error,
         backtrace: Box<Option<Backtrace>>,
     },

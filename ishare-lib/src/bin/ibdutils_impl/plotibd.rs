@@ -30,45 +30,76 @@ use snafu::prelude::*;
 pub enum Error {
     #[snafu(transparent)]
     Indiv {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::indiv::Error,
     },
     #[snafu(transparent)]
     Genome {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::genome::Error,
     },
     #[snafu(transparent)]
     Gmap {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::gmap::Error,
     },
     #[snafu(transparent)]
     Ibd {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::share::ibd::Error,
     },
     #[snafu(transparent)]
     Hyper {
+        // leaf
         source: hyper::Error,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(transparent)]
     ParseInt {
+        // leaf
         source: ParseIntError,
+        backtrace: Box<Option<Backtrace>>,
     },
     // local
     StdIO {
+        // leaf
         source: std::io::Error,
-        backtrace: Option<std::backtrace::Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     Address {
+        // leaf
         source: core::net::AddrParseError,
-        backtrace: Option<std::backtrace::Backtrace>,
+        backtrace: Box<Option<Backtrace>>,
     },
     Other {
+        // leaf
         source: Whatever,
+        backtrace: Box<Option<Backtrace>>,
     },
-    ZeroNumChromosome,
-    Ibd1IndNotEqualId2Indvi,
-    InvalidSampleId,
-    InvalidSampleName,
-    MissBothSampleIdAndName,
+    ZeroNumChromosome {
+        // leaf
+        backtrace: Box<Option<Backtrace>>,
+    },
+    Ibd1IndNotEqualId2Indvi {
+        // leaf
+        backtrace: Box<Option<Backtrace>>,
+    },
+    InvalidSampleId {
+        // leaf
+        backtrace: Box<Option<Backtrace>>,
+    },
+    InvalidSampleName {
+        // leaf
+        backtrace: Box<Option<Backtrace>>,
+    },
+    MissBothSampleIdAndName {
+        // leaf
+        backtrace: Box<Option<Backtrace>>,
+    },
 }
 type Result<T> = std::result::Result<T, Error>;
 

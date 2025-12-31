@@ -10,34 +10,44 @@ type Result<T> = std::result::Result<T, Error>;
 #[derive(Snafu, Debug)]
 pub enum Error {
     Stats {
+        // leaf
         source: statrs::distribution::GammaError,
         backtrace: Box<Option<Backtrace>>,
     },
     PositionsNotSorted {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     PositionsNotUnique {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     PositionsEmpty {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     PositionsOutOfRange {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     AlleleFrequenciesOutOfRange {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     UnequalLengthOfVectors {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     IbdNotSorted {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     IbdInvalidOrMerged {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     InvalidPloidyStatus {
+        // leaf
         status: Box<String>,
         backtrace: Box<Option<Backtrace>>,
     },

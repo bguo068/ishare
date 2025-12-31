@@ -10,35 +10,51 @@ use parquet::file::properties::WriterProperties;
 use rayon::prelude::*;
 use slice_group_by::GroupByMut;
 use snafu::prelude::*;
+use std::backtrace::Backtrace;
 use std::sync::Arc;
 
 #[derive(Snafu, Debug)]
 pub enum Error {
     #[snafu(transparent)]
     Arrow {
+        // leaf
         #[snafu(source(from(ArrowError, Box::new)))]
         source: Box<ArrowError>,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(transparent)]
     Parquet {
+        // leaf
         #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
         source: Box<parquet::errors::ParquetError>,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(transparent)]
     GenotypeRare {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
     #[snafu(transparent)]
     Individual {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::indiv::Error,
     },
-    MissingField,
+    MissingField {
+        // leaf
+        backtrace: Box<Option<Backtrace>>,
+    },
     #[snafu(transparent)]
     Io {
+        // leaf
+        backtrace: Box<Option<Backtrace>>,
         source: std::io::Error,
     },
     #[snafu(transparent)]
     UtilsPath {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::utils::path::Error,
     },
 }

@@ -1,3 +1,4 @@
+use std::backtrace::Backtrace;
 use std::str::Utf8Error;
 
 use super::super::Commands;
@@ -8,11 +9,23 @@ use snafu::prelude::*;
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(transparent)]
-    FromUtf8 { source: Utf8Error },
+    FromUtf8 {
+        // leaf
+        source: Utf8Error,
+        backtrace: Box<Option<Backtrace>>,
+    },
     #[snafu(transparent)]
-    Site { source: ishare::site::Error },
+    Site {
+        // non leaf
+        #[snafu(backtrace)]
+        source: ishare::site::Error,
+    },
     #[snafu(transparent)]
-    Genome { source: ishare::genome::Error },
+    Genome {
+        // non leaf
+        #[snafu(backtrace)]
+        source: ishare::genome::Error,
+    },
 }
 type Result<T> = std::result::Result<T, Error>;
 

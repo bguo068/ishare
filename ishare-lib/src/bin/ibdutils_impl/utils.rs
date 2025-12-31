@@ -2,6 +2,7 @@ use arrow_array::{ArrayRef, Float32Array, RecordBatch};
 use arrow_schema::ArrowError;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
+use std::backtrace::Backtrace;
 use std::fs::File;
 use std::sync::Arc;
 
@@ -11,16 +12,22 @@ use snafu::prelude::*;
 pub enum Error {
     #[snafu(transparent)]
     Parquet {
+        // non leaf
         #[snafu(source(from(ParquetError, Box::new)))]
         source: Box<ParquetError>,
+        backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(transparent)]
     Arrow {
+        // non leaf
         #[snafu(source(from(ArrowError, Box::new)))]
         source: Box<ArrowError>,
+        backtrace: Box<Option<Backtrace>>,
     },
     StdIo {
+        // non leaf
         source: std::io::Error,
+        backtrace: Box<Option<Backtrace>>,
     },
 }
 type Result<T> = std::result::Result<T, Error>;

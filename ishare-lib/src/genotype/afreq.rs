@@ -11,12 +11,17 @@ use crate::genome::GenomeInfo;
 #[derive(Snafu, Debug)]
 pub enum Error {
     HtslibError {
+        // leaf
         #[snafu(source(from(rust_htslib::errors::Error, Box::new)))]
         source: Box<rust_htslib::errors::Error>,
         backtrace: Box<Option<Backtrace>>,
     },
-    VcfMissingRid,
+    VcfMissingRid {
+        // leaf
+        backtrace: Box<Option<Backtrace>>,
+    },
     Utf8Error {
+        // leaf
         source: std::str::Utf8Error,
         backtrace: Box<Option<Backtrace>>,
     },
@@ -397,13 +402,13 @@ chr2	250	.	C	G	60	PASS	.	GT	1/1	1/1
             backtrace: Box::new(None),
         };
 
-        let _vcf_missing_rid_error = Error::VcfMissingRid;
+        let _vcf_missing_rid_error = VcfMissingRidSnafu {}.build();
 
         // HtslibError would require creating an actual htslib error, which is complex
         // so we'll just verify it can be pattern matched
-        let test_error = Error::VcfMissingRid;
+        let test_error = VcfMissingRidSnafu {}.build();
         match test_error {
-            Error::VcfMissingRid => (),
+            Error::VcfMissingRid { .. } => (),
             Error::HtslibError { .. } => (),
             Error::Utf8Error { .. } => (),
         }

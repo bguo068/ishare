@@ -1,7 +1,7 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 #![cfg_attr(not(test), warn(clippy::expect_used))]
 
-use std::path::PathBuf;
+use std::{backtrace::Backtrace, path::PathBuf};
 
 use clap::{Parser, Subcommand};
 use ishare::{genome::*, gmap, utils::error::show_snafu_error};
@@ -11,15 +11,21 @@ use snafu::prelude::*;
 enum Error {
     #[snafu(transparent)]
     Genome {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::genome::Error,
     },
     #[snafu(transparent)]
     Gmap {
         #[snafu(source(from(gmap::Error, Box::new)))]
+        #[snafu(backtrace)]
         source: Box<gmap::Error>,
     },
     // local
-    MissBothBppercmAndRate,
+    MissBothBppercmAndRate {
+        // leaf
+        backtrace: Box<Option<Backtrace>>,
+    },
 }
 type Result<T> = std::result::Result<T, Error>;
 fn main() {

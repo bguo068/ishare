@@ -14,44 +14,55 @@ use std::{
 pub enum Error {
     #[snafu(transparent)]
     GnomeError {
+        // non leaf
         #[snafu(source(from(genome::Error, Box::new)))]
+        #[snafu(backtrace)]
         source: Box<genome::Error>,
     },
     #[snafu(display("{source:?}, {path:?}"))]
     CsvError {
+        // leaf
         source: csv::Error,
         path: Box<String>,
         backtrace: Box<Option<Backtrace>>,
     },
     IoError {
+        // leaf
         source: std::io::Error,
         backtrace: Box<Option<Backtrace>>,
     },
     NotEnoughItem {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     MapBpOutOfRange {
+        // leaf
         bp: u32,
         chrlen: u32,
         backtrace: Box<Option<Backtrace>>,
     },
     MapItemNotOrderred {
+        // leaf
         last_bp: u32,
         bp: u32,
         backtrace: Box<Option<Backtrace>>,
     },
     ParseFloatErr {
+        // leaf
         source: ParseFloatError,
         backtrace: Box<Option<Backtrace>>,
     },
     ParseIntErr {
+        // leaf
         source: ParseIntError,
         backtrace: Box<Option<Backtrace>>,
     },
     PrefixIsTwoDots {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     PathParentError {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
 }

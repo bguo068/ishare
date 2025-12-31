@@ -11,18 +11,22 @@ type Result<T> = std::result::Result<T, Error>;
 #[snafu(visibility(pub(crate)))]
 pub enum Error {
     Downcast {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     StdIo {
+        // leaf
         source: std::io::Error,
         backtrace: Box<Option<Backtrace>>,
     },
     Parquet {
+        // leaf
         #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
         source: Box<parquet::errors::ParquetError>,
         backtrace: Box<Option<Backtrace>>,
     },
     Arrow {
+        // leaf
         #[snafu(source(from(ArrowError, Box::new)))]
         source: Box<ArrowError>,
         backtrace: Box<Option<Backtrace>>,

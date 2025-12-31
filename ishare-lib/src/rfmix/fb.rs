@@ -15,51 +15,62 @@ use std::{
 #[derive(Debug, Snafu)]
 pub enum Error {
     IoError {
+        // leaf
         source: std::io::Error,
         backtrace: Box<Option<Backtrace>>,
     },
     ParseFloatError {
+        // leaf
         source: std::num::ParseFloatError,
         backtrace: Box<Option<Backtrace>>,
     },
     ParseIntError {
+        // leaf
         source: std::num::ParseIntError,
         backtrace: Box<Option<Backtrace>>,
     },
     InvalidFormat {
+        // leaf
         message: Box<String>,
         backtrace: Box<Option<Backtrace>>,
     },
     EmptyData {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     BinarySearchError {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("No ancestry populations found in header"))]
     NoAncestryPopulations {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("Too many ancestry populations: {} (max: {})", count, max))]
     TooManyAncestryPopulations {
+        // leaf
         count: usize,
         max: usize,
         backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("Invalid chunk size: expected {}, got {}", expected, actual))]
     InvalidChunkSize {
+        // leaf
         expected: usize,
         actual: usize,
         backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("Haplotype index {} is out of bounds (max: {})", index, max_index))]
     HaplotypeIndexOutOfBounds {
+        // leaf
         index: u32,
         max_index: usize,
         backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(display("Corrupted segment indices"))]
     CorruptedSegmentIndices {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
 }

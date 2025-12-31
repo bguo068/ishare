@@ -10,69 +10,116 @@ use snafu::prelude::*;
 pub enum Error {
     #[snafu(display("Failed to read directory: {}", path.display()))]
     ReadDirectory {
+        // leaf
         source: std::io::Error,
         path: Box<std::path::PathBuf>,
+        backtrace: Box<std::backtrace::Backtrace>,
     },
 
     #[snafu(display("Failed to create file: {}", path.display()))]
     CreateFile {
+        // leaf
         source: std::io::Error,
         path: Box<std::path::PathBuf>,
+        backtrace: Box<std::backtrace::Backtrace>,
     },
 
     #[snafu(display("Failed to write to file: {}", path.display()))]
     WriteFile {
+        // leaf
         source: std::io::Error,
         path: Box<std::path::PathBuf>,
+        backtrace: Box<std::backtrace::Backtrace>,
     },
 
     #[snafu(display("Invalid filename: {}", filename))]
-    InvalidFilename { filename: Box<String> },
+    InvalidFilename {
+        // leaf
+        filename: Box<String>,
+        backtrace: Box<std::backtrace::Backtrace>,
+    },
 
     #[snafu(display("Failed to parse string as UTF-8"))]
-    Utf8Parse { source: std::str::Utf8Error },
+    Utf8Parse {
+        // leaf
+        source: std::str::Utf8Error,
+        backtrace: Box<std::backtrace::Backtrace>,
+    },
 
     #[snafu(display("Failed to parse: {msg}"))]
-    //'{value}' as {type_name}"
     ParseValue {
+        // leaf
         source: std::num::ParseFloatError,
         msg: Box<String>,
+        backtrace: Box<std::backtrace::Backtrace>,
     },
 
     #[snafu(display("Failed to parse '{value}' as integer"))]
     ParseInt {
+        // leaf
         source: std::num::ParseIntError,
         value: Box<String>,
+        backtrace: Box<std::backtrace::Backtrace>,
     },
 
     #[snafu(display("Sample '{sample}' not found in individuals"))]
-    SampleNotFound { sample: Box<String> },
+    SampleNotFound {
+        // leaf
+        sample: Box<String>,
+        backtrace: Box<std::backtrace::Backtrace>,
+    },
 
     #[snafu(display("Invalid haplotype value: {value}"))]
-    InvalidHaplotype { value: u8 },
+    InvalidHaplotype {
+        // leaf
+        value: u8,
+        backtrace: Box<std::backtrace::Backtrace>,
+    },
 
     #[snafu(display("CSV reading error"))]
-    CsvRead { source: csv::Error },
+    CsvRead {
+        // leaf
+        source: csv::Error,
+        backtrace: Box<std::backtrace::Backtrace>,
+    },
 
     #[snafu(display("BGZ reading error"))]
     BgzRead {
+        // leaf
         source: Box<rust_htslib::errors::Error>,
+        backtrace: Box<std::backtrace::Backtrace>,
     },
 
     #[snafu(display("Thread pool creation failed"))]
     ThreadPool {
+        // leaf
         source: Box<rust_htslib::errors::Error>,
+        backtrace: Box<std::backtrace::Backtrace>,
     },
 
     #[snafu(display("Array index out of bounds"))]
-    IndexOutOfBounds,
+    IndexOutOfBounds {
+        // leaf
+        backtrace: Box<std::backtrace::Backtrace>,
+    },
 
     #[snafu(display("Missing required data"))]
-    MissingData,
+    MissingData {
+        // leaf
+        backtrace: Box<std::backtrace::Backtrace>,
+    },
 
     #[snafu(display("Invalid enum value: {value}"))]
-    InvalidEnumValue { value: Box<String> },
+    InvalidEnumValue {
+        // leaf
+        value: Box<String>,
+        backtrace: Box<std::backtrace::Backtrace>,
+    },
 
     #[snafu(display("Container operation failed: {details}"))]
-    ContainerOperation { details: Box<String> },
+    ContainerOperation {
+        // leaf
+        details: Box<String>,
+        backtrace: Box<std::backtrace::Backtrace>,
+    },
 }

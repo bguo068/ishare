@@ -12,27 +12,39 @@ use snafu::prelude::*;
 pub enum Error {
     #[snafu(transparent)]
     IbdutilsEncode {
+        // non leaf
         #[snafu(source(from(encode::Error, Box::new)))]
+        #[snafu(backtrace)]
         source: Box<encode::Error>,
     },
     #[snafu(transparent)]
     IbdutilsCompare {
+        // non leaf
         #[snafu(source(from(compare::Error, Box::new)))]
+        #[snafu(backtrace)]
         source: Box<compare::Error>,
     },
     #[snafu(transparent)]
     IbdutilsUnrelated {
+        // non leaf
         #[snafu(source(from(unrelated::Error, Box::new)))]
+        #[snafu(backtrace)]
         source: Box<unrelated::Error>,
     },
     #[snafu(transparent)]
     IbdutilsCoverage {
+        // non leaf
         #[snafu(source(from(coverage::Error, Box::new)))]
+        #[snafu(backtrace)]
         source: Box<coverage::Error>,
     },
     #[cfg(feature = "plotibd")]
     #[snafu(transparent)]
-    IbdutilsPlotibd { source: plotibd::Error },
+    IbdutilsPlotibd {
+        // non leaf
+        #[snafu(backtrace)]
+        source: plotibd::Error,
+    },
 }
 type Result<T> = std::result::Result<T, Error>;
 

@@ -8,8 +8,8 @@ use ishare::{
     share::ibd::ibdset::*,
 };
 use log::*;
-use std::path::PathBuf;
 use std::sync::Arc;
+use std::{backtrace::Backtrace, path::PathBuf};
 
 use snafu::prelude::*;
 
@@ -18,25 +18,36 @@ use snafu::prelude::*;
 pub enum Error {
     #[snafu(transparent)]
     Indiv {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::indiv::Error,
     },
     #[snafu(transparent)]
     Genome {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::genome::Error,
     },
     #[snafu(transparent)]
     Gmap {
+        // non leaf
+        #[snafu(backtrace)]
         #[snafu(source(from(ishare::gmap::Error, Box::new)))]
         source: Box<ishare::gmap::Error>,
     },
     #[snafu(transparent)]
     Ibd {
-        source: ishare::share::ibd::Error,
+        // non leaf
+        #[snafu(source(from(ishare::share::ibd::Error, Box::new)))]
+        #[snafu(backtrace)]
+        source: Box<ishare::share::ibd::Error>,
     },
     // local error
     IbdBlkEmpty,
     StdIo {
+        // leaf
         source: std::io::Error,
+        backtrace: Box<Option<Backtrace>>,
     },
 }
 type Result<T> = std::result::Result<T, Error>;

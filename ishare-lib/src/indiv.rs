@@ -21,32 +21,40 @@ type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Snafu)]
 pub enum Error {
     Arrow {
+        // leaf
         #[snafu(source(from(ArrowError, Box::new)))]
         source: Box<ArrowError>,
         backtrace: Box<Option<Backtrace>>,
     },
     Parquet {
+        // leaf
         #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
         source: Box<parquet::errors::ParquetError>,
         backtrace: Box<Option<Backtrace>>,
     },
     StdIo {
+        // leaf
         source: std::io::Error,
         backtrace: Box<Option<Backtrace>>,
     },
     EmptyLine {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     NotEnoughFields {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     DownCast {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     MissingData {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     InvalidFileFormat {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
 }

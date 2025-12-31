@@ -1,3 +1,5 @@
+use std::backtrace::Backtrace;
+
 use super::super::Commands;
 use ishare::{genotype::rare::GenotypeRecords, indiv::Individuals, utils::path::from_prefix};
 
@@ -7,20 +9,28 @@ use snafu::prelude::*;
 pub enum Error {
     #[snafu(transparent)]
     GenotypeRare {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
     #[snafu(transparent)]
     Individual {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::indiv::Error,
     },
     #[snafu(transparent)]
     UtilsPath {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::utils::path::Error,
     },
 
     // local
     StdIo {
+        // leaf
         source: std::io::Error,
+        backtrace: Box<Option<Backtrace>>,
     },
 }
 type Result<T> = std::result::Result<T, Error>;

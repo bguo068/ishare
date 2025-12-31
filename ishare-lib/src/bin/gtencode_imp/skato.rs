@@ -5,14 +5,28 @@ use snafu::prelude::*;
 pub enum Error {
     #[snafu(transparent)]
     GenotypeRare {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
     #[snafu(transparent)]
-    Individuals { source: ishare::indiv::Error },
+    Individuals {
+        // non leaf
+        #[snafu(backtrace)]
+        source: ishare::indiv::Error,
+    },
     #[snafu(transparent)]
-    Sites { source: ishare::site::Error },
+    Sites {
+        // non leaf
+        #[snafu(backtrace)]
+        source: ishare::site::Error,
+    },
     #[snafu(transparent)]
-    Io { source: ishare::io::Error },
+    Io {
+        // non leaf
+        #[snafu(backtrace)]
+        source: ishare::io::Error,
+    },
 }
 type Result<T> = std::result::Result<T, Error>;
 

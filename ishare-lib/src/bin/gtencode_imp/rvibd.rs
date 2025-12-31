@@ -22,45 +22,65 @@ use std::sync::{Arc, RwLock};
 #[derive(Debug, Snafu)]
 pub enum Error {
     Io {
+        // leaf
+        backtrace: Box<Option<Backtrace>>,
         source: std::io::Error,
     },
     #[snafu(transparent)]
     Genome {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::genome::Error,
     },
     #[snafu(transparent)]
     Gmap {
+        // non leaf
         #[snafu(source(from(ishare::gmap::Error, Box::new)))]
+        #[snafu(backtrace)]
         source: Box<ishare::gmap::Error>,
     },
     #[snafu(transparent)]
     GenotypeRare {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
     #[snafu(transparent)]
     Individual {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::indiv::Error,
     },
     #[snafu(transparent)]
     Ibd {
-        source: ishare::share::ibd::Error,
+        // non leaf
+        #[snafu(backtrace)]
+        #[snafu(source(from(ishare::share::ibd::Error, Box::new)))]
+        source: Box<ishare::share::ibd::Error>,
     },
     StdIo {
+        // leaf
         source: std::io::Error,
         backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(transparent)]
     UtilsPath {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::utils::path::Error,
     },
     RwLock {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     GenomeSpan {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(transparent)]
     GtencodeUtil {
+        // non leaf
+        #[snafu(backtrace)]
         source: super::utils::Error,
     },
 }

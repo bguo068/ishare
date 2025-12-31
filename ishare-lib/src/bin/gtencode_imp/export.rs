@@ -19,24 +19,40 @@ use snafu::prelude::*;
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(transparent)]
-    Sites { source: ishare::site::Error },
+    Sites {
+        // non leaf
+        #[snafu(backtrace)]
+        source: ishare::site::Error,
+    },
     #[snafu(transparent)]
-    Indiv { source: ishare::indiv::Error },
+    Indiv {
+        // non leaf
+        #[snafu(backtrace)]
+        source: ishare::indiv::Error,
+    },
     #[snafu(transparent)]
-    Genome { source: ishare::genome::Error },
+    Genome {
+        // non leaf
+        #[snafu(backtrace)]
+        source: ishare::genome::Error,
+    },
     #[snafu(transparent)]
     GenotypeRare {
+        // non leaf
+        #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
     #[snafu(transparent)]
     PathUtils { source: ishare::utils::path::Error },
     Hts {
+        // leaf
         #[snafu(source(from(rust_htslib::errors::Error, Box::new)))]
         source: Box<rust_htslib::errors::Error>,
         backtrace: Box<Option<Backtrace>>,
     },
     #[snafu(transparent)]
     StdIo {
+        // leaf
         source: std::io::Error,
         backtrace: Box<Option<Backtrace>>,
     },

@@ -1,4 +1,4 @@
-use std::num::ParseFloatError;
+use std::{backtrace::Backtrace, num::ParseFloatError};
 
 use super::utils::*;
 use ishare::{
@@ -20,26 +20,51 @@ use snafu::prelude::*;
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(transparent)]
-    Indiv { source: ishare::indiv::Error },
+    Indiv {
+        // non leaf
+        #[snafu(backtrace)]
+        source: ishare::indiv::Error,
+    },
     #[snafu(transparent)]
-    Genome { source: ishare::genome::Error },
+    Genome {
+        // non leaf
+        #[snafu(backtrace)]
+        source: ishare::genome::Error,
+    },
     #[snafu(transparent)]
     Gmap {
+        // non leaf
+        #[snafu(backtrace)]
         #[snafu(source(from(ishare::gmap::Error, Box::new)))]
         source: Box<ishare::gmap::Error>,
     },
     #[snafu(transparent)]
-    Ibd { source: ishare::share::ibd::Error },
+    Ibd {
+        // non leaf
+        #[snafu(backtrace)]
+        #[snafu(source(from(ishare::share::ibd::Error, Box::new)))]
+        source: Box<ishare::share::ibd::Error>,
+    },
     #[snafu(transparent)]
     IbdutilsUtil {
+        // non leaf
+        #[snafu(backtrace)]
         #[snafu(source(from(super::utils::Error, Box::new)))]
         source: Box<super::utils::Error>,
     },
     // local
     #[snafu(transparent)]
-    ParseFloat { source: ParseFloatError },
+    ParseFloat {
+        // leaf
+        source: ParseFloatError,
+        backtrace: Box<Option<Backtrace>>,
+    },
     #[snafu(transparent)]
-    StdIo { source: std::io::Error },
+    StdIo {
+        // leaf
+        source: std::io::Error,
+        backtrace: Box<Option<Backtrace>>,
+    },
 }
 type Result<T> = std::result::Result<T, Error>;
 

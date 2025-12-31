@@ -19,64 +19,81 @@ use snafu::{ensure, OptionExt, ResultExt, Snafu};
 pub enum Error {
     #[snafu(transparent)]
     GmapError {
+        // non leaf
         #[snafu(backtrace, source(from(gmap::Error, Box::new)))]
         source: Box<gmap::Error>,
     },
     #[snafu(transparent)]
     SiteError {
+        // non leaf
         #[snafu(backtrace, source(from(crate::site::Error, Box::new)))]
         source: Box<crate::site::Error>,
     },
 
     // #[snafu(transparent)]
     HtslibError {
+        // leaf
         #[snafu(source(from(rust_htslib::errors::Error, Box::new)))]
         source: Box<rust_htslib::errors::Error>,
         backtrace: Box<Option<Backtrace>>,
     },
     Utf8Error {
+        // leaf
         source: Utf8Error,
         backtrace: Box<Option<Backtrace>>,
     },
     SampleNameUtf8Error {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     VcfRidError {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     VcfPosUnsorted {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     IoError {
+        // leaf
         source: std::io::Error,
         backtrace: Box<Option<Backtrace>>,
     },
     ReadPosFileMissingChrname {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     ReadPosFileMissingPos {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     ParseIntError {
+        // leaf
         source: ParseIntError,
         backtrace: Box<Option<Backtrace>>,
     },
     RefInconsistAtSamePos {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     FmtGtError {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     AlleleIdError {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     MissingGenotype {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     MissingRid {
+        // leaf
         backtrace: Box<Option<Backtrace>>,
     },
     BcfError {
+        // leaf
         #[snafu(source(from(rust_htslib::errors::Error, Box::new)))]
         source: Box<rust_htslib::errors::Error>,
         backtrace: Box<Option<Backtrace>>,

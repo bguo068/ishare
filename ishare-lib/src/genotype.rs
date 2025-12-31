@@ -7,9 +7,21 @@ use snafu::prelude::*;
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[snafu(transparent)]
-    Afreq { source: afreq::Error },
+    Afreq {
+        // non leaf
+        #[snafu(backtrace)]
+        source: afreq::Error,
+    },
     #[snafu(transparent)]
-    Common { source: common::Error },
+    Common {
+        // non leaf
+        #[snafu(backtrace)]
+        source: common::Error,
+    },
     #[snafu(transparent)]
-    Rare { source: rare::Error },
+    Rare {
+        // non leaf
+        #[snafu(backtrace)]
+        source: rare::Error,
+    },
 }

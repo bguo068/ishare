@@ -7,7 +7,11 @@ use snafu::prelude::*;
 pub enum Error {
     // non-local
     #[snafu(transparent)]
-    Individuals { source: ishare::indiv::Error },
+    Individuals {
+        // non leaf
+        #[snafu(backtrace)]
+        source: ishare::indiv::Error,
+    },
     // local
 }
 

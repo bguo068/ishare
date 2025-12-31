@@ -38,3 +38,4 @@ target/
 testdata2
 tmp*
 .helix/config.toml
+.DS_Store
