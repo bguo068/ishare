@@ -44,6 +44,12 @@ pub enum Error {
         #[snafu(backtrace)]
         source: Box<ishare::share::ibd::Error>,
     },
+    #[snafu(display("provided IBD file format `{fmt_provided}` is not supported"))]
+    UnsupportedIbdFormat {
+        // leaf
+        fmt_provided: Box<String>,
+        backtrace: Box<Option<Backtrace>>,
+    },
     // #[snafu(transparent)]
     Container {
         // non leaf
@@ -170,7 +176,10 @@ fn read_ibd(
     } else if fmt.as_str() == "hmmibd" {
         ibd.read_hmmibd_dir(ibd_dir).context(IbdSnafu)?;
     } else {
-        panic!("format {fmt} is not supported.");
+        Err(UnsupportedIbdFormatSnafu {
+            fmt_provided: fmt.to_string(),
+        }
+        .build())?;
     }
     Ok(ibd)
 }
