@@ -18,39 +18,43 @@ use snafu::prelude::*;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Sites {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::site::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Indiv {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::indiv::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Genome {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genome::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GenotypeRare {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
-    #[snafu(transparent)]
-    PathUtils { source: ishare::utils::path::Error },
+    // #[snafu(transparent)]
+    PathUtils {
+        // non leaf
+        #[snafu(backtrace)]
+        source: ishare::utils::path::Error,
+    },
     Hts {
         // leaf
         #[snafu(source(from(rust_htslib::errors::Error, Box::new)))]
         source: Box<rust_htslib::errors::Error>,
         backtrace: Box<Option<Backtrace>>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     StdIo {
         // leaf
         source: std::io::Error,
@@ -67,10 +71,14 @@ pub fn main_export(args: &Commands) -> Result<()> {
         keep_sites_with_multi_common_alleles,
     } = args
     {
-        let mut records = GenotypeRecords::from_parquet_file(from_prefix(rec, "rec")?)?;
-        let sites = Sites::from_parquet_file(from_prefix(rec, ".sit")?)?;
-        let inds = Individuals::from_parquet_file(from_prefix(rec, "ind")?)?;
-        let ginfo = GenomeInfo::from_toml_file(genome_info)?;
+        let mut records =
+            GenotypeRecords::from_parquet_file(from_prefix(rec, "rec").context(PathUtilsSnafu)?)
+                .context(GenotypeRareSnafu)?;
+        let sites = Sites::from_parquet_file(from_prefix(rec, ".sit").context(PathUtilsSnafu)?)
+            .context(SitesSnafu)?;
+        let inds = Individuals::from_parquet_file(from_prefix(rec, "ind").context(PathUtilsSnafu)?)
+            .context(IndivSnafu)?;
+        let ginfo = GenomeInfo::from_toml_file(genome_info).context(GenomeSnafu)?;
 
         let mut compressed = true;
         let mut format = bcf::Format::Bcf;
@@ -100,7 +108,7 @@ pub fn main_export(args: &Commands) -> Result<()> {
             .zip(ginfo.chromsize.as_slice().iter())
             .try_for_each(|(chrname, chrsize)| -> Result<()> {
                 line.clear();
-                write!(line, "##contig=<ID={chrname},length={chrsize}>")?;
+                write!(line, "##contig=<ID={chrname},length={chrsize}>").context(StdIoSnafu)?;
                 header.push_record(line.as_bytes());
                 Ok(())
             })?;
@@ -122,7 +130,7 @@ pub fn main_export(args: &Commands) -> Result<()> {
         let mut bcf_record = writer.empty_record();
 
         // sort by postion
-        records.sort_by_position()?;
+        records.sort_by_position().context(GenotypeRareSnafu)?;
 
         let mut allele = Vec::new();
         let mut is_rare = Vec::new();

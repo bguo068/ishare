@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Io {
         // non-leaf
         #[snafu(backtrace)]

@@ -6,14 +6,16 @@ use snafu::prelude::*;
 #[derive(Debug, Snafu)]
 pub enum Error {
     // non-local
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Matrix {
         #[snafu(source(from(ishare::genotype::common::Error, Box::new)))]
         source: Box<ishare::genotype::common::Error>,
     },
 
-    #[snafu(transparent)]
-    Sites { source: ishare::site::Error },
+    // #[snafu(transparent)]
+    Sites {
+        source: ishare::site::Error,
+    },
     // local
 }
 type Result<T> = std::result::Result<T, Error>;
@@ -25,9 +27,9 @@ pub fn main_matrix(args: &Commands) -> Result<()> {
         positions,
     } = args
     {
-        let gm = GenotypeMatrix::from_parquet_file(mat)?;
+        let gm = GenotypeMatrix::from_parquet_file(mat).context(MatrixSnafu)?;
         let sit_file = mat.clone().with_extension("sit");
-        let sites = Sites::from_parquet_file(sit_file)?;
+        let sites = Sites::from_parquet_file(sit_file).context(SitesSnafu)?;
 
         let genomes = match genomes {
             Some(v) if v.is_empty() => Vec::new(),

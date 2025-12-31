@@ -18,40 +18,40 @@ use std::{
 use snafu::prelude::*;
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Indiv {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::indiv::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Genome {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genome::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Gmap {
         // non leaf
         #[snafu(source(from(ishare::gmap::Error, Box::new)))]
         #[snafu(backtrace)]
         source: Box<ishare::gmap::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Ibd {
         // non leaf
         #[snafu(source(from(ishare::share::ibd::Error, Box::new)))]
         #[snafu(backtrace)]
         source: Box<ishare::share::ibd::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Container {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::container::Error,
     },
     // local
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     StdIo {
         // leaf
         source: std::io::Error,
@@ -91,11 +91,11 @@ pub fn main_encode(args: &Commands) -> Result<()> {
             .format_module_path(false)
             .init();
         info!("read genome toml file");
-        let ginfo = Arc::new(GenomeInfo::from_toml_file(genome_info)?);
+        let ginfo = Arc::new(GenomeInfo::from_toml_file(genome_info).context(GenomeSnafu)?);
         info!("read genetic map files");
-        let gmap = Arc::new(gmap::GeneticMap::from_genome_info(&ginfo)?);
+        let gmap = Arc::new(gmap::GeneticMap::from_genome_info(&ginfo).context(GmapSnafu)?);
         info!("read samples list file");
-        let (inds, _inds_opt) = Individuals::from_txt_file(sample_lst)?;
+        let (inds, _inds_opt) = Individuals::from_txt_file(sample_lst).context(IndivSnafu)?;
         let inds = Arc::new(inds);
 
         // read ibd into memory
@@ -128,7 +128,9 @@ pub fn main_encode(args: &Commands) -> Result<()> {
 
         // complement
         let mut region_to_keep = region_to_remove.clone();
-        region_to_keep.complement(0, ginfo.get_total_len_bp())?;
+        region_to_keep
+            .complement(0, ginfo.get_total_len_bp())
+            .context(ContainerSnafu)?;
 
         // filtered IBD
         let mut v = cut_ibd(&ibd, &region_to_keep, *min_cm);
@@ -139,7 +141,7 @@ pub fn main_encode(args: &Commands) -> Result<()> {
 
         // write binary
         let out = format!("{}.eibd", out_prefix.to_string_lossy());
-        write_ibdseg_vec(&v, &out)?;
+        write_ibdseg_vec(&v, &out).context(IbdSnafu)?;
 
         //    histogram: txt
         write_histogram(&sp, &cov, out_prefix, &ginfo)?;
@@ -162,18 +164,18 @@ fn read_ibd(
 
     info!("read ibd list file");
     if fmt.as_str() == "hapibd" {
-        ibd.read_hapibd_dir(ibd_dir)?;
+        ibd.read_hapibd_dir(ibd_dir).context(IbdSnafu)?;
     } else if fmt.as_str() == "tskibd" {
-        ibd.read_tskibd_dir(ibd_dir)?;
+        ibd.read_tskibd_dir(ibd_dir).context(IbdSnafu)?;
     } else if fmt.as_str() == "hmmibd" {
-        ibd.read_hmmibd_dir(ibd_dir)?;
+        ibd.read_hmmibd_dir(ibd_dir).context(IbdSnafu)?;
     } else {
         panic!("format {fmt} is not supported.");
     }
     Ok(ibd)
 }
 fn read_positions(ginfo: &GenomeInfo, position_lst: &PathBuf) -> Result<Vec<u32>> {
-    let s = std::fs::read_to_string(position_lst)?;
+    let s = std::fs::read_to_string(position_lst).context(StdIoSnafu)?;
     let mut positions = vec![];
     for lines in s.trim().split("\n") {
         let mut iter = lines.split("\t");
@@ -207,7 +209,7 @@ fn get_low_snp_regions(
 ) -> Result<(Intervals<u32>, Vec<u32>, Vec<usize>)> {
     // boundaries in cM
     let boundaries = {
-        let gwsize_cm = gmap.get_size_cm()?;
+        let gwsize_cm = gmap.get_size_cm().context(GmapSnafu)?;
         let gwsize_bp = ginfo.get_total_len_bp();
         let mut x = 0.0f32;
         let mut v = vec![];
@@ -253,7 +255,7 @@ fn get_coverage(ibd: &IbdSet, gmap: &GeneticMap, step_cm: f32) -> Result<(Vec<u3
     let sp = {
         let mut sp = vec![];
         let mut x = step_cm / 2.0;
-        let genome_size_cm = gmap.get_size_cm()?;
+        let genome_size_cm = gmap.get_size_cm().context(GmapSnafu)?;
         // let genome_size_bp = ginfo.get_total_len_bp();
         while x < genome_size_cm {
             let gw_pos = gmap.get_bp(x);
@@ -394,7 +396,7 @@ fn write_histogram(sp: &[u32], cov: &[usize], out_prefix: &Path, ginfo: &GenomeI
     use std::io::Write;
     for (s, c) in sp.iter().zip(cov.iter()) {
         let (_, name, pos) = ginfo.to_chr_pos(*s);
-        writeln!(file, "{name}\t{pos}\t{c}")?;
+        writeln!(file, "{name}\t{pos}\t{c}").context(StdIoSnafu)?;
     }
     Ok(())
 }
@@ -411,7 +413,7 @@ fn write_snp_counts(
     use std::io::Write;
     for (s, c) in bounds.iter().zip(counts.iter()) {
         let (_, name, pos) = ginfo.to_chr_pos(*s);
-        writeln!(file, "{name}\t{pos}\t{c}")?;
+        writeln!(file, "{name}\t{pos}\t{c}").context(StdIoSnafu)?;
     }
     Ok(())
 }
@@ -429,7 +431,7 @@ fn write_removed_region(
         let (chrid_s, name_s, s) = ginfo.to_chr_pos(r.start);
         let (chrid_e, name_e, e) = ginfo.to_chr_pos(r.end);
         if chrid_s == chrid_e {
-            writeln!(file, "{name_s}\t{s}\t{e}")?;
+            writeln!(file, "{name_s}\t{s}\t{e}").context(StdIoSnafu)?;
         } else {
             let mut start;
             let mut end;
@@ -451,7 +453,7 @@ fn write_removed_region(
                     end = ginfo.chromsize[chrid] - 1;
                     name = ginfo.chromnames[chrid].as_str();
                 }
-                writeln!(file, "{name}\t{start}\t{end}")?;
+                writeln!(file, "{name}\t{start}\t{end}").context(StdIoSnafu)?;
             }
         }
     }

@@ -10,32 +10,32 @@ use snafu::prelude::*;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GenotypeRare {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Individuals {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::indiv::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Io {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::io::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Matrix {
         // non leaf
         #[snafu(source(from(ishare::share::mat::Error, Box::new)))]
         #[snafu(backtrace)]
         source: Box<ishare::share::mat::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GtencodeUtil {
         // non leaf
         #[snafu(backtrace)]
@@ -69,13 +69,14 @@ pub fn main_jaccard(args: &Commands) -> Result<()> {
             None => 0u32,
         };
 
-        let records = GenotypeRecords::from_parquet_file(rec)?;
-        records.is_sorted_by_genome()?;
+        let records = GenotypeRecords::from_parquet_file(rec).context(GenotypeRareSnafu)?;
+        records.is_sorted_by_genome().context(GenotypeRareSnafu)?;
 
         let ind_file = rec.with_extension("ind");
         let _inds = Individuals::from_parquet_file(&ind_file);
 
-        let (pairs, row_genomes, col_genomes) = utils::prep_pairs(&records, genomes, lists)?;
+        let (pairs, row_genomes, col_genomes) =
+            utils::prep_pairs(&records, genomes, lists).context(GtencodeUtilSnafu)?;
 
         // run in parallel and collect row results
         let res: Vec<(u32, u32, u32, u32)> = pairs
@@ -137,7 +138,7 @@ pub fn main_jaccard(args: &Commands) -> Result<()> {
             // let resmat0 = resmat.clone();
             println!("WARN: output option is specified, results are not printed on the screen, check file {p:?}");
             // println!("\n writing...");
-            resmat.into_parquet(&p)?
+            resmat.into_parquet(&p).context(IoSnafu)?
         }
     }
     Ok(())

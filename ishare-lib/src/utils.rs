@@ -3,7 +3,7 @@ use std::backtrace::Backtrace;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Path {
         // leaf
         source: path::Error,

@@ -9,81 +9,81 @@ use snafu::prelude::*;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GtencodeSampleDiff {
         // non leaf
         #[snafu(source(from(samplediff::Error, Box::new)))]
         #[snafu(backtrace)]
         source: Box<samplediff::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GtencodeRvibd {
         // non leaf
         #[snafu(source(from(rvibd::Error, Box::new)))]
         #[snafu(backtrace)]
         source: Box<rvibd::Error>,
     },
-    #[snafu(transparent)]
-    Export {
+    // #[snafu(transparent)]
+    GtencodeExport {
         // non leaf
         #[snafu(source(from(export::Error, Box::new)))]
         #[snafu(backtrace)]
         source: Box<export::Error>,
     },
-    #[snafu(transparent)]
-    GtencodeStes {
+    // #[snafu(transparent)]
+    GtencodeSites {
         // non leaf
         #[snafu(source(from(sites::Error, Box::new)))]
         #[snafu(backtrace)]
         source: Box<sites::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GtencodeCosine {
         // non leaf
         #[snafu(source(from(cosine::Error, Box::new)))]
         #[snafu(backtrace)]
         source: Box<cosine::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GtencodeEncode {
         // non leaf
         #[snafu(source(from(encode::Error, Box::new)))]
         #[snafu(backtrace)]
         source: Box<encode::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GtencodeRecords {
         // non leaf
         #[snafu(source(from(records::Error, Box::new)))]
         #[snafu(backtrace)]
         source: Box<records::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GtencodeMatrix {
         // non leaf
         #[snafu(backtrace)]
         source: matrix::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GtencodeSamples {
         // non leaf
         #[snafu(backtrace)]
         source: samples::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GtencodeShare {
         // non leaf
         #[snafu(backtrace)]
         source: share::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GtencodeJaccard {
         // non leaf
         #[snafu(source(from(jaccard::Error, Box::new)))]
         #[snafu(backtrace)]
         source: Box<jaccard::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GtencodeGrm {
         // non leaf
         #[snafu(source(from(grm::Error, Box::new)))]
@@ -91,11 +91,12 @@ pub enum Error {
         source: Box<grm::Error>,
     },
     #[cfg(feature = "skato")]
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GtencodeSkato {
         // non leaf
         #[snafu(backtrace)]
-        source: skato::Error,
+        #[snafu(source(from(skato::Error, Box::new)))]
+        source: Box<skato::Error>,
     },
 }
 
@@ -114,20 +115,36 @@ fn main_entry() -> Result<()> {
 
     match &cli.command {
         Some(c) => match c {
-            args @ Commands::Encode { .. } => encode::main_encode(args)?,
-            args @ Commands::Records { .. } => records::main_records(args)?,
-            args @ Commands::Matrix { .. } => matrix::main_matrix(args)?,
-            args @ Commands::Sites { .. } => sites::main_sites(args)?,
-            args @ Commands::Samples { .. } => samples::main_samples(args)?,
-            args @ Commands::Share { .. } => share::main_share(args)?,
-            args @ Commands::Jaccard { .. } => jaccard::main_jaccard(args)?,
-            args @ Commands::SampleDiff { .. } => samplediff::main_samplediff(args)?,
-            args @ Commands::Cosine { .. } => cosine::main_cosine(args)?,
-            args @ Commands::Grm { .. } => grm::main_grm(args)?,
+            args @ Commands::Encode { .. } => {
+                encode::main_encode(args).context(GtencodeEncodeSnafu)?
+            }
+            args @ Commands::Records { .. } => {
+                records::main_records(args).context(GtencodeRecordsSnafu)?
+            }
+            args @ Commands::Matrix { .. } => {
+                matrix::main_matrix(args).context(GtencodeMatrixSnafu)?
+            }
+            args @ Commands::Sites { .. } => sites::main_sites(args).context(GtencodeSitesSnafu)?,
+            args @ Commands::Samples { .. } => {
+                samples::main_samples(args).context(GtencodeSamplesSnafu)?
+            }
+            args @ Commands::Share { .. } => share::main_share(args).context(GtencodeShareSnafu)?,
+            args @ Commands::Jaccard { .. } => {
+                jaccard::main_jaccard(args).context(GtencodeJaccardSnafu)?
+            }
+            args @ Commands::SampleDiff { .. } => {
+                samplediff::main_samplediff(args).context(GtencodeSampleDiffSnafu)?
+            }
+            args @ Commands::Cosine { .. } => {
+                cosine::main_cosine(args).context(GtencodeCosineSnafu)?
+            }
+            args @ Commands::Grm { .. } => grm::main_grm(args).context(GtencodeGrmSnafu)?,
             #[cfg(feature = "skato")]
-            args @ Commands::Skato { .. } => skato::main_skato(args)?,
-            args @ Commands::RvIBD { .. } => rvibd::main_rvibd(args)?,
-            args @ Commands::Export { .. } => export::main_export(args)?,
+            args @ Commands::Skato { .. } => skato::main_skato(args).context(GtencodeSkatoSnafu)?,
+            args @ Commands::RvIBD { .. } => rvibd::main_rvibd(args).context(GtencodeRvibdSnafu)?,
+            args @ Commands::Export { .. } => {
+                export::main_export(args).context(GtencodeExportSnafu)?
+            }
         },
         None => {
             println!("\nUse '-h  or [subcommand] -h' to show help message");

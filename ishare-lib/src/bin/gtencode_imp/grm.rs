@@ -10,38 +10,38 @@ use snafu::prelude::*;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GenotypeRare {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Individuals {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::indiv::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Io {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::io::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Sites {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::site::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Matrix {
         // non leaf
         #[snafu(backtrace)]
         #[snafu(source(from(ishare::share::mat::Error, Box::new)))]
         source: Box<ishare::share::mat::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GtencodeUtils {
         // non leaf
         #[snafu(backtrace)]
@@ -65,18 +65,20 @@ pub fn main_grm(args: &Commands) -> Result<()> {
             None => -0.001f64,
         };
 
-        let mut records = GenotypeRecords::from_parquet_file(rec)?;
+        let mut records = GenotypeRecords::from_parquet_file(rec).context(GenotypeRareSnafu)?;
         let ind_file = rec.with_extension("ind");
-        let _inds = Individuals::from_parquet_file(&ind_file)?;
+        let _inds = Individuals::from_parquet_file(&ind_file).context(IndividualsSnafu)?;
         let sites_file = rec.with_extension("sit");
-        let _sites = Sites::from_parquet_file(&sites_file)?;
+        let _sites = Sites::from_parquet_file(&sites_file).context(SitesSnafu)?;
         let freq_map =
-            utils::calc_allele_frequency(&mut records, _inds.v().len() * 2, _sites.len())?;
+            utils::calc_allele_frequency(&mut records, _inds.v().len() * 2, _sites.len())
+                .context(GtencodeUtilsSnafu)?;
 
-        records.sort_by_genome()?;
-        records.is_sorted_by_genome()?;
+        records.sort_by_genome().context(GenotypeRareSnafu)?;
+        records.is_sorted_by_genome().context(GenotypeRareSnafu)?;
 
-        let (pairs, row_genomes, col_genomes) = utils::prep_pairs(&records, genomes, lists)?;
+        let (pairs, row_genomes, col_genomes) =
+            utils::prep_pairs(&records, genomes, lists).context(GtencodeUtilsSnafu)?;
         let base_sum = utils::calc_base_relationship(&freq_map);
 
         // run in parallel and collect row results
@@ -137,7 +139,7 @@ pub fn main_grm(args: &Commands) -> Result<()> {
 
             println!("WARN: output option is specified, results are not printed on the screen, check file {p:?}");
             // println!("\n writing...");
-            resmat.into_parquet(&p)?
+            resmat.into_parquet(&p).context(IoSnafu)?
         }
     }
     Ok(())

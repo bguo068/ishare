@@ -6,7 +6,7 @@ use snafu::prelude::*;
 #[derive(Debug, Snafu)]
 pub enum Error {
     // non-local
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Individuals {
         // non leaf
         #[snafu(backtrace)]
@@ -25,7 +25,7 @@ pub fn main_samples(args: &Commands) -> Result<()> {
         idx_genome,
     } = args
     {
-        let inds = Individuals::from_parquet_file(ind)?;
+        let inds = Individuals::from_parquet_file(ind).context(IndividualsSnafu)?;
 
         let print_sample = |i: usize, s: &str| {
             println!(

@@ -7,19 +7,19 @@ use snafu::prelude::*;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GenotypeRare {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Individual {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::indiv::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     UtilsPath {
         // non leaf
         #[snafu(backtrace)]
@@ -48,7 +48,7 @@ pub fn main_records(args: &Commands) -> Result<()> {
         use std::time::Instant;
         let start = Instant::now();
         println!("# Loading genotype records ...");
-        let mut records = GenotypeRecords::from_parquet_file(rec)?;
+        let mut records = GenotypeRecords::from_parquet_file(rec).context(GenotypeRareSnafu)?;
         let duration = start.elapsed();
         println!("# Loading Time : {duration:?}");
 
@@ -59,7 +59,10 @@ pub fn main_records(args: &Commands) -> Result<()> {
                 choosen_genome.push(*g);
             }
             _ => {
-                let inds = Individuals::from_parquet_file(from_prefix(rec, "ind")?)?;
+                let inds = Individuals::from_parquet_file(
+                    from_prefix(rec, "ind").context(UtilsPathSnafu)?,
+                )
+                .context(IndividualSnafu)?;
 
                 match samples.as_ref() {
                     Some(sfname) => {
@@ -89,7 +92,9 @@ pub fn main_records(args: &Commands) -> Result<()> {
 
         choosen_genome.sort();
 
-        records.subset_by_genomes(choosen_genome.as_slice())?;
+        records
+            .subset_by_genomes(choosen_genome.as_slice())
+            .context(GenotypeRareSnafu)?;
 
         if let Some(p) = pos {
             records.records_mut().retain(|x| x.get_position() == *p);
@@ -98,7 +103,9 @@ pub fn main_records(args: &Commands) -> Result<()> {
         match out {
             Some(out) => {
                 println!("output records counts: {}", records.records().len());
-                records.into_parquet_file(from_prefix(out, "rec")?)?;
+                records
+                    .into_parquet_file(from_prefix(out, "rec").context(UtilsPathSnafu)?)
+                    .context(GenotypeRareSnafu)?;
             }
             None => records.records().iter().for_each(|r| {
                 println!("{r:?}");

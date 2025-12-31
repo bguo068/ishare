@@ -10,28 +10,28 @@ use snafu::prelude::*;
 #[derive(Debug, Snafu)]
 #[snafu(visibility)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     IbdutilsEncode {
         // non leaf
         #[snafu(source(from(encode::Error, Box::new)))]
         #[snafu(backtrace)]
         source: Box<encode::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     IbdutilsCompare {
         // non leaf
         #[snafu(source(from(compare::Error, Box::new)))]
         #[snafu(backtrace)]
         source: Box<compare::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     IbdutilsUnrelated {
         // non leaf
         #[snafu(source(from(unrelated::Error, Box::new)))]
         #[snafu(backtrace)]
         source: Box<unrelated::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     IbdutilsCoverage {
         // non leaf
         #[snafu(source(from(coverage::Error, Box::new)))]
@@ -39,11 +39,12 @@ pub enum Error {
         source: Box<coverage::Error>,
     },
     #[cfg(feature = "plotibd")]
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     IbdutilsPlotibd {
         // non leaf
         #[snafu(backtrace)]
-        source: plotibd::Error,
+        #[snafu(source(from(plotibd::Error, Box::new)))]
+        source: Box<plotibd::Error>,
     },
 }
 type Result<T> = std::result::Result<T, Error>;
@@ -60,12 +61,22 @@ fn main_entry() -> Result<()> {
 
     match &cli.command {
         Some(c) => match c {
-            args @ Commands::Encode { .. } => encode::main_encode(args)?,
-            args @ Commands::Compare { .. } => compare::main_compare(args)?,
+            args @ Commands::Encode { .. } => {
+                encode::main_encode(args).context(IbdutilsEncodeSnafu)?
+            }
+            args @ Commands::Compare { .. } => {
+                compare::main_compare(args).context(IbdutilsCompareSnafu)?
+            }
             #[cfg(feature = "plotibd")]
-            args @ Commands::PlotIBD { .. } => plotibd::main_plotibd(args)?,
-            args @ Commands::GetUnrelated { .. } => unrelated::main_unrelated(args)?,
-            args @ Commands::Coverage { .. } => coverage::main_coverage(args)?,
+            args @ Commands::PlotIBD { .. } => {
+                plotibd::main_plotibd(args).context(IbdutilsPlotibdSnafu)?
+            }
+            args @ Commands::GetUnrelated { .. } => {
+                unrelated::main_unrelated(args).context(IbdutilsUnrelatedSnafu)?
+            }
+            args @ Commands::Coverage { .. } => {
+                coverage::main_coverage(args).context(IbdutilsCoverageSnafu)?
+            }
         },
 
         None => {

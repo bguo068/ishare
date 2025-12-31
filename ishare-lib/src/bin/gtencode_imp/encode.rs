@@ -18,45 +18,45 @@ use snafu::prelude::*;
 #[derive(Debug, Snafu)]
 pub enum Error {
     // outside
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Genome {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genome::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     UtilsPath {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::utils::path::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Vcf {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::vcf::Error,
     },
 
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Sites {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::site::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GenotypeCommon {
         // non leaf
         #[snafu(backtrace)]
         #[snafu(source(from(ishare::genotype::common::Error, Box::new)))]
         source: Box<ishare::genotype::common::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GenotypeRare {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Individual {
         // non leaf
         #[snafu(backtrace)]
@@ -131,9 +131,10 @@ pub fn main_encode(args: &Commands) -> Result<()> {
 
     // encoding
     let ginfo = if matches!( genome_info.as_path().extension(), Some(ext) if ext == ".toml") {
-        GenomeInfo::from_toml_file(genome_info)?
+        GenomeInfo::from_toml_file(genome_info).context(GenomeSnafu)?
     } else {
-        let genome = Genome::load_from_bincode_file(genome_info.to_string_lossy().as_ref())?;
+        let genome = Genome::load_from_bincode_file(genome_info.to_string_lossy().as_ref())
+            .context(GenomeSnafu)?;
         genome.ginfo().clone()
     };
 
@@ -168,12 +169,12 @@ pub fn main_encode(args: &Commands) -> Result<()> {
 
     // construct output file names
     let gt_file = if *matrix {
-        from_prefix(out, "mat")?
+        from_prefix(out, "mat").context(UtilsPathSnafu)?
     } else {
-        from_prefix(out, "rec")?
+        from_prefix(out, "rec").context(UtilsPathSnafu)?
     };
-    let sites_file = from_prefix(out, "sit")?;
-    let ind_file = from_prefix(out, "ind")?;
+    let sites_file = from_prefix(out, "sit").context(UtilsPathSnafu)?;
+    let ind_file = from_prefix(out, "ind").context(UtilsPathSnafu)?;
 
     if *matrix {
         // parallel running
@@ -187,7 +188,8 @@ pub fn main_encode(args: &Commands) -> Result<()> {
                     vcf,
                     *threshold_maf,
                     region,
-                )?;
+                )
+                .context(VcfSnafu)?;
                 if region.is_some() {
                     println!("{region:?}");
                 }
@@ -204,14 +206,18 @@ pub fn main_encode(args: &Commands) -> Result<()> {
         }
 
         // sort
-        let orders = sites.sort_by_position_then_allele()?;
-        let gm_ordered = gm.reorder_rows(&orders)?;
+        let orders = sites.sort_by_position_then_allele().context(SitesSnafu)?;
+        let gm_ordered = gm.reorder_rows(&orders).context(GenotypeCommonSnafu)?;
 
         // write to files
 
-        gm_ordered.into_parquet_file(&gt_file)?;
-        sites.into_parquet_file(&sites_file)?;
-        individuals.into_parquet_file(&ind_file)?;
+        gm_ordered
+            .into_parquet_file(&gt_file)
+            .context(GenotypeCommonSnafu)?;
+        sites.into_parquet_file(&sites_file).context(SitesSnafu)?;
+        individuals
+            .into_parquet_file(&ind_file)
+            .context(IndividualSnafu)?;
     } else {
         // parallel running
         let mut res: Vec<(Sites, Individuals, GenotypeRecords)> = regions
@@ -219,7 +225,8 @@ pub fn main_encode(args: &Commands) -> Result<()> {
             .into_par_iter()
             .map(|region| {
                 // (sites, individuals, GenotypeRecords)
-                let res = read_vcf(&target_samples, &ginfo, vcf, *threshold_maf, region)?;
+                let res = read_vcf(&target_samples, &ginfo, vcf, *threshold_maf, region)
+                    .context(VcfSnafu)?;
                 if region.is_some() {
                     println!("{region:?}");
                 }
@@ -237,12 +244,16 @@ pub fn main_encode(args: &Commands) -> Result<()> {
 
         // sort
         _ = sites.sort_by_position_then_allele();
-        records.sort_by_genome()?;
+        records.sort_by_genome().context(GenotypeRareSnafu)?;
         // write to files
 
-        records.into_parquet_file(&gt_file)?;
-        sites.into_parquet_file(&sites_file)?;
-        individuals.into_parquet_file(&ind_file)?;
+        records
+            .into_parquet_file(&gt_file)
+            .context(GenotypeRareSnafu)?;
+        sites.into_parquet_file(&sites_file).context(SitesSnafu)?;
+        individuals
+            .into_parquet_file(&ind_file)
+            .context(IndividualSnafu)?;
     }
 
     // report encoding time used

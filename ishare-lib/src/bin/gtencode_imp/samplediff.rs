@@ -15,27 +15,27 @@ use std::sync::Arc;
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Arrow {
         // leaf
         #[snafu(source(from(ArrowError, Box::new)))]
         source: Box<ArrowError>,
         backtrace: Box<Option<Backtrace>>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Parquet {
         // leaf
         #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
         source: Box<parquet::errors::ParquetError>,
         backtrace: Box<Option<Backtrace>>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GenotypeRare {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Individual {
         // non leaf
         #[snafu(backtrace)]
@@ -45,13 +45,13 @@ pub enum Error {
         // leaf
         backtrace: Box<Option<Backtrace>>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Io {
         // leaf
         backtrace: Box<Option<Backtrace>>,
         source: std::io::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     UtilsPath {
         // non leaf
         #[snafu(backtrace)]
@@ -63,11 +63,11 @@ type Result<T> = std::result::Result<T, Error>;
 
 pub fn main_samplediff(args: &Commands) -> Result<()> {
     if let Commands::SampleDiff { rec, pairs, out } = args {
-        let mut records = GenotypeRecords::from_parquet_file(rec)?;
-        records.is_sorted_by_genome()?;
+        let mut records = GenotypeRecords::from_parquet_file(rec).context(GenotypeRareSnafu)?;
+        records.is_sorted_by_genome().context(GenotypeRareSnafu)?;
 
         let ind_file = rec.with_extension("ind");
-        let inds = Individuals::from_parquet_file(&ind_file)?;
+        let inds = Individuals::from_parquet_file(&ind_file).context(IndividualSnafu)?;
 
         let mut res_vec = prepare_pairs(&inds, pairs)?;
 
@@ -94,7 +94,8 @@ fn prepare_pairs(inds: &Individuals, pairs: &Option<PathBuf>) -> Result<Vec<(u32
     let mut res_vec = Vec::<(u32, u32, u32)>::new();
     let ind_m = inds.m();
     match pairs.as_ref() {
-        Some(pair_path) => std::fs::read_to_string(pair_path)?
+        Some(pair_path) => std::fs::read_to_string(pair_path)
+            .context(IoSnafu)?
             .trim()
             .split("\n")
             .try_for_each(|line| -> Result<()> {
@@ -230,7 +231,7 @@ fn output(out: &Option<String>, res_vec: &[(u32, u32, u32)], inds: &Individuals)
     match out.as_ref() {
         Some(output) => {
             println!("WARN: output option is specified, results are not printed on the screen");
-            let out_path = from_prefix(output, "pq")?;
+            let out_path = from_prefix(output, "pq").context(UtilsPathSnafu)?;
             let sample1 = UInt32Array::from(res_vec.iter().map(|item| item.0).collect_vec());
             let sample2 = UInt32Array::from(res_vec.iter().map(|item| item.1).collect_vec());
             let discord = UInt32Array::from(res_vec.iter().map(|item| item.2).collect_vec());
@@ -239,17 +240,19 @@ fn output(out: &Option<String>, res_vec: &[(u32, u32, u32)], inds: &Individuals)
                 ("sample_id1", Arc::new(sample1) as ArrayRef),
                 ("sample_id2", Arc::new(sample2) as ArrayRef),
                 ("discordance", Arc::new(discord) as ArrayRef),
-            ])?;
+            ])
+            .context(ArrowSnafu)?;
 
-            let file = std::fs::File::create(&out_path)?;
+            let file = std::fs::File::create(&out_path).context(IoSnafu)?;
             let props = WriterProperties::builder()
                 .set_compression(Compression::SNAPPY)
                 .build();
-            let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))?;
+            let mut writer =
+                ArrowWriter::try_new(file, batch.schema(), Some(props)).context(ParquetSnafu)?;
 
-            writer.write(&batch)?;
+            writer.write(&batch).context(ParquetSnafu)?;
 
-            writer.close()?;
+            writer.close().context(ParquetSnafu)?;
         }
         None => {
             for (s1, s2, discordance) in res_vec {

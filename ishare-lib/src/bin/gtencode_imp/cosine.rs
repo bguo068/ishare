@@ -16,19 +16,19 @@ use std::{
 use snafu::prelude::*;
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GenotypeRare {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GtencodeUtils {
         // non leaf
         #[snafu(backtrace)]
         source: super::utils::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Matrix {
         // non leaf
         #[snafu(backtrace)]
@@ -60,13 +60,17 @@ pub fn main_cosine(args: &Commands) -> Result<()> {
         let min_magnitude = min_magnitude.unwrap_or(-0.001f64);
         let min_dot_prod = min_dot_prod.unwrap_or(0i32);
 
-        let records = GenotypeRecords::from_parquet_file(rec)?;
-        ensure!(records.is_sorted_by_genome()?, RecordNotSortedSnafu {});
+        let records = GenotypeRecords::from_parquet_file(rec).context(GenotypeRareSnafu)?;
+        ensure!(
+            records.is_sorted_by_genome().context(GenotypeRareSnafu)?,
+            RecordNotSortedSnafu {}
+        );
 
         let ind_file = rec.with_extension("ind");
         let _inds = Individuals::from_parquet_file(&ind_file);
 
-        let (pairs, row_genomes, col_genomes) = utils::prep_pairs(&records, genomes, lists)?;
+        let (pairs, row_genomes, col_genomes) =
+            utils::prep_pairs(&records, genomes, lists).context(GtencodeUtilsSnafu)?;
 
         // run in parallel and collect row results
         let res: Vec<(u32, u32, i32, i32, i32)> = pairs
@@ -146,7 +150,7 @@ pub fn main_cosine(args: &Commands) -> Result<()> {
             // let resmat0 = resmat.clone();
             println!("WARN: output option is specified, results are not printed on the screen, check file {p:?}");
             // println!("\n writing...");
-            resmat.into_parquet(&p)?;
+            resmat.into_parquet(&p).context(MatrixSnafu)?;
         }
     }
     Ok(())

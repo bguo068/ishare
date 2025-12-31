@@ -7,7 +7,7 @@ use std::backtrace::Backtrace;
 use snafu::prelude::*;
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Histogram {
         // non leaf
         #[snafu(backtrace)]

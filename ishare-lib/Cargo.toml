@@ -47,3 +47,4 @@ tempfile = "3.23.0"
 # # need to fix this so can build binary with skato functionality
 skato = ["dep:skato"]
 plotibd = ["dep:plotters", "dep:tokio", "dep:axum", "dep:hyper"]
+# default = ['skato', 'plotibd']

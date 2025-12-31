@@ -17,13 +17,13 @@ use snafu::{ensure, OptionExt, ResultExt, Snafu};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GmapError {
         // non leaf
         #[snafu(backtrace, source(from(gmap::Error, Box::new)))]
         source: Box<gmap::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     SiteError {
         // non leaf
         #[snafu(backtrace, source(from(crate::site::Error, Box::new)))]
@@ -456,7 +456,9 @@ pub fn read_vcf_for_genotype_matrix(
             continue;
         }
         gm.extend_gt_calls(gt_iter);
-        sites.add_site_with_bytes(pos, alleles[0])?;
+        sites
+            .add_site_with_bytes(pos, alleles[0])
+            .context(SiteSnafu)?;
         sites.append_bytes_to_last_allele(b" ");
         sites.append_bytes_to_last_allele(alleles[1]);
 
@@ -541,7 +543,7 @@ fn output_rare_allele_records(
     }
 
     // add sites info
-    sites.add_site(pos, ab)?;
+    sites.add_site(pos, ab).context(SiteSnafu)?;
     Ok(())
 }
 
@@ -599,7 +601,7 @@ pub fn find_intervals_with_low_snps_density(
     for start in ginfo.gwstarts.iter() {
         cm_boundaries.push(gmap.get_cm(*start));
     }
-    cm_boundaries.push(gmap.get_size_cm()?);
+    cm_boundaries.push(gmap.get_size_cm().context(GmapSnafu)?);
 
     // for each chromosome, add windows with size of window_size_cm centimorgans
     let mut bp_win_boundaries = vec![];

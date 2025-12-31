@@ -10,14 +10,14 @@ use parquet::errors::ParquetError;
 use snafu::prelude::*;
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Parquet {
         // non leaf
         #[snafu(source(from(ParquetError, Box::new)))]
         source: Box<ParquetError>,
         backtrace: Box<Option<Backtrace>>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Arrow {
         // non leaf
         #[snafu(source(from(ArrowError, Box::new)))]
@@ -44,18 +44,20 @@ pub fn write_pair_total(
     let batch = RecordBatch::try_from_iter(vec![
         (colname1.to_owned(), Arc::new(t1) as ArrayRef),
         (colname2.to_owned(), Arc::new(t2) as ArrayRef),
-    ])?;
+    ])
+    .context(ArrowSnafu)?;
 
     let file = File::create(p.as_ref()).context(StdIoSnafu)?;
 
     // Default writer properties
     let props = WriterProperties::builder().build();
 
-    let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))?;
+    let mut writer =
+        ArrowWriter::try_new(file, batch.schema(), Some(props)).context(ParquetSnafu)?;
 
-    writer.write(&batch)?;
+    writer.write(&batch).context(ParquetSnafu)?;
 
     // writer must be closed to write footer
-    writer.close()?;
+    writer.close().context(ParquetSnafu)?;
     Ok(())
 }

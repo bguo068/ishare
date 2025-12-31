@@ -16,26 +16,26 @@ use snafu::prelude::*;
 #[derive(Debug, Snafu)]
 #[snafu(visibility)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Indiv {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::indiv::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Genome {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genome::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Gmap {
         // non leaf
         #[snafu(backtrace)]
         #[snafu(source(from(ishare::gmap::Error, Box::new)))]
         source: Box<ishare::gmap::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Ibd {
         // non leaf
         #[snafu(source(from(ishare::share::ibd::Error, Box::new)))]
@@ -67,11 +67,11 @@ pub fn main_unrelated(args: &Commands) -> Result<()> {
             .format_module_path(false)
             .init();
         info!("read genome toml file");
-        let ginfo = Arc::new(GenomeInfo::from_toml_file(genome_info)?);
+        let ginfo = Arc::new(GenomeInfo::from_toml_file(genome_info).context(GenomeSnafu)?);
         info!("read genetic map files");
-        let gmap = Arc::new(gmap::GeneticMap::from_genome_info(&ginfo)?);
+        let gmap = Arc::new(gmap::GeneticMap::from_genome_info(&ginfo).context(GmapSnafu)?);
         info!("read samples list file");
-        let (inds, _inds_opt) = Individuals::from_txt_file(sample_lst)?;
+        let (inds, _inds_opt) = Individuals::from_txt_file(sample_lst).context(IndivSnafu)?;
         let inds = Arc::new(inds);
 
         // read ibd
@@ -101,24 +101,24 @@ fn read_ibd(
 
     info!("read ibd list file");
     if fmt.as_str() == "hapibd" {
-        ibd.read_hapibd_dir(ibd_dir)?;
+        ibd.read_hapibd_dir(ibd_dir).context(IbdSnafu)?;
     } else if fmt.as_str() == "tskibd" {
-        ibd.read_tskibd_dir(ibd_dir)?;
+        ibd.read_tskibd_dir(ibd_dir).context(IbdSnafu)?;
     } else if fmt.as_str() == "hmmibd" {
-        ibd.read_hmmibd_dir(ibd_dir)?;
+        ibd.read_hmmibd_dir(ibd_dir).context(IbdSnafu)?;
     } else {
         panic!("format {fmt} is not supported.");
     }
     ibd.infer_ploidy();
     // this will also sort by samples
     info!("sort and merge ibd");
-    ibd.merge()?;
+    ibd.merge().context(IbdSnafu)?;
     Ok(ibd)
 }
 
 fn get_related_pairs(ibd: &IbdSet, threshold: f64) -> Result<Vec<(u32, u32)>> {
     let gmap = ibd.get_gmap();
-    let gsize = gmap.get_size_cm()?;
+    let gsize = gmap.get_size_cm().context(GmapSnafu)?;
     let min_totibd_related = gsize * threshold as f32;
     info!("related pair total ibd theshold in cM: {min_totibd_related:.3}",);
 

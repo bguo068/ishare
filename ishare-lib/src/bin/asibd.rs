@@ -76,70 +76,70 @@ use std::backtrace::Backtrace;
 #[derive(Debug, Snafu)]
 #[snafu(visibility)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Io {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::io::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Sites {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::site::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Indiv {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::indiv::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Genome {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genome::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GenotypeRare {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Vcf {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::vcf::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Gmap {
         // non leaf
         #[snafu(backtrace)]
         #[snafu(source(from(ishare::gmap::Error, Box::new)))]
         source: Box<ishare::gmap::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Ibd {
         // non leaf
         #[snafu(backtrace)]
         #[snafu(source(from(ishare::share::ibd::Error, Box::new)))]
         source: Box<ishare::share::ibd::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Asibd {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::rfmix::asibd::Error,
     },
 
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     StdIo {
         // leaf
         source: std::io::Error,
         backtrace: Box<Option<Backtrace>>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     RfmixFb {
         // non-leaf
         #[snafu(source(from(ishare::rfmix::fb::Error, Box::new)))]
@@ -171,17 +171,18 @@ fn main_entry() -> Result<()> {
     let cli = Cli::parse();
 
     eprintln!("reading gnome.toml");
-    let ginfo = Arc::new(GenomeInfo::from_toml_file(&cli.genome)?);
+    let ginfo = Arc::new(GenomeInfo::from_toml_file(&cli.genome).context(GenomeSnafu)?);
     eprintln!("reading genetic map files");
-    let gmap = Arc::new(GeneticMap::from_genome_info(&ginfo)?);
+    let gmap = Arc::new(GeneticMap::from_genome_info(&ginfo).context(GmapSnafu)?);
     eprintln!("reading sample list");
-    let (indivs, opt) = Individuals::from_txt_file(&cli.samples)?;
+    let (indivs, opt) = Individuals::from_txt_file(&cli.samples).context(IndivSnafu)?;
     let indivs = Arc::new(indivs);
     assert!(opt.is_none(), "should use single column samples list");
 
     eprintln!("reading ibd file");
     let mut ibd = IbdSet::new(gmap.clone(), ginfo.clone(), indivs.clone());
-    ibd.read_hapibd_file(&cli.hapibd_ibd, cli.min_ibd_seg_cm)?;
+    ibd.read_hapibd_file(&cli.hapibd_ibd, cli.min_ibd_seg_cm)
+        .context(IbdSnafu)?;
     ibd.sort_by_haplotypes();
 
     eprintln!("reading LA position list");
@@ -196,7 +197,8 @@ fn main_entry() -> Result<()> {
             &indivs,
             cli.min_prob,
             cli.buffer_size_mb,
-        )?;
+        )
+        .context(RfmixFbSnafu)?;
         let ancestry = fb.get_ancestries().to_owned();
         let la_set = LASet::from_fbmat(&fb);
         (ancestry, la_set)
@@ -205,16 +207,23 @@ fn main_entry() -> Result<()> {
 
     eprintln!("inferring as-ibd file");
     let mut asibd = ASIBDSet::new(gmap, ginfo, indivs, ancestry);
-    asibd.get_asibd_from_ibdsets_and_laset(&ibd, &la_set)?;
+    asibd
+        .get_asibd_from_ibdsets_and_laset(&ibd, &la_set)
+        .context(AsibdSnafu)?;
 
     eprintln!("writing as-ibd file");
-    let out = File::create(&cli.out).map(BufWriter::new)?;
-    asibd.flush(out)?;
+    let out = File::create(&cli.out)
+        .map(BufWriter::new)
+        .context(StdIoSnafu)?;
+    asibd.flush(out).context(AsibdSnafu)?;
     Ok(())
 }
 
 fn read_chr_positions(p: impl AsRef<Path>, ginfo: &GenomeInfo) -> Result<Vec<u32>> {
-    let buf = File::open(p.as_ref()).map(read_to_string)??;
+    let buf = File::open(p.as_ref())
+        .map(read_to_string)
+        .context(StdIoSnafu)?
+        .context(StdIoSnafu)?;
     let mut v = vec![];
     buf.trim().split("\n").try_for_each(|x| {
         let mut splits = x.split("\t");

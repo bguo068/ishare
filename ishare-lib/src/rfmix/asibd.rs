@@ -15,7 +15,7 @@ use super::fb::LASet;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     LASegError {
         // non leaf, delegate backtrace
         #[snafu(backtrace, source(from(super::fb::Error, Box::new)))]
@@ -107,7 +107,9 @@ impl ASIBDSet {
             let (i, m, j, n) = blk[0].haplotype_pair();
             let hap1 = (i << 1) + m as u32;
             let hap2 = (j << 1) + n as u32;
-            tree = la_set.get_hap_pair_la_segs2(hap1, hap2, tree)?;
+            tree = la_set
+                .get_hap_pair_la_segs2(hap1, hap2, tree)
+                .context(LASegSnafu)?;
 
             for ibdseg in blk {
                 for elem in tree.query(ibdseg.s..ibdseg.e) {

@@ -1,4 +1,5 @@
 use std::{
+    backtrace::Backtrace,
     num::ParseIntError,
     path::{Path, PathBuf},
     sync::Arc,
@@ -28,37 +29,39 @@ use snafu::prelude::*;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Indiv {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::indiv::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Genome {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genome::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Gmap {
         // non leaf
         #[snafu(backtrace)]
-        source: ishare::gmap::Error,
+        #[snafu(source(from(ishare::gmap::Error, Box::new)))]
+        source: Box<ishare::gmap::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Ibd {
         // non leaf
         #[snafu(backtrace)]
-        source: ishare::share::ibd::Error,
+        #[snafu(source(from(ishare::share::ibd::Error, Box::new)))]
+        source: Box<ishare::share::ibd::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Hyper {
         // leaf
         source: hyper::Error,
         backtrace: Box<Option<Backtrace>>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     ParseInt {
         // leaf
         source: ParseIntError,
@@ -77,7 +80,7 @@ pub enum Error {
     },
     Other {
         // leaf
-        source: Whatever,
+        source: Box<Whatever>,
         backtrace: Box<Option<Backtrace>>,
     },
     ZeroNumChromosome {
@@ -107,7 +110,9 @@ impl IntoResponse for Error {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
             // Map your errors to status codes here
-            Error::ZeroNumChromosome => (StatusCode::BAD_REQUEST, self.to_string()),
+            Error::ZeroNumChromosome { backtrace: _ } => {
+                (StatusCode::BAD_REQUEST, self.to_string())
+            }
             _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };
 
@@ -176,12 +181,12 @@ fn prepare_app_state(args: &Commands) -> Result<AppState> {
         port,
     } = args
     {
-        let ginfo = Arc::new(genome::GenomeInfo::from_toml_file(genome_info)?);
-        let gmap = Arc::new(gmap::GeneticMap::from_genome_info(&ginfo)?);
+        let ginfo = Arc::new(genome::GenomeInfo::from_toml_file(genome_info).context(GenomeSnafu)?);
+        let gmap = Arc::new(gmap::GeneticMap::from_genome_info(&ginfo).context(GmapSnafu)?);
 
-        let (inds1, inds1_opt) = Individuals::from_txt_file(sample_lst1)?;
+        let (inds1, inds1_opt) = Individuals::from_txt_file(sample_lst1).context(IndivSnafu)?;
         let inds1 = Arc::new(inds1);
-        let (inds2, inds2_opt) = Individuals::from_txt_file(sample_lst2)?;
+        let (inds2, inds2_opt) = Individuals::from_txt_file(sample_lst2).context(IndivSnafu)?;
         let inds2 = Arc::new(inds2);
         let mut ibd1 = IbdSet::new(gmap.clone(), ginfo.clone(), inds1.clone());
         let mut ibd2 = IbdSet::new(gmap, ginfo.clone(), inds2);
@@ -193,15 +198,15 @@ fn prepare_app_state(args: &Commands) -> Result<AppState> {
             .zip([inds1_opt, inds2_opt].into_iter())
         {
             if fmt.as_str() == "hapibd" {
-                ibd.read_hapibd_dir(dir)?;
+                ibd.read_hapibd_dir(dir).context(IbdSnafu)?;
                 ibd.sort_by_samples();
                 ibd.infer_ploidy();
             } else if fmt.as_str() == "tskibd" {
-                ibd.read_tskibd_dir(dir)?;
+                ibd.read_tskibd_dir(dir).context(IbdSnafu)?;
                 ibd.sort_by_haplotypes();
                 ibd.infer_ploidy();
             } else if fmt.as_str() == "hmmibd" {
-                ibd.read_hmmibd_dir(dir)?;
+                ibd.read_hmmibd_dir(dir).context(IbdSnafu)?;
                 ibd.sort_by_haplotypes();
                 ibd.infer_ploidy();
             } else {
@@ -212,7 +217,8 @@ fn prepare_app_state(args: &Commands) -> Result<AppState> {
                     ibd.covert_to_haploid(Arc::new(ind_), &converter);
                 }
                 Some((converter, ind_, PloidConvertDirection::Haploid2Diploid)) => {
-                    ibd.covert_to_het_diploid(Arc::new(ind_), &converter)?;
+                    ibd.covert_to_het_diploid(Arc::new(ind_), &converter)
+                        .context(IbdSnafu)?;
                 }
                 None => {}
             }
@@ -288,7 +294,7 @@ fn plot_svg(
     v1: &[IbdSeg],
     v2: &[IbdSeg],
     ginfo: &GenomeInfo,
-) -> std::result::Result<String, Whatever> {
+) -> std::result::Result<String, Box<Whatever>> {
     let mut ret = String::new();
 
     {
@@ -296,21 +302,24 @@ fn plot_svg(
         let root_area = SVGBackend::with_string(&mut ret, (1024, 768)).into_drawing_area();
         root_area
             .fill(&WHITE)
-            .whatever_context("error in fill root area")?;
+            .whatever_context("error in fill root area")
+            .map_err(Box::new)?;
 
         let nchrom = ginfo.chromnames.len() as f32;
         let chrsz_max = *ginfo
             .chromsize
             .iter()
             .max()
-            .whatever_context("zero number of chromosome")? as f32;
+            .whatever_context("zero number of chromosome")
+            .map_err(Box::new)? as f32;
         let mut cc = ChartBuilder::on(&root_area)
             .margin(40)
             .set_left_and_bottom_label_area_size(50)
             .set_label_area_size(LabelAreaPosition::Left, 60)
             .caption("IBD shared by a pair of samples", ("sans-serif", 30))
             .build_cartesian_2d(-1.0f32..chrsz_max, -1.0f32..nchrom)
-            .whatever_context("error building cartesian 2d")?;
+            .whatever_context("error building cartesian 2d")
+            .map_err(Box::new)?;
 
         cc.configure_mesh()
             .x_labels(20)
@@ -322,7 +331,8 @@ fn plot_svg(
             .x_label_formatter(&|v| format!("{v:.0}"))
             .y_label_formatter(&|v| format!("{v:.0}"))
             .draw()
-            .whatever_context("draw error")?;
+            .whatever_context("draw error")
+            .map_err(Box::new)?;
 
         // draw IBD segments
         let mut points = vec![];
@@ -351,7 +361,8 @@ fn plot_svg(
 
                 let s = cc
                     .draw_series(ls)
-                    .whatever_context("error in draw_series")?;
+                    .whatever_context("error in draw_series")
+                    .map_err(Box::new)?;
                 let legstyle = |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], *color);
                 if iseg == 0 {
                     s.label(label).legend(legstyle);
@@ -380,17 +391,20 @@ fn plot_svg(
                     + Text::new(chrname.to_string(), (-size - 5, 0), ts)
             },
         ))
-        .whatever_context("error in draw_series")?;
+        .whatever_context("error in draw_series")
+        .map_err(Box::new)?;
 
         cc.configure_series_labels()
             .border_style(BLACK)
             .draw()
-            .whatever_context("error in draw")?;
+            .whatever_context("error in draw")
+            .map_err(Box::new)?;
 
         // To avoid the IO failure being ignored silently, we manually call the present function
         root_area
             .present()
-            .whatever_context("Unable to write result to file")?;
+            .whatever_context("Unable to write result to file")
+            .map_err(Box::new)?;
     }
 
     Ok(ret)
@@ -429,8 +443,8 @@ async fn handler_plotibd(
     state: State<AppState>,
 ) -> Result<axum::response::Html<String>> {
     let inds = &state.inds;
-    let mut id1: u32 = ids.id1.parse()?;
-    let mut id2: u32 = ids.id2.parse()?;
+    let mut id1: u32 = ids.id1.parse().context(ParseIntSnafu)?;
+    let mut id2: u32 = ids.id2.parse().context(ParseIntSnafu)?;
     let n = inds.v().len();
     if (id1 == 0) && (id2 == 0) {
         let mut rng = rand::rng();

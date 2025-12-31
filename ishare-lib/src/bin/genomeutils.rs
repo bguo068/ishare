@@ -4,22 +4,16 @@
 use std::{backtrace::Backtrace, path::PathBuf};
 
 use clap::{Parser, Subcommand};
-use ishare::{genome::*, gmap, utils::error::show_snafu_error};
+use ishare::{genome::Genome, utils::error::show_snafu_error};
 use snafu::prelude::*;
 
 #[derive(Debug, Snafu)]
 enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Genome {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genome::Error,
-    },
-    #[snafu(transparent)]
-    Gmap {
-        #[snafu(source(from(gmap::Error, Box::new)))]
-        #[snafu(backtrace)]
-        source: Box<gmap::Error>,
     },
     // local
     MissBothBppercmAndRate {
@@ -166,7 +160,10 @@ fn main_entry() -> Result<()> {
     match cli.command {
         Commands::ToBinaryFile { from_toml, to_bin } => {
             let p = to_bin.unwrap_or(from_toml.with_extension("bin"));
-            Genome::load_from_text_file(&from_toml)?.save_to_bincode_file(&p)?;
+            Genome::load_from_text_file(&from_toml)
+                .context(GenomeSnafu)?
+                .save_to_bincode_file(&p)
+                .context(GenomeSnafu)?;
         }
         Commands::ToTextFiles {
             from_bin,
@@ -174,8 +171,10 @@ fn main_entry() -> Result<()> {
             to_map_prefix,
         } => {
             let p = to_toml.unwrap_or(from_bin.with_extension("bin"));
-            let mut genome = Genome::load_from_bincode_file(&from_bin)?;
-            genome.save_to_text_files(&p.to_string_lossy(), &to_map_prefix.to_string_lossy())?;
+            let mut genome = Genome::load_from_bincode_file(&from_bin).context(GenomeSnafu)?;
+            genome
+                .save_to_text_files(&p.to_string_lossy(), &to_map_prefix.to_string_lossy())
+                .context(GenomeSnafu)?;
         }
         Commands::GenerateByName {
             name,
@@ -183,14 +182,16 @@ fn main_entry() -> Result<()> {
             to_toml,
             to_map_prefix,
         } => {
-            let mut genome = Genome::new_from_name(name)?;
+            let mut genome = Genome::new_from_name(name).context(GenomeSnafu)?;
             if let Some(to_bin) = to_bin {
-                genome.save_to_bincode_file(&to_bin)?;
+                genome.save_to_bincode_file(&to_bin).context(GenomeSnafu)?;
             } else if let Some(to_toml) = to_toml {
-                genome.save_to_text_files(
-                    &to_toml.to_string_lossy(),
-                    &to_map_prefix.to_string_lossy(),
-                )?;
+                genome
+                    .save_to_text_files(
+                        &to_toml.to_string_lossy(),
+                        &to_map_prefix.to_string_lossy(),
+                    )
+                    .context(GenomeSnafu)?;
             } else {
                 eprintln!("Error: one of --to-bin and --to-toml has to be set");
                 std::process::exit(-1);
@@ -217,14 +218,17 @@ fn main_entry() -> Result<()> {
                 &chrom_size,
                 &chrom_name,
                 rate,
-            )?;
+            )
+            .context(GenomeSnafu)?;
             if let Some(to_bin) = to_bin {
-                genome.save_to_bincode_file(&to_bin)?;
+                genome.save_to_bincode_file(&to_bin).context(GenomeSnafu)?;
             } else if let Some(to_toml) = to_toml {
-                genome.save_to_text_files(
-                    &to_toml.to_string_lossy(),
-                    &to_map_prefix.to_string_lossy(),
-                )?;
+                genome
+                    .save_to_text_files(
+                        &to_toml.to_string_lossy(),
+                        &to_map_prefix.to_string_lossy(),
+                    )
+                    .context(GenomeSnafu)?;
             } else {
                 eprintln!("Error: one of --to-bin and --to-toml has to be set");
                 std::process::exit(-1);

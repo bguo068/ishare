@@ -15,19 +15,19 @@ pub enum Error {
         // leaf
         backtrace: Box<Option<Backtrace>>,
     },
-    #[snafu(transparent)]
-    Genotype {
+    // #[snafu(transparent)]
+    GenotypeRare {
         // non leaf
         #[snafu(backtrace)]
         source: GenotypeError,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Io {
         // leaf
         source: std::io::Error,
         backtrace: Box<Option<Backtrace>>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     ParseInt {
         // leaf
         source: ParseIntError,
@@ -38,15 +38,18 @@ type Result<T> = std::result::Result<T, Error>;
 
 pub fn file_to_u32_vec(p: impl AsRef<Path>) -> Result<Vec<u32>> {
     let mut s = String::new();
-    let mut reader = std::fs::File::open(p).map(std::io::BufReader::new)?;
+    let mut reader = std::fs::File::open(p)
+        .map(std::io::BufReader::new)
+        .context(IoSnafu)?;
     s.clear();
     use std::io::Read;
-    reader.read_to_string(&mut s)?;
+    reader.read_to_string(&mut s).context(IoSnafu)?;
     let mut v: Vec<u32> = s
         .trim()
         .split("\n")
         .map(str::parse)
-        .collect::<std::result::Result<_, _>>()?;
+        .collect::<std::result::Result<_, _>>()
+        .context(ParseIntSnafu)?;
     assert!(!v.is_empty());
     v.sort();
     Ok(v)
@@ -169,7 +172,7 @@ pub fn calc_allele_frequency(
     num_hap: usize,
     num_sites: usize,
 ) -> Result<AHashMap<u32, f64>> {
-    rec.sort_by_position()?;
+    rec.sort_by_position().context(GenotypeRareSnafu)?;
     let mut freq_map = AHashMap::<u32, f64>::with_capacity(num_sites);
     let mut target_pos = u32::MAX;
     let mut cnt = 0u32;
@@ -194,7 +197,7 @@ pub fn calc_allele_frequency(
 }
 
 pub fn calc_allele_count(rec: &mut GenotypeRecords) -> Result<AHashMap<u32, u32>> {
-    rec.sort_by_position()?;
+    rec.sort_by_position().context(GenotypeRareSnafu)?;
     let mut count_map = AHashMap::<u32, u32>::new();
     for set in rec.records().linear_group_by_key(|x| x.get_position()) {
         let pos = set[0].get_position();

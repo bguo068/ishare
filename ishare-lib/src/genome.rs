@@ -47,7 +47,7 @@ pub enum Error {
         // leaf
         backtrace: Box<Option<Backtrace>>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GmapError {
         // non leaf
         // use Box here to avoid the circular dependency between two modules
@@ -345,8 +345,7 @@ impl Genome {
                 ]
             })
             .collect();
-        let gmap = GeneticMap::from_gmap_vec(&gmap_vec, chromsizes)?;
-
+        let gmap = GeneticMap::from_gmap_vec(&gmap_vec, chromsizes).context(GmapSnafu)?;
         Ok(Self { ginfo, gmap })
     }
 
@@ -381,7 +380,8 @@ impl Genome {
             let last = ginfo.gwstarts.last().context(EmptySliceSnafu {})?;
             ginfo.gwstarts.push(*chrlen + *last);
         }
-        let gmap = GeneticMap::from_genome_info(&ginfo)?;
+        let gmap = GeneticMap::from_genome_info(&ginfo).context(GmapSnafu)?;
+
         Ok(Self { ginfo, gmap })
     }
 
@@ -414,13 +414,15 @@ impl Genome {
         }
         self.ginfo.to_toml_file(toml_path)?;
         self.set_gmap_path(toml_path, gmap_path);
-        self.gmap.to_plink_map_files(&self.ginfo)?;
-        Ok(())
+        self.gmap
+            .to_plink_map_files(&self.ginfo)
+            .context(GmapSnafu)?;
+    Ok(())
     }
 
     pub fn load_from_text_file(ginfo_path: impl AsRef<Path>) -> Result<Self> {
         let ginfo = GenomeInfo::from_toml_file(ginfo_path)?;
-        let gmap = GeneticMap::from_genome_info(&ginfo)?;
+        let gmap = GeneticMap::from_genome_info(&ginfo).context(GmapSnafu)?;
         Ok(Self { ginfo, gmap })
     }
 

@@ -13,33 +13,33 @@ use snafu::prelude::*;
 #[derive(Debug, Snafu)]
 #[snafu(visibility)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Indiv {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::indiv::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Genome {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genome::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Gmap {
         // non leaf
         #[snafu(backtrace)]
         #[snafu(source(from(ishare::gmap::Error, Box::new)))]
         source: Box<ishare::gmap::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Ibd {
         // non leaf
         #[snafu(source(from(ishare::share::ibd::Error, Box::new)))]
         #[snafu(backtrace)]
         source: Box<ishare::share::ibd::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Container {
         // non leaf
         #[snafu(backtrace)]
@@ -67,10 +67,10 @@ pub fn main_coverage(args: &Commands) -> Result<()> {
         out,
     } = args
     {
-        let ginfo = Arc::new(genome::GenomeInfo::from_toml_file(genome_info)?);
-        let gmap = Arc::new(gmap::GeneticMap::from_genome_info(&ginfo)?);
+        let ginfo = Arc::new(genome::GenomeInfo::from_toml_file(genome_info).context(GenomeSnafu)?);
+        let gmap = Arc::new(gmap::GeneticMap::from_genome_info(&ginfo).context(GmapSnafu)?);
 
-        let (inds1, inds1_opt) = Individuals::from_txt_file(sample_lst)?;
+        let (inds1, inds1_opt) = Individuals::from_txt_file(sample_lst).context(IndivSnafu)?;
         let mut ibd1 = IbdSet::new(gmap.clone(), ginfo.clone(), Arc::new(inds1));
 
         for (((ibd, fmt), dir), inds_opt) in [&mut ibd1]
@@ -80,17 +80,17 @@ pub fn main_coverage(args: &Commands) -> Result<()> {
             .zip(vec![inds1_opt].into_iter())
         {
             if fmt.as_str() == "hapibd" {
-                ibd.read_hapibd_dir(dir)?;
+                ibd.read_hapibd_dir(dir).context(IbdSnafu)?;
                 if (*prevent_flatten) && (ibd.get_ploidy_status() == IbdSetPloidyStatus::Diploid) {
-                    ibd.merge()?;
+                    ibd.merge().context(IbdSnafu)?;
                 }
                 ibd.infer_ploidy();
             } else if fmt.as_str() == "tskibd" {
-                ibd.read_tskibd_dir(dir)?;
+                ibd.read_tskibd_dir(dir).context(IbdSnafu)?;
                 ibd.sort_by_haplotypes();
                 ibd.infer_ploidy();
             } else if fmt.as_str() == "hmmibd" {
-                ibd.read_hmmibd_dir(dir)?;
+                ibd.read_hmmibd_dir(dir).context(IbdSnafu)?;
                 ibd.sort_by_haplotypes();
                 ibd.infer_ploidy();
             } else {
@@ -109,13 +109,14 @@ pub fn main_coverage(args: &Commands) -> Result<()> {
                     ibd.covert_to_haploid(Arc::new(ind_), &converter);
                 }
                 Some((converter, ind_, PloidConvertDirection::Haploid2Diploid)) => {
-                    ibd.covert_to_het_diploid(Arc::new(ind_), &converter)?;
+                    ibd.covert_to_het_diploid(Arc::new(ind_), &converter)
+                        .context(IbdSnafu)?;
                 }
                 None => {}
             }
         }
 
-        let total_size = gmap.get_size_cm()?;
+        let total_size = gmap.get_size_cm().context(GmapSnafu)?;
         let mut sampling_points_cm: Vec<f32> = vec![];
         let mut cm_sp = *start_cm as f32;
         while cm_sp < total_size {

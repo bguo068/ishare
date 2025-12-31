@@ -6,7 +6,7 @@ use snafu::prelude::*;
 #[derive(Debug, Snafu)]
 pub enum Error {
     // non-local
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GenotypeRare {
         // non leaf
         #[snafu(backtrace)]
@@ -17,7 +17,7 @@ type Result<T> = std::result::Result<T, Error>;
 
 pub fn main_share(args: &Commands) -> Result<()> {
     if let Commands::Share { rec, a, b } = args {
-        let records = GenotypeRecords::from_parquet_file(rec)?;
+        let records = GenotypeRecords::from_parquet_file(rec).context(GenotypeRareSnafu)?;
         for (pos, gt1, gt2) in records.iter_genome_pair_genotypes(*a, *b) {
             println!("pos={pos}, allele_a={gt1:?}, allelle_b={gt2:?}");
         }

@@ -12,7 +12,7 @@ use std::{
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GnomeError {
         // non leaf
         #[snafu(source(from(genome::Error, Box::new)))]

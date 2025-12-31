@@ -6,13 +6,13 @@ use snafu::prelude::*;
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Mat {
         // non leaf
         #[snafu(backtrace)]
         source: mat::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Ibd {
         // non leaf
         #[snafu(backtrace)]

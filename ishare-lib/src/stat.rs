@@ -4,7 +4,7 @@ use snafu::prelude::*;
 
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Xirs {
         // non-leaf
         #[snafu(backtrace)]

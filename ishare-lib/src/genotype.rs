@@ -6,19 +6,19 @@ use snafu::prelude::*;
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Afreq {
         // non leaf
         #[snafu(backtrace)]
         source: afreq::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Common {
         // non leaf
         #[snafu(backtrace)]
         source: common::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Rare {
         // non leaf
         #[snafu(backtrace)]

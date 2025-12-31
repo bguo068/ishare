@@ -26,32 +26,32 @@ pub enum Error {
         backtrace: Box<Option<Backtrace>>,
         source: std::io::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Genome {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genome::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Gmap {
         // non leaf
         #[snafu(source(from(ishare::gmap::Error, Box::new)))]
         #[snafu(backtrace)]
         source: Box<ishare::gmap::Error>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GenotypeRare {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Individual {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::indiv::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Ibd {
         // non leaf
         #[snafu(backtrace)]
@@ -63,7 +63,7 @@ pub enum Error {
         source: std::io::Error,
         backtrace: Box<Option<Backtrace>>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     UtilsPath {
         // non leaf
         #[snafu(backtrace)]
@@ -77,7 +77,7 @@ pub enum Error {
         // leaf
         backtrace: Box<Option<Backtrace>>,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GtencodeUtil {
         // non leaf
         #[snafu(backtrace)]
@@ -119,22 +119,22 @@ pub fn main_rvibd(args: &Commands) -> Result<()> {
             .init();
 
         info!("read genome info"); // (for ibd) to compare with that from rare variants
-        let ginfo = GenomeInfo::from_toml_file(genome_info)?;
-        let gmap = GeneticMap::from_genome_info(&ginfo)?;
+        let ginfo = GenomeInfo::from_toml_file(genome_info).context(GenomeSnafu)?;
+        let gmap = GeneticMap::from_genome_info(&ginfo).context(GmapSnafu)?;
 
         info!("read rv records");
-        let mut records = GenotypeRecords::from_parquet_file(rec)?;
+        let mut records = GenotypeRecords::from_parquet_file(rec).context(GenotypeRareSnafu)?;
 
         info!("read individuals");
         let ind_file = rec.with_extension("ind");
-        let inds = Individuals::from_parquet_file(&ind_file)?;
+        let inds = Individuals::from_parquet_file(&ind_file).context(IndividualSnafu)?;
 
         info!("read ibd/rv samples");
         check_samples_orders(samples_lst, &inds)?;
 
         info!("read ibd");
         // ibd interval trees
-        let mut ibd = read_ibdseg_vec(eibd)?;
+        let mut ibd = read_ibdseg_vec(eibd).context(IbdSnafu)?;
 
         match *which {
             0 => position_scan(records, ibd, &ginfo, out_prefix)?,
@@ -182,10 +182,12 @@ fn position_scan(
     out_prefix: impl AsRef<Path>,
 ) -> Result<()> {
     info!("remove multiallelic sites");
-    records.filter_multi_allelic_site()?;
+    records
+        .filter_multi_allelic_site()
+        .context(GenotypeRareSnafu)?;
 
     info!("sort rv records by position");
-    records.sort_by_position()?;
+    records.sort_by_position().context(GenotypeRareSnafu)?;
     info!("build ibd interval tress");
 
     let it = ibd.into_iter().map(|seg| {
@@ -225,7 +227,7 @@ fn position_scan(
     // prepare rwlock file
 
     let rwlock_file = {
-        let out = from_prefix(out_prefix.as_ref(), "rvibd.pos")?;
+        let out = from_prefix(out_prefix.as_ref(), "rvibd.pos").context(UtilsPathSnafu)?;
         // let out = format!("{}_rvibd.pos", out_prefix.as_ref().to_str().unwrap());
         File::create(&out)
             .map(BufWriter::new)
@@ -307,13 +309,15 @@ fn pairwise_compare(
     out_prefix: impl AsRef<Path>,
 ) -> Result<()> {
     info!("get allele count map");
-    let ac_map = calc_allele_count(&mut records)?;
+    let ac_map = calc_allele_count(&mut records).context(GtencodeUtilSnafu)?;
 
     info!("remove multiallelic sites");
-    records.filter_multi_allelic_site()?;
+    records
+        .filter_multi_allelic_site()
+        .context(GenotypeRareSnafu)?;
 
     info!("sort rv records by genome");
-    records.sort_by_genome()?;
+    records.sort_by_genome().context(GenotypeRareSnafu)?;
 
     info!("sort ibd by genome pair");
     ibd.par_sort();
@@ -644,7 +648,7 @@ fn cmp_rv_and_ibd_similarity(
 
     // sortting
     ibd.sort();
-    rvgt.sort_by_genome()?;
+    rvgt.sort_by_genome().context(GenotypeRareSnafu)?;
 
     // prepare output file
     let file = {

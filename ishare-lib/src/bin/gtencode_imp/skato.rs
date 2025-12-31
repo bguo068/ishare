@@ -3,25 +3,25 @@ use ishare::{genotype::rare::GenotypeRecords, indiv::Individuals, site::Sites};
 use snafu::prelude::*;
 #[derive(Snafu, Debug)]
 pub enum Error {
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     GenotypeRare {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::genotype::rare::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Individuals {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::indiv::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Sites {
         // non leaf
         #[snafu(backtrace)]
         source: ishare::site::Error,
     },
-    #[snafu(transparent)]
+    // #[snafu(transparent)]
     Io {
         // non leaf
         #[snafu(backtrace)]
@@ -38,16 +38,16 @@ pub fn main_skato(args: &Commands) -> Result<()> {
         step,
     } = args
     {
-        let mut records = GenotypeRecords::from_parquet_file(rec)?;
+        let mut records = GenotypeRecords::from_parquet_file(rec).context(GenotypeRareSnafu)?;
         let ind_file = rec.with_extension("ind");
-        let inds = Individuals::from_parquet_file(&ind_file)?;
+        let inds = Individuals::from_parquet_file(&ind_file).context(IndividualsSnafu)?;
         let sites_file = rec.with_extension("sit");
-        let sites = Sites::from_parquet_file(&sites_file)?;
+        let sites = Sites::from_parquet_file(&sites_file).context(SitesSnafu)?;
         println!("number of individuals: {}", inds.v().len());
         println!("number of sites      : {}", sites.len());
 
         println!("sort by genotype records by position");
-        records.sort_by_position()?;
+        records.sort_by_position().context(GenotypeRareSnafu)?;
         let all_records = records.records();
         let sitepos = sites.get_gw_pos_slice();
 
