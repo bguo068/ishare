@@ -468,7 +468,11 @@ mod tests {
         let ginfo = Arc::new(create_test_genome());
         let gmap = Arc::new(create_test_genetic_map());
         let inds = Arc::new(create_test_individuals());
-        let ancs = Arc::from(vec!["AFR".to_string(), "EUR".to_string()]);
+        let ancs = Arc::from(vec![
+            "AFR".to_string(),
+            "EUR".to_string(),
+            "EAS".to_string(),
+        ]);
 
         let mut asibd_set = ASIBDSet::new(gmap.clone(), ginfo.clone(), inds.clone(), ancs);
 
