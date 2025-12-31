@@ -8,3 +8,10 @@ default-members = [
     "ishare-lib", # package name: ishare
 ]
 resolver = "2"
+
+[profile.release.package."*"]
+debug = false
+
+[profile.release]
+# need to  better show backtrace and debug information
+debug = true
