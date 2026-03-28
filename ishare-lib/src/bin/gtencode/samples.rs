@@ -1,4 +1,4 @@
-use super::super::Commands;
+use super::Commands;
 use ishare::indiv::Individuals;
 
 use snafu::prelude::*;

@@ -1,7 +1,7 @@
 use std::backtrace::Backtrace;
 use std::str::Utf8Error;
 
-use super::super::Commands;
+use super::Commands;
 use ishare::genome::GenomeInfo;
 use ishare::site::Sites;
 use snafu::prelude::*;

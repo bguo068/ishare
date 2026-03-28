@@ -1,6 +1,6 @@
 use std::backtrace::Backtrace;
 
-use super::super::Commands;
+use super::Commands;
 use ishare::{
     genome::{Genome, GenomeInfo},
     genotype::{common::GenotypeMatrix, rare::GenotypeRecords},

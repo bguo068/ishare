@@ -1,7 +1,7 @@
 use ishare::{genotype::common::GenotypeMatrix, site::Sites};
 use itertools::Itertools;
 
-use super::super::Commands;
+use super::Commands;
 use snafu::prelude::*;
 #[derive(Debug, Snafu)]
 pub enum Error {

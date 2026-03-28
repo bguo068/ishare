@@ -1,4 +1,4 @@
-use super::super::Commands;
+use super::Commands;
 use arrow_array::{ArrayRef, RecordBatch, UInt32Array};
 use arrow_schema::ArrowError;
 use ishare::indiv::Individuals;

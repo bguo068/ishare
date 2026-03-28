@@ -1,5 +1,5 @@
-use super::super::Commands;
 use super::utils;
+use super::Commands;
 use ishare::genotype::rare::GenotypeRecords;
 use ishare::indiv::Individuals;
 use ishare::io::IntoParquet;

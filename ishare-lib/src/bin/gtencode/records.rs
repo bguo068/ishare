@@ -1,6 +1,6 @@
 use std::backtrace::Backtrace;
 
-use super::super::Commands;
+use super::Commands;
 use ishare::{genotype::rare::GenotypeRecords, indiv::Individuals, utils::path::from_prefix};
 
 use snafu::prelude::*;

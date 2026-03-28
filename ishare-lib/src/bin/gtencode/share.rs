@@ -1,6 +1,6 @@
 use ishare::genotype::rare::GenotypeRecords;
 
-use super::super::Commands;
+use super::Commands;
 
 use snafu::prelude::*;
 #[derive(Debug, Snafu)]

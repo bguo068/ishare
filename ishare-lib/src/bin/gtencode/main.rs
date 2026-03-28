@@ -1,9 +1,25 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 #![cfg_attr(not(test), warn(clippy::expect_used))]
 
+pub mod args;
+pub mod cosine;
+pub mod encode;
+pub mod export;
+pub mod grm;
+pub mod jaccard;
+pub mod matrix;
+pub mod records;
+pub mod rvibd;
+pub mod samplediff;
+pub mod samples;
+pub mod share;
+pub mod sites;
+#[cfg(feature = "skato")]
+pub mod skato;
+pub mod utils;
+
 use args::{Cli, Commands};
 use clap::Parser;
-use gtencode_imp::*;
 use ishare::utils::error::show_snafu_error;
 use snafu::prelude::*;
 
@@ -109,7 +125,7 @@ pub fn main() {
     }
 }
 
-mod gtencode_imp;
+// mod gtencode_imp;
 fn main_entry() -> Result<()> {
     let cli = Cli::parse();
 

@@ -1,6 +1,6 @@
-use crate::gtencode_imp::utils::calc_allele_count;
+use crate::utils::calc_allele_count;
 
-use super::super::Commands;
+use super::Commands;
 use ahash::{AHashMap, AHashSet};
 use ishare::container::intervaltree::IntervalTree;
 use ishare::genotype::rare::GenotypeRecords;
