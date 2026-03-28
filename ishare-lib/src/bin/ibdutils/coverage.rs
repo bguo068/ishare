@@ -1,6 +1,6 @@
 use std::{backtrace::Backtrace, sync::Arc};
 
-use super::super::Commands;
+use super::Commands;
 
 use ishare::{
     genome, gmap,

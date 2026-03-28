@@ -68,7 +68,7 @@ pub enum Error {
 }
 type Result<T> = std::result::Result<T, Error>;
 
-use super::super::Commands;
+use super::Commands;
 pub fn main_compare(args: &Commands) -> Result<()> {
     if let Commands::Compare {
         genome_info,

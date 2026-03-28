@@ -1,9 +1,18 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 #![cfg_attr(not(test), warn(clippy::expect_used))]
 
+pub mod args;
+pub mod compare;
+pub mod coverage;
+pub mod encode;
+#[cfg(feature = "plotibd")]
+pub mod plotibd;
+pub mod unrelated;
+pub mod utils;
+
 use clap::Parser;
-pub mod ibdutils_impl;
-use ibdutils_impl::{args::*, *};
+// pub mod ibdutils_impl;
+use args::*;
 use ishare::utils::error::show_snafu_error;
 use snafu::prelude::*;
 
