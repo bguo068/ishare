@@ -40,3 +40,42 @@ pub enum IshareError {
 }
 
 pub type Result<T> = std::result::Result<T, Report<IshareError>>;
+
+#[derive(Debug)]
+pub struct PathAttachment(std::path::PathBuf);
+
+impl std::fmt::Display for PathAttachment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Error related path: {}", self.0.display())
+    }
+}
+
+impl From<&std::path::Path> for PathAttachment {
+    fn from(path: &std::path::Path) -> Self {
+        PathAttachment(path.into())
+    }
+}
+
+impl From<std::path::PathBuf> for PathAttachment {
+    fn from(path: std::path::PathBuf) -> Self {
+        PathAttachment(path)
+    }
+}
+
+impl From<String> for PathAttachment {
+    fn from(path: String) -> Self {
+        PathAttachment(std::path::PathBuf::from(path))
+    }
+}
+
+impl From<&str> for PathAttachment {
+    fn from(path: &str) -> Self {
+        PathAttachment(std::path::PathBuf::from(path))
+    }
+}
+
+impl From<&std::path::PathBuf> for PathAttachment {
+    fn from(path: &std::path::PathBuf) -> Self {
+        PathAttachment(path.clone())
+    }
+}

@@ -3,6 +3,7 @@ use error_stack::*;
 
 use super::Commands;
 use ishare::{
+    error::PathAttachment,
     genome::{Genome, GenomeInfo},
     genotype::{common::GenotypeMatrix, rare::GenotypeRecords},
     indiv::Individuals,
@@ -70,7 +71,9 @@ pub fn main_encode(args: &Commands) -> Result<()> {
     let mut regions = ginfo.partition_genome(parallel_chunksize_bp.map(|x| x as u32));
     // filter region with no records
     use rust_htslib::bcf::IndexedReader;
-    let mut ireader = IndexedReader::from_path(vcf).change_context(GtencodeError::Input)?;
+    let mut ireader = IndexedReader::from_path(vcf)
+        .attach_with(|| PathAttachment::from(vcf))
+        .change_context(GtencodeError::Input)?;
     let mut rec = ireader.empty_record();
 
     let mut nfail = 0;

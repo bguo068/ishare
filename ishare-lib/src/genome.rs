@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::io::{BufWriter, Read, Write};
 use std::path::Path;
 
-use crate::error::{IshareError, Result};
+use crate::error::{IshareError, PathAttachment, Result};
 use error_stack::*;
 
 #[derive(Deserialize, Serialize, Debug)]
@@ -103,33 +103,37 @@ impl GenomeInfo {
     where
         P: AsRef<Path>,
     {
-        let mut s = String::new();
-        let p: &Path = path.as_ref();
-        std::fs::File::open(p)
-            .change_context(IshareError::Genome)?
-            .read_to_string(&mut s)
-            .change_context(IshareError::Genome)?;
-        let mut gfile: GenomeFile = toml::from_str(&s)
-            .map_err(Box::new)
-            .change_context(IshareError::Genome)?;
-        gfile.check();
-        let mut ginfo = Self::new();
-        use std::mem::swap;
-        swap(&mut gfile.name, &mut ginfo.name);
-        swap(&mut gfile.chromsize, &mut ginfo.chromsize);
-        swap(&mut gfile.chromnames, &mut ginfo.chromnames);
-        swap(&mut gfile.idx, &mut ginfo.idx);
-        swap(&mut gfile.gmaps, &mut ginfo.gmaps);
-        ginfo.gwstarts.push(0u32);
-        for chrlen in &ginfo.chromsize[0..(ginfo.chromsize.len() - 1)] {
-            let last = ginfo.gwstarts.last().ok_or(IshareError::EmptyOption)?;
-            ginfo.gwstarts.push(*chrlen + *last);
-        }
-        ginfo.map_root = path
-            .as_ref()
-            .parent()
-            .map(|p| p.to_string_lossy().into_owned());
-        Ok(ginfo)
+        let f = || -> Result<Self> {
+            let mut s = String::new();
+            let p: &Path = path.as_ref();
+            std::fs::File::open(p)
+                .change_context(IshareError::Genome)?
+                .read_to_string(&mut s)
+                .change_context(IshareError::Genome)?;
+            let mut gfile: GenomeFile = toml::from_str(&s)
+                .map_err(Box::new)
+                .change_context(IshareError::Genome)?;
+            gfile.check();
+            let mut ginfo = Self::new();
+            use std::mem::swap;
+            swap(&mut gfile.name, &mut ginfo.name);
+            swap(&mut gfile.chromsize, &mut ginfo.chromsize);
+            swap(&mut gfile.chromnames, &mut ginfo.chromnames);
+            swap(&mut gfile.idx, &mut ginfo.idx);
+            swap(&mut gfile.gmaps, &mut ginfo.gmaps);
+            ginfo.gwstarts.push(0u32);
+            for chrlen in &ginfo.chromsize[0..(ginfo.chromsize.len() - 1)] {
+                let last = ginfo.gwstarts.last().ok_or(IshareError::EmptyOption)?;
+                ginfo.gwstarts.push(*chrlen + *last);
+            }
+            ginfo.map_root = path
+                .as_ref()
+                .parent()
+                .map(|p| p.to_string_lossy().into_owned());
+            Ok(ginfo)
+        };
+        let p = path.as_ref();
+        f().attach(PathAttachment::from(p))
     }
     pub fn to_gw_pos(&self, chrid: usize, pos: u32) -> u32 {
         self.gwstarts[chrid] + pos
