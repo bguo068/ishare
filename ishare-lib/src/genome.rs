@@ -340,11 +340,14 @@ impl Genome {
 
     /// load genome (ginfo and gmap) from a single bincode file, for ease of use
     pub fn load_from_bincode_file(p: impl AsRef<Path>) -> Result<Self> {
-        let mut reader = std::fs::File::open(p)
-            .map(std::io::BufReader::new)
-            .change_context(IshareError::Genome)?;
-        bincode::decode_from_reader(&mut reader, bincode::config::standard())
-            .change_context(IshareError::Genome)
+        let res = |p| {
+            let mut reader = std::fs::File::open(p)
+                .map(std::io::BufReader::new)
+                .change_context(IshareError::Genome)?;
+            bincode::decode_from_reader(&mut reader, bincode::config::standard())
+                .change_context(IshareError::Genome)
+        };
+        res(p.as_ref()).attach_with(|| format!("file: {}", p.as_ref().display()))
     }
 
     /// save to single bincode file, for ease of use

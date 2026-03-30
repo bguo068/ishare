@@ -58,7 +58,7 @@ pub fn main_encode(args: &Commands) -> Result<()> {
     }
 
     // encoding
-    let ginfo = if matches!( genome_info.as_path().extension(), Some(ext) if ext == ".toml") {
+    let ginfo = if matches!( genome_info.as_path().extension(), Some(ext) if ext == "toml") {
         GenomeInfo::from_toml_file(genome_info).change_context(GtencodeError::Input)?
     } else {
         let genome = Genome::load_from_bincode_file(genome_info.to_string_lossy().as_ref())
