@@ -2,6 +2,7 @@
 #![cfg_attr(not(test), warn(clippy::expect_used))]
 
 pub mod container;
+pub mod error;
 pub mod genome;
 pub mod genotype;
 pub mod gmap;
@@ -16,3 +17,5 @@ pub mod tests;
 pub mod traits;
 pub mod utils;
 pub mod vcf;
+
+pub use error::{IshareError, Result};

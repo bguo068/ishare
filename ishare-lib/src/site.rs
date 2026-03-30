@@ -4,7 +4,6 @@ use arrow_array::ArrayRef;
 use arrow_array::GenericByteArray;
 use arrow_array::RecordBatch;
 use arrow_array::UInt32Array;
-use arrow_schema::ArrowError;
 
 use bstr::BString;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
@@ -16,57 +15,8 @@ use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
 
-use snafu::prelude::*;
-use std::backtrace::Backtrace;
-
-type Result<T> = std::result::Result<T, Error>;
-
-#[derive(Snafu, Debug)]
-pub enum Error {
-    Arrow {
-        // non leaf
-        #[snafu(source(from(ArrowError, Box::new)))]
-        source: Box<ArrowError>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    StdIo {
-        // non leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    Parquet {
-        // non leaf
-        #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
-        source: Box<parquet::errors::ParquetError>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    BinarySearchNotFound {
-        // non leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    Downcast {
-        // non leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    MissingGenotypeData {
-        // non leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    #[snafu(display("Position {pos} is not greater than last position {last_pos} - sites must be added in order"))]
-    PositionNotInOrder {
-        // non leaf
-        pos: u32,
-        last_pos: u32,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    #[snafu(display("Position {pos} is less than or equal to last position {last_pos} - sites must be added in strictly increasing order"))]
-    PositionNotStrictlyIncreasing {
-        // non leaf
-        pos: u32,
-        last_pos: u32,
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
+use crate::error::{IshareError, Result};
+use error_stack::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Sites {
@@ -117,13 +67,7 @@ impl Sites {
         self.buf.extend_from_slice(bytes);
         //  site added in order
         if let Some(last_pos) = self.gw_pos.last() {
-            ensure!(
-                *last_pos <= pos,
-                PositionNotInOrderSnafu {
-                    pos,
-                    last_pos: *last_pos
-                }
-            );
+            ensure!(*last_pos <= pos, IshareError::RuntimeCheck);
         }
         self.gw_pos.push(pos);
         Ok(())
@@ -148,13 +92,7 @@ impl Sites {
         }
         // ensure site added in order
         if let Some(last_pos) = self.gw_pos.last() {
-            ensure!(
-                *last_pos < pos,
-                PositionNotStrictlyIncreasingSnafu {
-                    pos,
-                    last_pos: *last_pos
-                }
-            );
+            ensure!(*last_pos < pos, IshareError::RuntimeCheck);
         }
         self.gw_pos.push(pos);
         Ok(())
@@ -165,7 +103,8 @@ impl Sites {
         let idx = self
             .gw_pos
             .binary_search(&pos)
-            .map_err(|_| BinarySearchNotFoundSnafu {}.build())?;
+            .map_err(|_| IshareError::RuntimeCheck)
+            .attach("error in binary search")?;
         let s = self.offsets[idx];
         let mut e = self.buf.len();
         if idx < self.offsets.len() - 1 {
@@ -228,34 +167,35 @@ impl Sites {
             ("gw_pos", Arc::new(col1) as ArrayRef),
             ("alleles", Arc::new(col2) as ArrayRef),
         ])
-        .context(ArrowSnafu {})?;
+        .change_context(IshareError::Site)?;
         // writer
-        let file = File::create(p.as_ref()).context(StdIoSnafu {})?;
+        let file = File::create(p.as_ref()).change_context(IshareError::Site)?;
         // -- default writer properties
         let props = WriterProperties::builder().build();
-        let mut writer =
-            ArrowWriter::try_new(file, batch.schema(), Some(props)).context(ParquetSnafu {})?;
+        let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))
+            .change_context(IshareError::Site)?;
         // write batch
-        writer.write(&batch).context(ParquetSnafu {})?;
+        writer.write(&batch).change_context(IshareError::Site)?;
         // writer must be closed to write footer
-        writer.close().context(ParquetSnafu {})?;
+        writer.close().change_context(IshareError::Site)?;
         Ok(())
     }
 
     pub fn from_parquet_file(p: impl AsRef<Path>) -> Result<Self> {
-        let file = File::open(p).context(StdIoSnafu {})?;
-        let builder = ParquetRecordBatchReaderBuilder::try_new(file).context(ParquetSnafu {})?;
-        let mut reader = builder.build().context(ParquetSnafu {})?;
+        let file = File::open(p).change_context(IshareError::Site)?;
+        let builder =
+            ParquetRecordBatchReaderBuilder::try_new(file).change_context(IshareError::Site)?;
+        let mut reader = builder.build().change_context(IshareError::Site)?;
 
         let mut sites = Sites::new();
 
         for record_batch in &mut reader {
-            let record_batch = record_batch.context(ArrowSnafu {})?;
+            let record_batch = record_batch.change_context(IshareError::Site)?;
             let pos_iter = record_batch
                 .column(0)
                 .as_any()
                 .downcast_ref::<UInt32Array>()
-                .context(DowncastSnafu {})?
+                .ok_or(IshareError::EmptyOption)?
                 .values()
                 .iter()
                 .copied();
@@ -263,11 +203,11 @@ impl Sites {
                 .column(1)
                 .as_any()
                 .downcast_ref::<GenericByteArray<GenericBinaryType<i32>>>()
-                .context(DowncastSnafu {})?
+                .ok_or(IshareError::EmptyOption)?
                 .into_iter();
 
             for (pos, bytes) in pos_iter.zip(bytes_iter) {
-                sites.add_site_with_bytes(pos, bytes.context(MissingGenotypeDataSnafu {})?)?;
+                sites.add_site_with_bytes(pos, bytes.ok_or(IshareError::EmptyOption)?)?;
             }
         }
 

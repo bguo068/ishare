@@ -1,3 +1,6 @@
+use super::{GtencodeError, Result};
+use error_stack::*;
+
 use super::utils;
 use super::Commands;
 use ishare::genotype::rare::GenotypeRecords;
@@ -5,45 +8,6 @@ use ishare::indiv::Individuals;
 use ishare::io::IntoParquet;
 use ishare::share::mat::NamedMatrix;
 use rayon::prelude::*;
-
-use snafu::prelude::*;
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    // #[snafu(transparent)]
-    GenotypeRare {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::genotype::rare::Error,
-    },
-    // #[snafu(transparent)]
-    Individuals {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::indiv::Error,
-    },
-    // #[snafu(transparent)]
-    Io {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::io::Error,
-    },
-    // #[snafu(transparent)]
-    Matrix {
-        // non leaf
-        #[snafu(source(from(ishare::share::mat::Error, Box::new)))]
-        #[snafu(backtrace)]
-        source: Box<ishare::share::mat::Error>,
-    },
-    // #[snafu(transparent)]
-    GtencodeUtil {
-        // non leaf
-        #[snafu(backtrace)]
-        source: super::utils::Error,
-    },
-}
-
-type Result<T> = std::result::Result<T, Error>;
 
 pub fn main_jaccard(args: &Commands) -> Result<()> {
     if let Commands::Jaccard {
@@ -69,14 +33,17 @@ pub fn main_jaccard(args: &Commands) -> Result<()> {
             None => 0u32,
         };
 
-        let records = GenotypeRecords::from_parquet_file(rec).context(GenotypeRareSnafu)?;
-        records.is_sorted_by_genome().context(GenotypeRareSnafu)?;
+        let records =
+            GenotypeRecords::from_parquet_file(rec).change_context(GtencodeError::Input)?;
+        records
+            .is_sorted_by_genome()
+            .change_context(GtencodeError::Input)?;
 
         let ind_file = rec.with_extension("ind");
         let _inds = Individuals::from_parquet_file(&ind_file);
 
         let (pairs, row_genomes, col_genomes) =
-            utils::prep_pairs(&records, genomes, lists).context(GtencodeUtilSnafu)?;
+            utils::prep_pairs(&records, genomes, lists).change_context(GtencodeError::Library)?;
 
         // run in parallel and collect row results
         let res: Vec<(u32, u32, u32, u32)> = pairs
@@ -138,7 +105,9 @@ pub fn main_jaccard(args: &Commands) -> Result<()> {
             // let resmat0 = resmat.clone();
             println!("WARN: output option is specified, results are not printed on the screen, check file {p:?}");
             // println!("\n writing...");
-            resmat.into_parquet(&p).context(IoSnafu)?
+            resmat
+                .into_parquet(&p)
+                .change_context(GtencodeError::Output)?
         }
     }
     Ok(())

@@ -1,8 +1,10 @@
+use crate::error::{IshareError, Result};
+use error_stack::*;
+
 use std::fmt::Debug;
 use std::ops::Range;
 
 use super::super::traits::TotalOrd;
-use super::{Error, IntervalOutOfBoundsSnafu, InvalidContigRangeSnafu};
 
 #[derive(Clone, Debug, Default)]
 pub struct Intervals<T>(Vec<Range<T>>)
@@ -101,13 +103,12 @@ impl<'a, T: TotalOrd + Copy + Default + Debug> Intervals<T> {
     /// # Returns
     /// * `Ok(())` on success
     /// * `Err(Error)` if validation fails
-    pub fn complement(&mut self, contig_min: T, contig_max: T) -> Result<(), Error> {
+    pub fn complement(&mut self, contig_min: T, contig_max: T) -> Result<()> {
         // Validate contig range
         if contig_min > contig_max {
-            return InvalidContigRangeSnafu {
-                msg: format!("contig_min ({contig_min:?}) must be <= contig_max ({contig_max:?}"),
-            }
-            .fail();
+            bail!(IshareError::RuntimeCheck.into_report().attach(format!(
+                "contig_min ({contig_min:?}) must be <= contig_max ({contig_max:?}"
+            )));
         }
 
         // Ensure intervals are sorted and merged
@@ -119,25 +120,15 @@ impl<'a, T: TotalOrd + Copy + Default + Debug> Intervals<T> {
 
             // Validate that intervals are within contig bounds
             if the_min < contig_min {
-                return IntervalOutOfBoundsSnafu {
-                    msg: format!("interval [{the_min:?}, {:?}) is outside contig range [{contig_min:?}, {contig_max:?})", first.end),
-                    // start: format!("{the_min:?}"),
-                    // end: format!("{:?}", first.end),
-                    // contig_min: format!("{contig_min:?}"),
-                    // contig_max: format!("{contig_max:?}"),
-                }
-                .fail();
+                bail!(IshareError::RuntimeCheck.into_report().attach(format!(
+                    "interval [{the_min:?}, {:?}) is outside contig range [{contig_min:?}, {contig_max:?})", first.end
+                )));
             }
 
             if the_max > contig_max {
-                return IntervalOutOfBoundsSnafu {
-                    msg: format!("interval [{:?}, {the_max:?}) is outside contig range [{contig_min:?}, {contig_max:?})", last.start),
-                    // start: format!("{:?}", last.start),
-                    // end: format!("{the_max:?}"),
-                    // contig_min: format!("{contig_min:?}"),
-                    // contig_max: format!("{contig_max:?}"),
-                }
-                .fail();
+                bail!(IshareError::RuntimeCheck.into_report().attach(format!(
+                    "interval [{:?}, {the_max:?}) is outside contig range [{contig_min:?}, {contig_max:?})", last.start
+                )));
             }
 
             let mut rest_tracking = self.0.as_mut_slice();

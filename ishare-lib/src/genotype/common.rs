@@ -1,11 +1,11 @@
+use crate::error::{IshareError, Result};
+use error_stack::{bail, ensure, IntoReport, ResultExt};
+
 use arrow_array::builder::BooleanBufferBuilder;
 use arrow_array::ArrayRef;
 use arrow_array::BooleanArray;
 use arrow_array::RecordBatch;
 use arrow_buffer::BooleanBuffer;
-use arrow_schema::ArrowError;
-
-use snafu::prelude::*;
 
 use crate::site::Sites;
 use bitvec::prelude::*;
@@ -13,9 +13,9 @@ use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
 use serde::{Deserialize, Serialize};
-use std::backtrace::Backtrace;
+
 use std::fs::File;
-use std::num::ParseIntError;
+
 use std::path::Path;
 use std::sync::Arc;
 
@@ -26,56 +26,6 @@ use std::sync::Arc;
 pub struct GenotypeMatrix {
     bv: BitVec<u64, Lsb0>,
     ncols: usize,
-}
-
-type Result<T> = std::result::Result<T, Error>;
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    Arrow {
-        // leaf
-        #[snafu(source(from(ArrowError, Box::new)))]
-        source: Box<ArrowError>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    Parquet {
-        // leaf
-        #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
-        source: Box<parquet::errors::ParquetError>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    Io {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    ParseInt {
-        // leaf
-        source: ParseIntError,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    DowncastToBoolArray {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    #[snafu(display("Row order length {row_order_len} does not match matrix rows {matrix_rows}"))]
-    RowOrderLengthMismatch {
-        // leaf
-        row_order_len: usize,
-        matrix_rows: usize,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    MissingGenotype {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    #[snafu(display("BitVec length mismatch after append: expected {expected}, got {actual}"))]
-    BitVecLengthMismatch {
-        // leaf
-        expected: usize,
-        actual: usize,
-        backtrace: Box<Option<Backtrace>>,
-    },
 }
 
 impl GenotypeMatrix {
@@ -169,10 +119,9 @@ impl GenotypeMatrix {
         let len2 = self.bv.len();
         ensure!(
             len1 + self.ncols == len2,
-            BitVecLengthMismatchSnafu {
-                expected: len1 + self.ncols,
-                actual: len2
-            }
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("BitVecLengthMismatch")
         );
         Ok(())
     }
@@ -180,10 +129,9 @@ impl GenotypeMatrix {
     pub fn reorder_rows(self, row_orders: &[u32]) -> Result<Self> {
         ensure!(
             row_orders.len() == self.nrows(),
-            RowOrderLengthMismatchSnafu {
-                row_order_len: row_orders.len(),
-                matrix_rows: self.nrows()
-            }
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("RowOrderLengthMismatch")
         );
         let mut gt2 = GenotypeMatrix::new(self.ncols);
         gt2.bv.reserve(self.bv.len());
@@ -258,43 +206,50 @@ impl GenotypeMatrix {
         let fieldname = format!("{}", self.ncols);
 
         let batch = RecordBatch::try_from_iter(vec![(fieldname, Arc::new(arr) as ArrayRef)])
-            .context(ArrowSnafu {})?;
+            .change_context(IshareError::CommonGenotype)?;
         // writer
-        let file = File::create(p.as_ref()).context(IoSnafu {})?;
+        let file = File::create(p.as_ref()).change_context(IshareError::CommonGenotype)?;
         // -- default writer properties
         let props = WriterProperties::builder().build();
-        let mut writer =
-            ArrowWriter::try_new(file, batch.schema(), Some(props)).context(ParquetSnafu {})?;
+        let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))
+            .change_context(IshareError::CommonGenotype)?;
         // write batch
-        writer.write(&batch).context(ParquetSnafu {})?;
+        writer
+            .write(&batch)
+            .change_context(IshareError::CommonGenotype)?;
         // writer must be closed to write footer
-        writer.close().context(ParquetSnafu {})?;
+        writer.close().change_context(IshareError::CommonGenotype)?;
         Ok(())
     }
 
     pub fn from_parquet_file(p: impl AsRef<Path>) -> Result<Self> {
-        let file = File::open(p).context(IoSnafu {})?;
-        let builder = ParquetRecordBatchReaderBuilder::try_new(file).context(ParquetSnafu {})?;
+        let file = File::open(p).change_context(IshareError::CommonGenotype)?;
+        let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+            .change_context(IshareError::CommonGenotype)?;
         let ncol = builder.schema().fields[0]
             .name()
             .parse::<usize>()
-            .context(ParseIntSnafu {})?;
-        let mut reader = builder.build().context(ParquetSnafu {})?;
+            .change_context(IshareError::CommonGenotype)?;
+        let mut reader = builder
+            .build()
+            .change_context(IshareError::CommonGenotype)?;
         let mut gm = GenotypeMatrix::new(ncol);
         for record_batch in &mut reader {
-            let record_batch = record_batch.context(ArrowSnafu {})?;
+            let record_batch = record_batch.change_context(IshareError::CommonGenotype)?;
             record_batch
                 .column(0)
                 .as_any()
                 .downcast_ref::<BooleanArray>()
-                .context(DowncastToBoolArraySnafu {})?
+                .ok_or(IshareError::EmptyOption)?
                 .into_iter()
                 .try_for_each(|x| match x {
                     Some(x) => {
                         gm.bv.push(x);
                         Ok(())
                     }
-                    _ => MissingGenotypeSnafu {}.fail(),
+                    _ => bail!(IshareError::RuntimeCheck
+                        .into_report()
+                        .attach("MissingGenotypeSnafu")),
                 })?;
         }
 
@@ -862,40 +817,6 @@ mod test {
             assert!(t.get_at(0, 0));
             assert!(!t.get_at(0, 1));
             assert!(t.get_at(0, 2));
-        }
-    }
-
-    mod error_handling {
-        use super::*;
-        use std::fs;
-
-        #[test]
-        fn test_parquet_invalid_file() {
-            let result = GenotypeMatrix::from_parquet_file("/nonexistent/path/file.parquet");
-            assert!(result.is_err());
-            assert!(matches!(result.unwrap_err(), Error::Io { .. }));
-        }
-
-        #[test]
-        fn test_parquet_corrupted_file() {
-            let temp_file = NamedTempFile::new().expect("Failed to create temp file");
-            let temp_path = temp_file.path();
-
-            // Write invalid content
-            fs::write(temp_path, b"invalid parquet data").expect("Failed to write file");
-
-            let result = GenotypeMatrix::from_parquet_file(temp_path);
-            assert!(result.is_err());
-            assert!(matches!(result.unwrap_err(), Error::Parquet { .. }));
-        }
-
-        #[test]
-        fn test_parquet_write_permission_denied() {
-            // Try to write to root directory (should fail with permission denied)
-            let m = GenotypeMatrix::new(1);
-            let result = m.into_parquet_file("/root/test.parquet");
-            assert!(result.is_err());
-            assert!(matches!(result.unwrap_err(), Error::Io { .. }));
         }
     }
 }

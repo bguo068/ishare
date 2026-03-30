@@ -1,4 +1,5 @@
-use std::backtrace::Backtrace;
+use super::{GtencodeError, Result};
+use error_stack::*;
 
 use super::Commands;
 use ishare::{
@@ -12,79 +13,6 @@ use ishare::{
 use rayon::prelude::*;
 
 use rust_htslib::bcf::Read;
-
-use snafu::prelude::*;
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    // outside
-    // #[snafu(transparent)]
-    Genome {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::genome::Error,
-    },
-    // #[snafu(transparent)]
-    UtilsPath {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::utils::path::Error,
-    },
-    // #[snafu(transparent)]
-    Vcf {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::vcf::Error,
-    },
-
-    // #[snafu(transparent)]
-    Sites {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::site::Error,
-    },
-    // #[snafu(transparent)]
-    GenotypeCommon {
-        // non leaf
-        #[snafu(backtrace)]
-        #[snafu(source(from(ishare::genotype::common::Error, Box::new)))]
-        source: Box<ishare::genotype::common::Error>,
-    },
-    // #[snafu(transparent)]
-    GenotypeRare {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::genotype::rare::Error,
-    },
-    // #[snafu(transparent)]
-    Individual {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::indiv::Error,
-    },
-
-    // this module
-    StdIo {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    Hts {
-        // leaf
-        #[snafu(source(from(rust_htslib::errors::Error, Box::new)))]
-        source: Box<rust_htslib::errors::Error>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    RegionFilter {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    EmptyVec {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
-type Result<T> = std::result::Result<T, Error>;
 
 pub fn main_encode(args: &Commands) -> Result<()> {
     // unpack cli args
@@ -121,7 +49,7 @@ pub fn main_encode(args: &Commands) -> Result<()> {
     let mut target_samples = AHashSet::new();
     if let Some(sample_lst) = sample_lst.as_ref() {
         std::fs::read_to_string(sample_lst)
-            .context(StdIoSnafu {})?
+            .change_context(GtencodeError::Input)?
             .trim()
             .split("\n")
             .for_each(|x| {
@@ -131,10 +59,10 @@ pub fn main_encode(args: &Commands) -> Result<()> {
 
     // encoding
     let ginfo = if matches!( genome_info.as_path().extension(), Some(ext) if ext == ".toml") {
-        GenomeInfo::from_toml_file(genome_info).context(GenomeSnafu)?
+        GenomeInfo::from_toml_file(genome_info).change_context(GtencodeError::Input)?
     } else {
         let genome = Genome::load_from_bincode_file(genome_info.to_string_lossy().as_ref())
-            .context(GenomeSnafu)?;
+            .change_context(GtencodeError::Input)?;
         genome.ginfo().clone()
     };
 
@@ -142,7 +70,7 @@ pub fn main_encode(args: &Commands) -> Result<()> {
     let mut regions = ginfo.partition_genome(parallel_chunksize_bp.map(|x| x as u32));
     // filter region with no records
     use rust_htslib::bcf::IndexedReader;
-    let mut ireader = IndexedReader::from_path(vcf).context(HtsSnafu {})?;
+    let mut ireader = IndexedReader::from_path(vcf).change_context(GtencodeError::Input)?;
     let mut rec = ireader.empty_record();
 
     let mut nfail = 0;
@@ -164,17 +92,19 @@ pub fn main_encode(args: &Commands) -> Result<()> {
         }
     });
     if nfail > 0 {
-        RegionFilterSnafu {}.fail()?;
+        bail!(GtencodeError::Library
+            .into_report()
+            .attach("region filter error"));
     }
 
     // construct output file names
     let gt_file = if *matrix {
-        from_prefix(out, "mat").context(UtilsPathSnafu)?
+        from_prefix(out, "mat").change_context(GtencodeError::Input)?
     } else {
-        from_prefix(out, "rec").context(UtilsPathSnafu)?
+        from_prefix(out, "rec").change_context(GtencodeError::Input)?
     };
-    let sites_file = from_prefix(out, "sit").context(UtilsPathSnafu)?;
-    let ind_file = from_prefix(out, "ind").context(UtilsPathSnafu)?;
+    let sites_file = from_prefix(out, "sit").change_context(GtencodeError::Input)?;
+    let ind_file = from_prefix(out, "ind").change_context(GtencodeError::Input)?;
 
     if *matrix {
         // parallel running
@@ -189,7 +119,7 @@ pub fn main_encode(args: &Commands) -> Result<()> {
                     *threshold_maf,
                     region,
                 )
-                .context(VcfSnafu)?;
+                .change_context(GtencodeError::Library)?;
                 if region.is_some() {
                     println!("{region:?}");
                 }
@@ -198,7 +128,10 @@ pub fn main_encode(args: &Commands) -> Result<()> {
             .collect::<Result<Vec<_>>>()?;
 
         // merge results
-        let (mut sites, individuals, mut gm) = res.pop().context(EmptyVecSnafu)?;
+        let (mut sites, individuals, mut gm) = res
+            .pop()
+            .ok_or(GtencodeError::Library)
+            .attach("Empty of results of regions")?;
 
         for (ss, _, rr) in res {
             sites.merge(ss);
@@ -206,18 +139,24 @@ pub fn main_encode(args: &Commands) -> Result<()> {
         }
 
         // sort
-        let orders = sites.sort_by_position_then_allele().context(SitesSnafu)?;
-        let gm_ordered = gm.reorder_rows(&orders).context(GenotypeCommonSnafu)?;
+        let orders = sites
+            .sort_by_position_then_allele()
+            .change_context(GtencodeError::Library)?;
+        let gm_ordered = gm
+            .reorder_rows(&orders)
+            .change_context(GtencodeError::Library)?;
 
         // write to files
 
         gm_ordered
             .into_parquet_file(&gt_file)
-            .context(GenotypeCommonSnafu)?;
-        sites.into_parquet_file(&sites_file).context(SitesSnafu)?;
+            .change_context(GtencodeError::Output)?;
+        sites
+            .into_parquet_file(&sites_file)
+            .change_context(GtencodeError::Output)?;
         individuals
             .into_parquet_file(&ind_file)
-            .context(IndividualSnafu)?;
+            .change_context(GtencodeError::Output)?;
     } else {
         // parallel running
         let mut res: Vec<(Sites, Individuals, GenotypeRecords)> = regions
@@ -226,7 +165,7 @@ pub fn main_encode(args: &Commands) -> Result<()> {
             .map(|region| {
                 // (sites, individuals, GenotypeRecords)
                 let res = read_vcf(&target_samples, &ginfo, vcf, *threshold_maf, region)
-                    .context(VcfSnafu)?;
+                    .change_context(GtencodeError::Library)?;
                 if region.is_some() {
                     println!("{region:?}");
                 }
@@ -235,7 +174,10 @@ pub fn main_encode(args: &Commands) -> Result<()> {
             .collect::<Result<Vec<_>>>()?;
 
         // merge results
-        let (mut sites, individuals, mut records) = res.pop().context(EmptyVecSnafu {})?;
+        let (mut sites, individuals, mut records) = res
+            .pop()
+            .ok_or(GtencodeError::Library)
+            .attach("empty of results of regions")?;
 
         for (ss, _, rr) in res {
             sites.merge(ss);
@@ -244,16 +186,20 @@ pub fn main_encode(args: &Commands) -> Result<()> {
 
         // sort
         _ = sites.sort_by_position_then_allele();
-        records.sort_by_genome().context(GenotypeRareSnafu)?;
+        records
+            .sort_by_genome()
+            .change_context(GtencodeError::Library)?;
         // write to files
 
         records
             .into_parquet_file(&gt_file)
-            .context(GenotypeRareSnafu)?;
-        sites.into_parquet_file(&sites_file).context(SitesSnafu)?;
+            .change_context(GtencodeError::Output)?;
+        sites
+            .into_parquet_file(&sites_file)
+            .change_context(GtencodeError::Output)?;
         individuals
             .into_parquet_file(&ind_file)
-            .context(IndividualSnafu)?;
+            .change_context(GtencodeError::Output)?;
     }
 
     // report encoding time used

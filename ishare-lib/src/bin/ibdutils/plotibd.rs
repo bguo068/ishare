@@ -1,6 +1,8 @@
+use error_stack::*;
+
+use super::{IbdUtilsError, Result};
+
 use std::{
-    backtrace::Backtrace,
-    num::ParseIntError,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -20,99 +22,15 @@ use ishare::{
 };
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use snafu::{OptionExt, ResultExt, Whatever};
 use tokio::runtime::Runtime;
 
 use super::args::*;
 
-use snafu::prelude::*;
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    // #[snafu(transparent)]
-    Indiv {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::indiv::Error,
-    },
-    // #[snafu(transparent)]
-    Genome {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::genome::Error,
-    },
-    // #[snafu(transparent)]
-    Gmap {
-        // non leaf
-        #[snafu(backtrace)]
-        #[snafu(source(from(ishare::gmap::Error, Box::new)))]
-        source: Box<ishare::gmap::Error>,
-    },
-    // #[snafu(transparent)]
-    Ibd {
-        // non leaf
-        #[snafu(backtrace)]
-        #[snafu(source(from(ishare::share::ibd::Error, Box::new)))]
-        source: Box<ishare::share::ibd::Error>,
-    },
-    // #[snafu(transparent)]
-    Hyper {
-        // leaf
-        source: hyper::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    // #[snafu(transparent)]
-    ParseInt {
-        // leaf
-        source: ParseIntError,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    // local
-    StdIO {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    Address {
-        // leaf
-        source: core::net::AddrParseError,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    Other {
-        // leaf
-        source: Box<Whatever>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    ZeroNumChromosome {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    Ibd1IndNotEqualId2Indvi {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    InvalidSampleId {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    InvalidSampleName {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    MissBothSampleIdAndName {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
-type Result<T> = std::result::Result<T, Error>;
-
-impl IntoResponse for Error {
+impl IntoResponse for IbdUtilsError {
     fn into_response(self) -> Response {
         let (status, error_message) = match self {
             // Map your errors to status codes here
-            Error::ZeroNumChromosome { backtrace: _ } => {
-                (StatusCode::BAD_REQUEST, self.to_string())
-            }
+            IbdUtilsError::ZeroNumChromosome => (StatusCode::BAD_REQUEST, self.to_string()),
             _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };
 
@@ -126,7 +44,7 @@ pub fn main_plotibd(args: &Commands) -> Result<()> {
 
     match state.port {
         Some(port) => {
-            let rt = Runtime::new().context(StdIOSnafu)?;
+            let rt = Runtime::new().change_context(IbdUtilsError::Input)?;
             let url = format!("0.0.0.0:{port}");
             println!("serve at {url}");
 
@@ -141,9 +59,11 @@ pub fn main_plotibd(args: &Commands) -> Result<()> {
 
                 let listener = tokio::net::TcpListener::bind(&url)
                     .await
-                    .context(StdIOSnafu)?;
-                axum::serve(listener, app).await.context(StdIOSnafu)?;
-                Ok::<(), Error>(())
+                    .change_context(IbdUtilsError::Input)?;
+                axum::serve(listener, app)
+                    .await
+                    .change_context(IbdUtilsError::Input)?;
+                Ok::<(), Report<IbdUtilsError>>(())
             })?;
         }
         None => {
@@ -158,8 +78,9 @@ pub fn main_plotibd(args: &Commands) -> Result<()> {
             let first = state.ibd2[..].partition_point(|x| x.individual_pair() < (id1, id2));
             let last = state.ibd2[..].partition_point(|x| x.individual_pair() <= (id1, id2));
             let v2 = &state.ibd2[first..last];
-            let svg_string = plot_svg(v1, v2, state.ginfo.as_ref()).context(OtherSnafu)?;
-            std::fs::write(state.out.clone(), svg_string).context(StdIOSnafu)?;
+            let svg_string =
+                plot_svg(v1, v2, state.ginfo.as_ref()).change_context(IbdUtilsError::Input)?;
+            std::fs::write(state.out.clone(), svg_string).change_context(IbdUtilsError::Input)?;
         }
     }
 
@@ -181,12 +102,18 @@ fn prepare_app_state(args: &Commands) -> Result<AppState> {
         port,
     } = args
     {
-        let ginfo = Arc::new(genome::GenomeInfo::from_toml_file(genome_info).context(GenomeSnafu)?);
-        let gmap = Arc::new(gmap::GeneticMap::from_genome_info(&ginfo).context(GmapSnafu)?);
+        let ginfo = Arc::new(
+            genome::GenomeInfo::from_toml_file(genome_info).change_context(IbdUtilsError::Input)?,
+        );
+        let gmap = Arc::new(
+            gmap::GeneticMap::from_genome_info(&ginfo).change_context(IbdUtilsError::Input)?,
+        );
 
-        let (inds1, inds1_opt) = Individuals::from_txt_file(sample_lst1).context(IndivSnafu)?;
+        let (inds1, inds1_opt) =
+            Individuals::from_txt_file(sample_lst1).change_context(IbdUtilsError::Input)?;
         let inds1 = Arc::new(inds1);
-        let (inds2, inds2_opt) = Individuals::from_txt_file(sample_lst2).context(IndivSnafu)?;
+        let (inds2, inds2_opt) =
+            Individuals::from_txt_file(sample_lst2).change_context(IbdUtilsError::Input)?;
         let inds2 = Arc::new(inds2);
         let mut ibd1 = IbdSet::new(gmap.clone(), ginfo.clone(), inds1.clone());
         let mut ibd2 = IbdSet::new(gmap, ginfo.clone(), inds2);
@@ -198,15 +125,18 @@ fn prepare_app_state(args: &Commands) -> Result<AppState> {
             .zip([inds1_opt, inds2_opt].into_iter())
         {
             if fmt.as_str() == "hapibd" {
-                ibd.read_hapibd_dir(dir).context(IbdSnafu)?;
+                ibd.read_hapibd_dir(dir)
+                    .change_context(IbdUtilsError::Input)?;
                 ibd.sort_by_samples();
                 ibd.infer_ploidy();
             } else if fmt.as_str() == "tskibd" {
-                ibd.read_tskibd_dir(dir).context(IbdSnafu)?;
+                ibd.read_tskibd_dir(dir)
+                    .change_context(IbdUtilsError::Input)?;
                 ibd.sort_by_haplotypes();
                 ibd.infer_ploidy();
             } else if fmt.as_str() == "hmmibd" {
-                ibd.read_hmmibd_dir(dir).context(IbdSnafu)?;
+                ibd.read_hmmibd_dir(dir)
+                    .change_context(IbdUtilsError::Input)?;
                 ibd.sort_by_haplotypes();
                 ibd.infer_ploidy();
             } else {
@@ -218,7 +148,7 @@ fn prepare_app_state(args: &Commands) -> Result<AppState> {
                 }
                 Some((converter, ind_, PloidConvertDirection::Haploid2Diploid)) => {
                     ibd.covert_to_het_diploid(Arc::new(ind_), &converter)
-                        .context(IbdSnafu)?;
+                        .change_context(IbdUtilsError::Library)?;
                 }
                 None => {}
             }
@@ -226,33 +156,51 @@ fn prepare_app_state(args: &Commands) -> Result<AppState> {
 
         ensure!(
             ibd1.get_inds().v() == ibd2.get_inds().v(),
-            Ibd1IndNotEqualId2IndviSnafu
+            IbdUtilsError::Input
+                .into_report()
+                .attach("Ibd1IndNotEqualId2Indvi")
         );
         let inds = inds1.clone();
         let id1 = match sample1.ind_ix1 {
             Some(id) => {
-                ensure!(id < inds.v().len() as u32, InvalidSampleIdSnafu);
+                ensure!(
+                    id < inds.v().len() as u32,
+                    IbdUtilsError::Input.into_report().attach("InvalidSampleId")
+                );
                 id
             }
             None => {
                 let s = sample1
                     .ind_name1
                     .as_ref()
-                    .context(MissBothSampleIdAndNameSnafu)?;
-                *inds.m().get(s).context(InvalidSampleNameSnafu)? as u32
+                    .ok_or(IbdUtilsError::Input)
+                    .attach("MissBothSampleIdAndNameSnafu")?;
+                *inds
+                    .m()
+                    .get(s)
+                    .ok_or(IbdUtilsError::Input)
+                    .attach("InvalidSampleName")? as u32
             }
         };
         let id2 = match sample2.ind_ix2 {
             Some(id) => {
-                ensure!(id < inds.v().len() as u32, InvalidSampleIdSnafu);
+                ensure!(
+                    id < inds.v().len() as u32,
+                    IbdUtilsError::Input.into_report().attach("InvalidSampleId")
+                );
                 id
             }
             None => {
                 let s = sample2
                     .ind_name2
                     .as_ref()
-                    .context(MissBothSampleIdAndNameSnafu)?;
-                *inds.m().get(s).context(InvalidSampleNameSnafu)? as u32
+                    .ok_or(IbdUtilsError::Input)
+                    .attach("InvalidSampleIdandName")?;
+                *inds
+                    .m()
+                    .get(s)
+                    .ok_or(IbdUtilsError::Input)
+                    .attach("InvalidSampleId")? as u32
             }
         };
         eprintln!(
@@ -290,11 +238,7 @@ fn prepare_app_state(args: &Commands) -> Result<AppState> {
 }
 
 /// plot IBD of a sample pair from both v1 and v2
-fn plot_svg(
-    v1: &[IbdSeg],
-    v2: &[IbdSeg],
-    ginfo: &GenomeInfo,
-) -> std::result::Result<String, Box<Whatever>> {
+fn plot_svg(v1: &[IbdSeg], v2: &[IbdSeg], ginfo: &GenomeInfo) -> Result<String> {
     let mut ret = String::new();
 
     {
@@ -302,24 +246,24 @@ fn plot_svg(
         let root_area = SVGBackend::with_string(&mut ret, (1024, 768)).into_drawing_area();
         root_area
             .fill(&WHITE)
-            .whatever_context("error in fill root area")
-            .map_err(Box::new)?;
+            .change_context(IbdUtilsError::Input)
+            .attach("error in fill root area")?;
 
         let nchrom = ginfo.chromnames.len() as f32;
         let chrsz_max = *ginfo
             .chromsize
             .iter()
             .max()
-            .whatever_context("zero number of chromosome")
-            .map_err(Box::new)? as f32;
+            .ok_or(IbdUtilsError::Library)
+            .attach("zero number of chromosome")? as f32;
         let mut cc = ChartBuilder::on(&root_area)
             .margin(40)
             .set_left_and_bottom_label_area_size(50)
             .set_label_area_size(LabelAreaPosition::Left, 60)
             .caption("IBD shared by a pair of samples", ("sans-serif", 30))
             .build_cartesian_2d(-1.0f32..chrsz_max, -1.0f32..nchrom)
-            .whatever_context("error building cartesian 2d")
-            .map_err(Box::new)?;
+            .change_context(IbdUtilsError::Library)
+            .attach("error building cartesian 2d")?;
 
         cc.configure_mesh()
             .x_labels(20)
@@ -331,8 +275,8 @@ fn plot_svg(
             .x_label_formatter(&|v| format!("{v:.0}"))
             .y_label_formatter(&|v| format!("{v:.0}"))
             .draw()
-            .whatever_context("draw error")
-            .map_err(Box::new)?;
+            .change_context(IbdUtilsError::Library)
+            .attach("draw error")?;
 
         // draw IBD segments
         let mut points = vec![];
@@ -361,8 +305,8 @@ fn plot_svg(
 
                 let s = cc
                     .draw_series(ls)
-                    .whatever_context("error in draw_series")
-                    .map_err(Box::new)?;
+                    .change_context(IbdUtilsError::Library)
+                    .attach("error in draw_series")?;
                 let legstyle = |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], *color);
                 if iseg == 0 {
                     s.label(label).legend(legstyle);
@@ -391,27 +335,29 @@ fn plot_svg(
                     + Text::new(chrname.to_string(), (-size - 5, 0), ts)
             },
         ))
-        .whatever_context("error in draw_series")
-        .map_err(Box::new)?;
+        .change_context(IbdUtilsError::Library)
+        .attach("error in draw_series")?;
 
         cc.configure_series_labels()
             .border_style(BLACK)
             .draw()
-            .whatever_context("error in draw")
-            .map_err(Box::new)?;
+            .change_context(IbdUtilsError::Input)
+            .attach("error in draw")?;
 
         // To avoid the IO failure being ignored silently, we manually call the present function
         root_area
             .present()
-            .whatever_context("Unable to write result to file")
-            .map_err(Box::new)?;
+            .change_context(IbdUtilsError::Input)
+            .attach("Unable to write result to file")?;
     }
 
     Ok(ret)
 }
 
-async fn handler_html() -> Result<Html<String>> {
-    let home = std::fs::read_to_string("ibdutils_index.html").context(StdIOSnafu)?;
+async fn handler_html() -> std::result::Result<Html<String>, String> {
+    let home = std::fs::read_to_string("ibdutils_index.html")
+        .change_context(IbdUtilsError::Input)
+        .map_err(|e| format!("{e:?}"))?;
     Ok(Html(home))
 }
 
@@ -441,10 +387,18 @@ async fn handler_searchid(query: Query<SearchQuery>, state: State<AppState>) -> 
 async fn handler_plotibd(
     ids: Query<IdPair>,
     state: State<AppState>,
-) -> Result<axum::response::Html<String>> {
+) -> std::result::Result<axum::response::Html<String>, String> {
     let inds = &state.inds;
-    let mut id1: u32 = ids.id1.parse().context(ParseIntSnafu)?;
-    let mut id2: u32 = ids.id2.parse().context(ParseIntSnafu)?;
+    let mut id1: u32 = ids
+        .id1
+        .parse()
+        .change_context(IbdUtilsError::Input)
+        .map_err(|e| format!("{e:?}"))?;
+    let mut id2: u32 = ids
+        .id2
+        .parse()
+        .change_context(IbdUtilsError::Input)
+        .map_err(|e| format!("{e:?}"))?;
     let n = inds.v().len();
     if (id1 == 0) && (id2 == 0) {
         let mut rng = rand::rng();
@@ -460,7 +414,9 @@ async fn handler_plotibd(
     let first = state.ibd2[..].partition_point(|x| x.individual_pair() < (id1, id2));
     let last = state.ibd2[..].partition_point(|x| x.individual_pair() <= (id1, id2));
     let v2 = &state.ibd2[first..last];
-    let svg_string = plot_svg(v1, v2, state.ginfo.as_ref()).context(OtherSnafu)?;
+    let svg_string = plot_svg(v1, v2, state.ginfo.as_ref())
+        .change_context(IbdUtilsError::Input)
+        .map_err(|e| format!("{e:?}"))?;
     Ok(axum::response::Html(svg_string))
 }
 

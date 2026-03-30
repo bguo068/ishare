@@ -1,3 +1,6 @@
+use super::{GtencodeError, Result};
+use error_stack::*;
+
 use super::utils;
 use super::Commands;
 use ishare::genotype::rare::GenotypeRecords;
@@ -5,45 +8,7 @@ use ishare::indiv::Individuals;
 use ishare::io::IntoParquet;
 use ishare::share::mat::NamedMatrix;
 use rayon::prelude::*;
-use std::{
-    backtrace::Backtrace,
-    path::{Path, PathBuf},
-};
-
-// use snafu::prelude::*;
-// pub enum Error {}
-// type Result<T> = std::result::Result<T, Error>;
-use snafu::prelude::*;
-#[derive(Debug, Snafu)]
-pub enum Error {
-    // #[snafu(transparent)]
-    GenotypeRare {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::genotype::rare::Error,
-    },
-    // #[snafu(transparent)]
-    GtencodeUtils {
-        // non leaf
-        #[snafu(backtrace)]
-        source: super::utils::Error,
-    },
-    // #[snafu(transparent)]
-    Matrix {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::io::Error,
-    },
-    RecordNotSorted {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    PathHasNoFilename {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
-type Result<T> = std::result::Result<T, Error>;
+use std::path::{Path, PathBuf};
 
 pub fn main_cosine(args: &Commands) -> Result<()> {
     if let Commands::Cosine {
@@ -60,17 +25,22 @@ pub fn main_cosine(args: &Commands) -> Result<()> {
         let min_magnitude = min_magnitude.unwrap_or(-0.001f64);
         let min_dot_prod = min_dot_prod.unwrap_or(0i32);
 
-        let records = GenotypeRecords::from_parquet_file(rec).context(GenotypeRareSnafu)?;
+        let records =
+            GenotypeRecords::from_parquet_file(rec).change_context(GtencodeError::Input)?;
         ensure!(
-            records.is_sorted_by_genome().context(GenotypeRareSnafu)?,
-            RecordNotSortedSnafu {}
+            records
+                .is_sorted_by_genome()
+                .change_context(GtencodeError::Input)?,
+            GtencodeError::Input
+                .into_report()
+                .attach("records not sorted")
         );
 
         let ind_file = rec.with_extension("ind");
         let _inds = Individuals::from_parquet_file(&ind_file);
 
         let (pairs, row_genomes, col_genomes) =
-            utils::prep_pairs(&records, genomes, lists).context(GtencodeUtilsSnafu)?;
+            utils::prep_pairs(&records, genomes, lists).change_context(GtencodeError::Library)?;
 
         // run in parallel and collect row results
         let res: Vec<(u32, u32, i32, i32, i32)> = pairs
@@ -138,7 +108,8 @@ pub fn main_cosine(args: &Commands) -> Result<()> {
             let dir = output.parent().unwrap_or(Path::new(".")).to_string_lossy();
             let mut filename = output
                 .file_name()
-                .context(PathHasNoFilenameSnafu {})?
+                .ok_or(GtencodeError::Output)
+                .attach("PathHasNoFilename")?
                 .to_string_lossy()
                 .into_owned();
             if !filename.ends_with(".cos") {
@@ -150,7 +121,9 @@ pub fn main_cosine(args: &Commands) -> Result<()> {
             // let resmat0 = resmat.clone();
             println!("WARN: output option is specified, results are not printed on the screen, check file {p:?}");
             // println!("\n writing...");
-            resmat.into_parquet(&p).context(MatrixSnafu)?;
+            resmat
+                .into_parquet(&p)
+                .change_context(GtencodeError::Output)?;
         }
     }
     Ok(())

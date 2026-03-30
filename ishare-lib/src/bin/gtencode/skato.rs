@@ -1,34 +1,8 @@
-use super::super::Commands;
+use super::{GtencodeError, Result};
+use error_stack::*;
+
+use super::Commands;
 use ishare::{genotype::rare::GenotypeRecords, indiv::Individuals, site::Sites};
-use snafu::prelude::*;
-#[derive(Snafu, Debug)]
-pub enum Error {
-    // #[snafu(transparent)]
-    GenotypeRare {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::genotype::rare::Error,
-    },
-    // #[snafu(transparent)]
-    Individuals {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::indiv::Error,
-    },
-    // #[snafu(transparent)]
-    Sites {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::site::Error,
-    },
-    // #[snafu(transparent)]
-    Io {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::io::Error,
-    },
-}
-type Result<T> = std::result::Result<T, Error>;
 
 pub fn main_skato(args: &Commands) -> Result<()> {
     if let Commands::Skato {
@@ -38,16 +12,20 @@ pub fn main_skato(args: &Commands) -> Result<()> {
         step,
     } = args
     {
-        let mut records = GenotypeRecords::from_parquet_file(rec).context(GenotypeRareSnafu)?;
+        let mut records =
+            GenotypeRecords::from_parquet_file(rec).change_context(GtencodeError::Input)?;
         let ind_file = rec.with_extension("ind");
-        let inds = Individuals::from_parquet_file(&ind_file).context(IndividualsSnafu)?;
+        let inds =
+            Individuals::from_parquet_file(&ind_file).change_context(GtencodeError::Input)?;
         let sites_file = rec.with_extension("sit");
-        let sites = Sites::from_parquet_file(&sites_file).context(SitesSnafu)?;
+        let sites = Sites::from_parquet_file(&sites_file).change_context(GtencodeError::Input)?;
         println!("number of individuals: {}", inds.v().len());
         println!("number of sites      : {}", sites.len());
 
         println!("sort by genotype records by position");
-        records.sort_by_position().context(GenotypeRareSnafu)?;
+        records
+            .sort_by_position()
+            .change_context(GtencodeError::Library)?;
         let all_records = records.records();
         let sitepos = sites.get_gw_pos_slice();
 

@@ -1,37 +1,9 @@
 use arrow_array::{Array, ArrayRef, Float32Array, Float64Array, UInt32Array, UInt8Array};
-use arrow_schema::ArrowError;
-use snafu::prelude::*;
-use std::backtrace::Backtrace;
+
+use crate::error::{IshareError, Result};
+
 use std::path::Path;
 use std::sync::Arc;
-
-type Result<T> = std::result::Result<T, Error>;
-
-#[derive(Snafu, Debug)]
-#[snafu(visibility(pub(crate)))]
-pub enum Error {
-    Downcast {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    StdIo {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    Parquet {
-        // leaf
-        #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
-        source: Box<parquet::errors::ParquetError>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    Arrow {
-        // leaf
-        #[snafu(source(from(ArrowError, Box::new)))]
-        source: Box<ArrowError>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
 
 pub trait IntoParquet {
     fn into_parquet(self, p: impl AsRef<Path>) -> Result<()>;
@@ -75,7 +47,7 @@ impl FromArrowArray for [u8] {
         Ok(arr
             .as_any()
             .downcast_ref::<UInt8Array>()
-            .context(DowncastSnafu {})?
+            .ok_or(IshareError::EmptyOption)?
             .values())
     }
 }
@@ -84,7 +56,7 @@ impl FromArrowArray for [u32] {
         Ok(arr
             .as_any()
             .downcast_ref::<UInt32Array>()
-            .context(DowncastSnafu {})?
+            .ok_or(IshareError::EmptyOption)?
             .values())
     }
 }
@@ -93,7 +65,7 @@ impl FromArrowArray for [f32] {
         let x = arr
             .as_any()
             .downcast_ref::<Float32Array>()
-            .context(DowncastSnafu {})?
+            .ok_or(IshareError::EmptyOption)?
             .values();
         Ok(x)
     }
@@ -103,7 +75,7 @@ impl FromArrowArray for [f64] {
         let x = arr
             .as_any()
             .downcast_ref::<Float64Array>()
-            .context(DowncastSnafu {})?
+            .ok_or(IshareError::EmptyOption)?
             .values();
         Ok(x)
     }

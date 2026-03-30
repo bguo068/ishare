@@ -1,3 +1,6 @@
+use super::{GtencodeError, Result};
+use error_stack::*;
+
 use crate::utils::calc_allele_count;
 
 use super::Commands;
@@ -12,80 +15,10 @@ use itertools::Itertools;
 use log::{info, LevelFilter};
 use rayon::prelude::*;
 use slice_group_by::*;
-use snafu::prelude::*;
-use std::backtrace::Backtrace;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    Io {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-        source: std::io::Error,
-    },
-    // #[snafu(transparent)]
-    Genome {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::genome::Error,
-    },
-    // #[snafu(transparent)]
-    Gmap {
-        // non leaf
-        #[snafu(source(from(ishare::gmap::Error, Box::new)))]
-        #[snafu(backtrace)]
-        source: Box<ishare::gmap::Error>,
-    },
-    // #[snafu(transparent)]
-    GenotypeRare {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::genotype::rare::Error,
-    },
-    // #[snafu(transparent)]
-    Individual {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::indiv::Error,
-    },
-    // #[snafu(transparent)]
-    Ibd {
-        // non leaf
-        #[snafu(backtrace)]
-        #[snafu(source(from(ishare::share::ibd::Error, Box::new)))]
-        source: Box<ishare::share::ibd::Error>,
-    },
-    StdIo {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    // #[snafu(transparent)]
-    UtilsPath {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::utils::path::Error,
-    },
-    RwLock {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    GenomeSpan {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    // #[snafu(transparent)]
-    GtencodeUtil {
-        // non leaf
-        #[snafu(backtrace)]
-        source: super::utils::Error,
-    },
-}
-
-type Result<T> = std::result::Result<T, Error>;
 
 trait GenomeIDPair {
     fn genome_id_pair(&self) -> (u32, u32);
@@ -119,22 +52,24 @@ pub fn main_rvibd(args: &Commands) -> Result<()> {
             .init();
 
         info!("read genome info"); // (for ibd) to compare with that from rare variants
-        let ginfo = GenomeInfo::from_toml_file(genome_info).context(GenomeSnafu)?;
-        let gmap = GeneticMap::from_genome_info(&ginfo).context(GmapSnafu)?;
+        let ginfo = GenomeInfo::from_toml_file(genome_info).change_context(GtencodeError::Input)?;
+        let gmap = GeneticMap::from_genome_info(&ginfo).change_context(GtencodeError::Input)?;
 
         info!("read rv records");
-        let mut records = GenotypeRecords::from_parquet_file(rec).context(GenotypeRareSnafu)?;
+        let mut records =
+            GenotypeRecords::from_parquet_file(rec).change_context(GtencodeError::Input)?;
 
         info!("read individuals");
         let ind_file = rec.with_extension("ind");
-        let inds = Individuals::from_parquet_file(&ind_file).context(IndividualSnafu)?;
+        let inds =
+            Individuals::from_parquet_file(&ind_file).change_context(GtencodeError::Input)?;
 
         info!("read ibd/rv samples");
         check_samples_orders(samples_lst, &inds)?;
 
         info!("read ibd");
         // ibd interval trees
-        let mut ibd = read_ibdseg_vec(eibd).context(IbdSnafu)?;
+        let mut ibd = read_ibdseg_vec(eibd).change_context(GtencodeError::Input)?;
 
         match *which {
             0 => position_scan(records, ibd, &ginfo, out_prefix)?,
@@ -155,13 +90,18 @@ pub fn main_rvibd(args: &Commands) -> Result<()> {
 fn check_samples_orders(samples_lst: &PathBuf, inds: &Individuals) -> Result<()> {
     let mut ibd_samples = vec![];
     std::fs::read_to_string(samples_lst)
-        .context(StdIoSnafu {})?
+        .change_context(GtencodeError::Input)?
         .trim()
         .split("\n")
         .for_each(|x| {
             ibd_samples.push(x.to_owned());
         });
-    assert_eq!(inds.v(), &ibd_samples);
+    ensure!(
+        inds.v() == &ibd_samples,
+        GtencodeError::Input
+            .into_report()
+            .attach("sample order not matched")
+    );
     Ok(())
 }
 
@@ -184,10 +124,12 @@ fn position_scan(
     info!("remove multiallelic sites");
     records
         .filter_multi_allelic_site()
-        .context(GenotypeRareSnafu)?;
+        .change_context(GtencodeError::Library)?;
 
     info!("sort rv records by position");
-    records.sort_by_position().context(GenotypeRareSnafu)?;
+    records
+        .sort_by_position()
+        .change_context(GtencodeError::Library)?;
     info!("build ibd interval tress");
 
     let it = ibd.into_iter().map(|seg| {
@@ -227,13 +169,14 @@ fn position_scan(
     // prepare rwlock file
 
     let rwlock_file = {
-        let out = from_prefix(out_prefix.as_ref(), "rvibd.pos").context(UtilsPathSnafu)?;
+        let out =
+            from_prefix(out_prefix.as_ref(), "rvibd.pos").change_context(GtencodeError::Output)?;
         // let out = format!("{}_rvibd.pos", out_prefix.as_ref().to_str().unwrap());
         File::create(&out)
             .map(BufWriter::new)
             .map(RwLock::new)
             .map(Arc::new)
-            .context(StdIoSnafu {})?
+            .change_context(GtencodeError::Output)?
     };
 
     chunks.par_iter().try_for_each(|&(start, end)| {
@@ -288,14 +231,17 @@ fn position_scan_chunk(
             out,
         });
     }
-    let mut file = rwlock_file.write().map_err(|_| RwLockSnafu {}.build())?;
+    let mut file = rwlock_file
+        .write()
+        .map_err(|_| GtencodeError::Output)
+        .attach("error with rwlock")?;
     for r in res {
         writeln!(
             file,
             "{}\t{}\t{}\t{}\t{}\t{}",
             r.chrid, r.chrpos, r.ac, r.within, r.between, r.out,
         )
-        .context(StdIoSnafu {})?;
+        .change_context(GtencodeError::Output)?;
     }
     println!("<============ {start} - {end}");
     Ok(())
@@ -309,15 +255,17 @@ fn pairwise_compare(
     out_prefix: impl AsRef<Path>,
 ) -> Result<()> {
     info!("get allele count map");
-    let ac_map = calc_allele_count(&mut records).context(GtencodeUtilSnafu)?;
+    let ac_map = calc_allele_count(&mut records).change_context(GtencodeError::Library)?;
 
     info!("remove multiallelic sites");
     records
         .filter_multi_allelic_site()
-        .context(GenotypeRareSnafu)?;
+        .change_context(GtencodeError::Library)?;
 
     info!("sort rv records by genome");
-    records.sort_by_genome().context(GenotypeRareSnafu)?;
+    records
+        .sort_by_genome()
+        .change_context(GtencodeError::Library)?;
 
     info!("sort ibd by genome pair");
     ibd.par_sort();
@@ -330,7 +278,7 @@ fn pairwise_compare(
             .map(BufWriter::new)
             .map(RwLock::new)
             .map(Arc::new)
-            .context(StdIoSnafu {})
+            .change_context(GtencodeError::Library)
     }?;
 
     // split into ~ 1000 chunks
@@ -377,7 +325,7 @@ fn pairwise_compare(
     let out = out_prefix.as_ref().with_extension("rvibd.pair");
     let mut file = File::create(&out)
         .map(BufWriter::new)
-        .context(StdIoSnafu {})?;
+        .change_context(GtencodeError::Library)?;
     writeln!(
         file,
         "{}\t{}\t{}\t{}\t{}\t{}",
@@ -388,7 +336,7 @@ fn pairwise_compare(
         acc_counters[4],
         acc_counters[5],
     )
-    .context(StdIoSnafu {})?;
+    .change_context(GtencodeError::Library)?;
     println!("{acc_counters:?}");
     Ok(())
 }
@@ -515,15 +463,25 @@ fn pairwise_compare_chunk(
         }
     }
 
-    let mut file = rwlock_file.write().map_err(|_| RwLockSnafu {}.build())?;
+    let mut file = rwlock_file
+        .write()
+        .map_err(|_| GtencodeError::Output)
+        .attach("error accessing rwlock file")?;
     for r in v {
-        file.write_all(&r.g1.to_le_bytes()).context(StdIoSnafu {})?;
-        file.write_all(&r.g2.to_le_bytes()).context(StdIoSnafu {})?;
-        file.write_all(&r.s.to_le_bytes()).context(StdIoSnafu {})?;
-        file.write_all(&r.e.to_le_bytes()).context(StdIoSnafu {})?;
-        file.write_all(&r.cm.to_le_bytes()).context(StdIoSnafu {})?;
-        file.write_all(&r.p.to_le_bytes()).context(StdIoSnafu {})?;
-        file.write_all(&r.ac.to_le_bytes()).context(StdIoSnafu {})?;
+        file.write_all(&r.g1.to_le_bytes())
+            .change_context(GtencodeError::Output)?;
+        file.write_all(&r.g2.to_le_bytes())
+            .change_context(GtencodeError::Output)?;
+        file.write_all(&r.s.to_le_bytes())
+            .change_context(GtencodeError::Output)?;
+        file.write_all(&r.e.to_le_bytes())
+            .change_context(GtencodeError::Output)?;
+        file.write_all(&r.cm.to_le_bytes())
+            .change_context(GtencodeError::Output)?;
+        file.write_all(&r.p.to_le_bytes())
+            .change_context(GtencodeError::Output)?;
+        file.write_all(&r.ac.to_le_bytes())
+            .change_context(GtencodeError::Output)?;
     }
 
     info!("leaving: {tri_idx1} - {tri_idx2}");
@@ -626,9 +584,13 @@ fn cmp_rv_and_ibd_similarity_chunks(
         });
     }
     // write to file
-    let mut file = file.write().map_err(|_| RwLockSnafu {}.build())?;
+    let mut file = file
+        .write()
+        .map_err(|_| GtencodeError::Output)
+        .attach("error with rwlock")?;
     for r in v {
-        writeln!(file, "{}\t{}\t{}", r.ibd_prop, r.cosine, r.jaccard).context(StdIoSnafu {})?;
+        writeln!(file, "{}\t{}\t{}", r.ibd_prop, r.cosine, r.jaccard)
+            .change_context(GtencodeError::Output)?;
     }
     Ok(())
 }
@@ -648,7 +610,8 @@ fn cmp_rv_and_ibd_similarity(
 
     // sortting
     ibd.sort();
-    rvgt.sort_by_genome().context(GenotypeRareSnafu)?;
+    rvgt.sort_by_genome()
+        .change_context(GtencodeError::Library)?;
 
     // prepare output file
     let file = {
@@ -661,13 +624,16 @@ fn cmp_rv_and_ibd_similarity(
             .map(std::io::BufWriter::new)
             .map(RwLock::new)
             .map(Arc::new)
-            .context(StdIoSnafu {})?
+            .change_context(GtencodeError::Output)?
     };
 
     // some constant
     let genome_span = {
         let minmax = rvgt.records().iter().map(|x| x.get_position()).minmax();
-        let (min, max) = minmax.into_option().context(GenomeSpanSnafu {})?;
+        let (min, max) = minmax
+            .into_option()
+            .ok_or(GtencodeError::Library)
+            .attach("can not find min/max position")?;
         gmap.get_cm_len(min, max)
     };
 

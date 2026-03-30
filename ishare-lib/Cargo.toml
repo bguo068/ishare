@@ -36,9 +36,10 @@ log = "0.4.29"
 env_logger = "0.11.8"
 slice-group-by = "0.3.1"
 bincode = "2.0.1"
-snafu = "0.8.9"
 regex = "1.12.2"
 chrono = "0.4.42"
+error-stack = "0.7.0"
+thiserror = "2.0.18"
 
 [dev-dependencies]
 tempfile = "3.23.0"
@@ -48,3 +49,4 @@ tempfile = "3.23.0"
 skato = ["dep:skato"]
 plotibd = ["dep:plotters", "dep:tokio", "dep:axum", "dep:hyper"]
 # default = ['skato', 'plotibd']
+# default = ['plotibd']

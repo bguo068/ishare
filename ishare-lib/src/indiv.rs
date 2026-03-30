@@ -3,7 +3,6 @@
 
 use ahash::{HashMap, HashMapExt};
 use arrow_array::{ArrayRef, RecordBatch, StringArray};
-use arrow_schema::ArrowError;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::path::Path;
@@ -14,50 +13,8 @@ use parquet::file::properties::WriterProperties;
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use snafu::prelude::*;
-use std::backtrace::Backtrace;
-
-type Result<T> = std::result::Result<T, Error>;
-#[derive(Debug, Snafu)]
-pub enum Error {
-    Arrow {
-        // leaf
-        #[snafu(source(from(ArrowError, Box::new)))]
-        source: Box<ArrowError>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    Parquet {
-        // leaf
-        #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
-        source: Box<parquet::errors::ParquetError>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    StdIo {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    EmptyLine {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    NotEnoughFields {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    DownCast {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    MissingData {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    InvalidFileFormat {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
+use crate::error::{IshareError, Result};
+use error_stack::*;
 
 #[derive(Serialize, Deserialize, Clone, Debug, Eq, PartialEq)]
 pub struct Individuals {
@@ -100,13 +57,14 @@ impl Individuals {
     ///   diploid-to-haploid or haploid-to-diploid.
     pub fn from_txt_file(p: impl AsRef<Path>) -> Result<(Individuals, IndividualOptionalInfo)> {
         use std::io::read_to_string;
-        let contents = read_to_string(File::open(p.as_ref()).context(StdIoSnafu {})?)
-            .context(StdIoSnafu {})?;
+        let contents =
+            read_to_string(File::open(p.as_ref()).change_context(IshareError::Individual)?)
+                .change_context(IshareError::Individual)?;
         let ncolumns = contents
             .trim()
             .lines()
             .next()
-            .context(EmptyLineSnafu {})?
+            .ok_or(IshareError::RuntimeCheck)?
             .split("\t")
             .count();
         match ncolumns {
@@ -130,8 +88,8 @@ impl Individuals {
 
                 for line in contents.trim().lines() {
                     let mut fields = line.split("\t");
-                    let h = fields.next().context(NotEnoughFieldsSnafu {})?; // column 1 is hap
-                    let d = fields.next().context(NotEnoughFieldsSnafu {})?; // column 2 is dip
+                    let h = fields.next().ok_or(IshareError::EmptyOption)?; // column 1 is hap
+                    let d = fields.next().ok_or(IshareError::EmptyOption)?; // column 2 is dip
                     v_h.push(h.to_owned());
                     m_h.insert(h.to_owned(), m_h.len());
 
@@ -174,9 +132,9 @@ impl Individuals {
 
                 for line in contents.trim().lines() {
                     let mut fields = line.split("\t");
-                    let d = fields.next().context(NotEnoughFieldsSnafu {})?; // column 1 is dip
-                    let h1 = fields.next().context(NotEnoughFieldsSnafu {})?; // column 2 is hap
-                    let h2 = fields.next().context(NotEnoughFieldsSnafu {})?; // column 2 is hap
+                    let d = fields.next().ok_or(IshareError::EmptyOption)?; // column 1 is dip
+                    let h1 = fields.next().ok_or(IshareError::EmptyOption)?; // column 2 is hap
+                    let h2 = fields.next().ok_or(IshareError::EmptyOption)?; // column 2 is hap
 
                     v_d.push(d.to_owned());
                     m_d.insert(d.to_owned(), m_d.len());
@@ -203,7 +161,11 @@ impl Individuals {
                     )),
                 ))
             }
-            _ => InvalidFileFormatSnafu {}.fail(),
+            _ => {
+                bail!(IshareError::Individual
+                    .into_report()
+                    .attach("too many fields to parse"))
+            }
         }
     }
 
@@ -227,36 +189,39 @@ impl Individuals {
         // array
         let v = StringArray::from(self.vec);
         let batch = RecordBatch::try_from_iter(vec![("chrnames", Arc::new(v) as ArrayRef)])
-            .context(ArrowSnafu {})?;
+            .change_context(IshareError::Individual)?;
         // writer
-        let file = File::create(p.as_ref()).context(StdIoSnafu {})?;
+        let file = File::create(p.as_ref()).change_context(IshareError::Individual)?;
         // -- default writer properties
         let props = WriterProperties::builder().build();
-        let mut writer =
-            ArrowWriter::try_new(file, batch.schema(), Some(props)).context(ParquetSnafu {})?;
+        let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))
+            .change_context(IshareError::Individual)?;
         // write batch
-        writer.write(&batch).context(ParquetSnafu {})?;
+        writer
+            .write(&batch)
+            .change_context(IshareError::Individual)?;
         // writer must be closed to write footer
-        writer.close().context(ParquetSnafu {})?;
+        writer.close().change_context(IshareError::Individual)?;
         Ok(())
     }
 
     pub fn from_parquet_file(p: impl AsRef<Path>) -> Result<Self> {
-        let file = File::open(p).context(StdIoSnafu {})?;
-        let builder = ParquetRecordBatchReaderBuilder::try_new(file).context(ParquetSnafu {})?;
-        let mut reader = builder.build().context(ParquetSnafu {})?;
+        let file = File::open(p).change_context(IshareError::Individual)?;
+        let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+            .change_context(IshareError::Individual)?;
+        let mut reader = builder.build().change_context(IshareError::Individual)?;
 
         let mut v = Vec::<String>::new();
         for record_batch in &mut reader {
-            let record_batch = record_batch.context(ArrowSnafu {})?;
+            let record_batch = record_batch.change_context(IshareError::Individual)?;
             for x in record_batch
                 .column(0)
                 .as_any()
                 .downcast_ref::<StringArray>()
-                .context(DownCastSnafu {})?
+                .ok_or(IshareError::EmptyOption)?
                 .into_iter()
             {
-                v.push(x.context(MissingDataSnafu {})?.to_owned());
+                v.push(x.ok_or(IshareError::EmptyOption)?.to_owned());
             }
         }
 

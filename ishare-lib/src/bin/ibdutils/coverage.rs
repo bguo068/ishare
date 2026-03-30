@@ -1,4 +1,8 @@
-use std::{backtrace::Backtrace, sync::Arc};
+use super::IbdUtilsError;
+use super::Result;
+use error_stack::*;
+
+use std::sync::Arc;
 
 use super::Commands;
 
@@ -7,52 +11,6 @@ use ishare::{
     indiv::*,
     share::ibd::{coverage::CovCounter, ibdset::*},
 };
-
-use snafu::prelude::*;
-
-#[derive(Debug, Snafu)]
-#[snafu(visibility)]
-pub enum Error {
-    // #[snafu(transparent)]
-    Indiv {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::indiv::Error,
-    },
-    // #[snafu(transparent)]
-    Genome {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::genome::Error,
-    },
-    // #[snafu(transparent)]
-    Gmap {
-        // non leaf
-        #[snafu(backtrace)]
-        #[snafu(source(from(ishare::gmap::Error, Box::new)))]
-        source: Box<ishare::gmap::Error>,
-    },
-    // #[snafu(transparent)]
-    Ibd {
-        // non leaf
-        #[snafu(source(from(ishare::share::ibd::Error, Box::new)))]
-        #[snafu(backtrace)]
-        source: Box<ishare::share::ibd::Error>,
-    },
-    // #[snafu(transparent)]
-    Container {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::container::Error,
-    },
-    // local
-    StdIo {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
-type Result<T> = std::result::Result<T, Error>;
 
 pub fn main_coverage(args: &Commands) -> Result<()> {
     if let Commands::Coverage {
@@ -67,10 +25,15 @@ pub fn main_coverage(args: &Commands) -> Result<()> {
         out,
     } = args
     {
-        let ginfo = Arc::new(genome::GenomeInfo::from_toml_file(genome_info).context(GenomeSnafu)?);
-        let gmap = Arc::new(gmap::GeneticMap::from_genome_info(&ginfo).context(GmapSnafu)?);
+        let ginfo = Arc::new(
+            genome::GenomeInfo::from_toml_file(genome_info).change_context(IbdUtilsError::Input)?,
+        );
+        let gmap = Arc::new(
+            gmap::GeneticMap::from_genome_info(&ginfo).change_context(IbdUtilsError::Input)?,
+        );
 
-        let (inds1, inds1_opt) = Individuals::from_txt_file(sample_lst).context(IndivSnafu)?;
+        let (inds1, inds1_opt) =
+            Individuals::from_txt_file(sample_lst).change_context(IbdUtilsError::Input)?;
         let mut ibd1 = IbdSet::new(gmap.clone(), ginfo.clone(), Arc::new(inds1));
 
         for (((ibd, fmt), dir), inds_opt) in [&mut ibd1]
@@ -80,17 +43,20 @@ pub fn main_coverage(args: &Commands) -> Result<()> {
             .zip(vec![inds1_opt].into_iter())
         {
             if fmt.as_str() == "hapibd" {
-                ibd.read_hapibd_dir(dir).context(IbdSnafu)?;
+                ibd.read_hapibd_dir(dir)
+                    .change_context(IbdUtilsError::Input)?;
                 if (*prevent_flatten) && (ibd.get_ploidy_status() == IbdSetPloidyStatus::Diploid) {
-                    ibd.merge().context(IbdSnafu)?;
+                    ibd.merge().change_context(IbdUtilsError::Input)?;
                 }
                 ibd.infer_ploidy();
             } else if fmt.as_str() == "tskibd" {
-                ibd.read_tskibd_dir(dir).context(IbdSnafu)?;
+                ibd.read_tskibd_dir(dir)
+                    .change_context(IbdUtilsError::Input)?;
                 ibd.sort_by_haplotypes();
                 ibd.infer_ploidy();
             } else if fmt.as_str() == "hmmibd" {
-                ibd.read_hmmibd_dir(dir).context(IbdSnafu)?;
+                ibd.read_hmmibd_dir(dir)
+                    .change_context(IbdUtilsError::Input)?;
                 ibd.sort_by_haplotypes();
                 ibd.infer_ploidy();
             } else {
@@ -110,13 +76,13 @@ pub fn main_coverage(args: &Commands) -> Result<()> {
                 }
                 Some((converter, ind_, PloidConvertDirection::Haploid2Diploid)) => {
                     ibd.covert_to_het_diploid(Arc::new(ind_), &converter)
-                        .context(IbdSnafu)?;
+                        .change_context(IbdUtilsError::Library)?;
                 }
                 None => {}
             }
         }
 
-        let total_size = gmap.get_size_cm().context(GmapSnafu)?;
+        let total_size = gmap.get_size_cm().change_context(IbdUtilsError::Library)?;
         let mut sampling_points_cm: Vec<f32> = vec![];
         let mut cm_sp = *start_cm as f32;
         while cm_sp < total_size {
@@ -138,10 +104,10 @@ pub fn main_coverage(args: &Commands) -> Result<()> {
 
         let mut file = std::fs::File::create(out)
             .map(std::io::BufWriter::new)
-            .context(StdIoSnafu)?;
+            .change_context(IbdUtilsError::Output)?;
 
         use std::io::Write;
-        writeln!(file, "Chrom,Pos,Cm,GwPos,GwCm,Coverage").context(StdIoSnafu)?;
+        writeln!(file, "Chrom,Pos,Cm,GwPos,GwCm,Coverage").change_context(IbdUtilsError::Output)?;
         for (gw_bp, _, coverage) in counter.iter_sorted_start_end_count() {
             let gw_cm = gmap.get_cm(gw_bp);
             let (idx, chr_str, chr_pos) = ginfo.to_chr_pos(gw_bp);
@@ -153,7 +119,7 @@ pub fn main_coverage(args: &Commands) -> Result<()> {
                 file,
                 "{chr_str},{chr_pos},{chr_cm},{gw_bp},{gw_cm},{coverage}"
             )
-            .context(StdIoSnafu)?;
+            .change_context(IbdUtilsError::Output)?;
         }
     }
     Ok(())

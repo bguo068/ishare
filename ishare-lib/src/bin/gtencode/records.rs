@@ -1,39 +1,8 @@
-use std::backtrace::Backtrace;
+use super::{GtencodeError, Result};
+use error_stack::*;
 
 use super::Commands;
 use ishare::{genotype::rare::GenotypeRecords, indiv::Individuals, utils::path::from_prefix};
-
-use snafu::prelude::*;
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    // #[snafu(transparent)]
-    GenotypeRare {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::genotype::rare::Error,
-    },
-    // #[snafu(transparent)]
-    Individual {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::indiv::Error,
-    },
-    // #[snafu(transparent)]
-    UtilsPath {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::utils::path::Error,
-    },
-
-    // local
-    StdIo {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
-type Result<T> = std::result::Result<T, Error>;
 
 pub fn main_records(args: &Commands) -> Result<()> {
     if let Commands::Records {
@@ -48,7 +17,8 @@ pub fn main_records(args: &Commands) -> Result<()> {
         use std::time::Instant;
         let start = Instant::now();
         println!("# Loading genotype records ...");
-        let mut records = GenotypeRecords::from_parquet_file(rec).context(GenotypeRareSnafu)?;
+        let mut records =
+            GenotypeRecords::from_parquet_file(rec).change_context(GtencodeError::Input)?;
         let duration = start.elapsed();
         println!("# Loading Time : {duration:?}");
 
@@ -60,14 +30,14 @@ pub fn main_records(args: &Commands) -> Result<()> {
             }
             _ => {
                 let inds = Individuals::from_parquet_file(
-                    from_prefix(rec, "ind").context(UtilsPathSnafu)?,
+                    from_prefix(rec, "ind").change_context(GtencodeError::Input)?,
                 )
-                .context(IndividualSnafu)?;
+                .change_context(GtencodeError::Input)?;
 
                 match samples.as_ref() {
                     Some(sfname) => {
                         for sample_name in std::fs::read_to_string(sfname)
-                            .context(StdIoSnafu)?
+                            .change_context(GtencodeError::Input)?
                             .trim()
                             .split('\n')
                         {
@@ -94,7 +64,7 @@ pub fn main_records(args: &Commands) -> Result<()> {
 
         records
             .subset_by_genomes(choosen_genome.as_slice())
-            .context(GenotypeRareSnafu)?;
+            .change_context(GtencodeError::Input)?;
 
         if let Some(p) = pos {
             records.records_mut().retain(|x| x.get_position() == *p);
@@ -104,8 +74,10 @@ pub fn main_records(args: &Commands) -> Result<()> {
             Some(out) => {
                 println!("output records counts: {}", records.records().len());
                 records
-                    .into_parquet_file(from_prefix(out, "rec").context(UtilsPathSnafu)?)
-                    .context(GenotypeRareSnafu)?;
+                    .into_parquet_file(
+                        from_prefix(out, "rec").change_context(GtencodeError::Output)?,
+                    )
+                    .change_context(GtencodeError::Output)?;
             }
             None => records.records().iter().for_each(|r| {
                 println!("{r:?}");

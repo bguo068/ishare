@@ -1,4 +1,6 @@
-use std::{backtrace::Backtrace, num::ParseFloatError};
+use super::IbdUtilsError;
+use super::Result;
+use error_stack::*;
 
 use super::utils::*;
 use ishare::{
@@ -15,58 +17,6 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 use slice_group_by::GroupBy;
-use snafu::prelude::*;
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    // #[snafu(transparent)]
-    Indiv {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::indiv::Error,
-    },
-    // #[snafu(transparent)]
-    Genome {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::genome::Error,
-    },
-    // #[snafu(transparent)]
-    Gmap {
-        // non leaf
-        #[snafu(backtrace)]
-        #[snafu(source(from(ishare::gmap::Error, Box::new)))]
-        source: Box<ishare::gmap::Error>,
-    },
-    // #[snafu(transparent)]
-    Ibd {
-        // non leaf
-        #[snafu(backtrace)]
-        #[snafu(source(from(ishare::share::ibd::Error, Box::new)))]
-        source: Box<ishare::share::ibd::Error>,
-    },
-    // #[snafu(transparent)]
-    IbdutilsUtil {
-        // non leaf
-        #[snafu(backtrace)]
-        #[snafu(source(from(super::utils::Error, Box::new)))]
-        source: Box<super::utils::Error>,
-    },
-    // local
-    // #[snafu(transparent)]
-    ParseFloat {
-        // leaf
-        source: ParseFloatError,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    // #[snafu(transparent)]
-    StdIo {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
-type Result<T> = std::result::Result<T, Error>;
 
 use super::Commands;
 pub fn main_compare(args: &Commands) -> Result<()> {
@@ -89,11 +39,17 @@ pub fn main_compare(args: &Commands) -> Result<()> {
     } = args
     {
         // files
-        let ginfo = Arc::new(genome::GenomeInfo::from_toml_file(genome_info).context(GenomeSnafu)?);
-        let gmap = Arc::new(gmap::GeneticMap::from_genome_info(&ginfo).context(GmapSnafu)?);
+        let ginfo = Arc::new(
+            genome::GenomeInfo::from_toml_file(genome_info).change_context(IbdUtilsError::Input)?,
+        );
+        let gmap = Arc::new(
+            gmap::GeneticMap::from_genome_info(&ginfo).change_context(IbdUtilsError::Input)?,
+        );
 
-        let (inds1, inds1_opt) = Individuals::from_txt_file(sample_lst1).context(IndivSnafu)?;
-        let (inds2, inds2_opt) = Individuals::from_txt_file(sample_lst2).context(IndivSnafu)?;
+        let (inds1, inds1_opt) =
+            Individuals::from_txt_file(sample_lst1).change_context(IbdUtilsError::Input)?;
+        let (inds2, inds2_opt) =
+            Individuals::from_txt_file(sample_lst2).change_context(IbdUtilsError::Input)?;
         let mut ibd1 = IbdSet::new(gmap.clone(), ginfo.clone(), Arc::new(inds1));
         let mut ibd2 = IbdSet::new(gmap.clone(), ginfo.clone(), Arc::new(inds2));
 
@@ -104,18 +60,21 @@ pub fn main_compare(args: &Commands) -> Result<()> {
             .zip(vec![inds1_opt, inds2_opt].into_iter())
         {
             if fmt.as_str() == "hapibd" {
-                ibd.read_hapibd_dir(dir).context(IbdSnafu)?;
+                ibd.read_hapibd_dir(dir)
+                    .change_context(IbdUtilsError::Input)?;
                 match *use_hap_overlap {
                     true => ibd.sort_by_haplotypes(),
                     false => ibd.sort_by_samples(),
                 }
                 ibd.infer_ploidy();
             } else if fmt.as_str() == "tskibd" {
-                ibd.read_tskibd_dir(dir).context(IbdSnafu)?;
+                ibd.read_tskibd_dir(dir)
+                    .change_context(IbdUtilsError::Input)?;
                 ibd.sort_by_haplotypes();
                 ibd.infer_ploidy();
             } else if fmt.as_str() == "hmmibd" {
-                ibd.read_hmmibd_dir(dir).context(IbdSnafu)?;
+                ibd.read_hmmibd_dir(dir)
+                    .change_context(IbdUtilsError::Input)?;
                 ibd.sort_by_haplotypes();
                 ibd.infer_ploidy();
             } else {
@@ -135,7 +94,7 @@ pub fn main_compare(args: &Commands) -> Result<()> {
                 }
                 Some((converter, ind_, PloidConvertDirection::Haploid2Diploid)) => {
                     ibd.covert_to_het_diploid(Arc::new(ind_), &converter)
-                        .context(IbdSnafu)?;
+                        .change_context(IbdUtilsError::Library)?;
                 }
                 None => {}
             }
@@ -147,8 +106,8 @@ pub fn main_compare(args: &Commands) -> Result<()> {
             // convert from string to vector of float
             let mut v: Vec<f32> = vec![];
             length_bin_starts.split(",").try_for_each(|s| {
-                v.push(s.parse().context(ParseFloatSnafu)?);
-                Ok::<(), Error>(())
+                v.push(s.parse().change_context(IbdUtilsError::Input)?);
+                Ok::<(), Report<IbdUtilsError>>(())
             })?;
             let mut length_bin_starts = v;
             // sort
@@ -166,8 +125,8 @@ pub fn main_compare(args: &Commands) -> Result<()> {
             // 1.1 overlapping analysis all together
             let res = oa
                 .analzyze(Some(length_bin_starts.as_slice()), None)
-                .context(IbdSnafu)?;
-            res.to_csv(out).context(IbdSnafu)?;
+                .change_context(IbdUtilsError::Library)?;
+            res.to_csv(out).change_context(IbdUtilsError::Output)?;
 
             // 1.2 overlapping analysis per window of each chromosome
             if let Some(window_size_bp) = window_size_bp {
@@ -190,7 +149,7 @@ pub fn main_compare(args: &Commands) -> Result<()> {
                         windows.push((winstart, winend));
                         let ov_res = oa
                             .analzyze(Some(length_bin_starts.as_slice()), Some((winstart, winend)))
-                            .context(IbdSnafu)?;
+                            .change_context(IbdUtilsError::Library)?;
                         ov_res_windows.push(ov_res);
                         winstart += window_size_bp;
                     }
@@ -204,7 +163,7 @@ pub fn main_compare(args: &Commands) -> Result<()> {
                     &gmap,
                     &out_win_ov,
                 )
-                .context(IbdSnafu)?;
+                .change_context(IbdUtilsError::Output)?;
             }
         }
         if !suppress_total_ibd_calculation {
@@ -303,7 +262,7 @@ pub fn main_compare(args: &Commands) -> Result<()> {
                 "PairTotIbdB",
                 out.with_extension("pairtotibdpq"),
             )
-            .context(IbdutilsUtilSnafu)?;
+            .change_context(IbdUtilsError::Library)?;
         }
 
         {
@@ -347,12 +306,12 @@ pub fn main_compare(args: &Commands) -> Result<()> {
             }
 
             // write csv file
-            let mut f =
-                std::fs::File::create(out.with_extension("poptotibdcsv")).context(StdIoSnafu)?;
+            let mut f = std::fs::File::create(out.with_extension("poptotibdcsv"))
+                .change_context(IbdUtilsError::Output)?;
             use std::io::Write;
-            writeln!(f, "BinCenter,PopTotIbdA,PopTotIbdB").context(StdIoSnafu)?;
+            writeln!(f, "BinCenter,PopTotIbdA,PopTotIbdB").change_context(IbdUtilsError::Output)?;
             for ((bc, tot1), tot2) in bincenters.iter().zip(totals1.iter()).zip(totals2.iter()) {
-                writeln!(f, "{bc},{tot1},{tot2}").context(StdIoSnafu)?;
+                writeln!(f, "{bc},{tot1},{tot2}").change_context(IbdUtilsError::Output)?;
             }
         }
     }

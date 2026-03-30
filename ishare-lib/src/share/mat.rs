@@ -1,43 +1,18 @@
-use crate::io::{self, FromArrowArray, FromParquet, IntoArrowArray, IntoParquet};
+use crate::error::{IshareError, Result};
+use error_stack::*;
+
+use crate::io::{FromArrowArray, FromParquet, IntoArrowArray, IntoParquet};
 use ahash::HashMap;
 use arrow_array::ArrayRef;
 use arrow_array::RecordBatch;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
-use snafu::prelude::*;
-use std::backtrace::Backtrace;
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
 use std::sync::Arc;
-
-#[derive(Snafu, Debug)]
-pub enum Error {
-    // #[snafu(transparent)]
-    Io {
-        // non-leaf
-        #[snafu(backtrace)]
-        source: io::Error,
-    },
-
-    #[snafu(display("Failed to create file: {}", path.display()))]
-    CreateFile {
-        // leaf
-        source: std::io::Error,
-        path: Box<std::path::PathBuf>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-
-    #[snafu(display("Parquet operation failed"))]
-    Parquet {
-        // leaf
-        #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
-        source: Box<parquet::errors::ParquetError>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
 
 #[derive(Debug, Clone)]
 pub struct NamedMatrix<T>
@@ -213,7 +188,7 @@ where
     Vec<T>: IntoArrowArray,
     [T]: FromArrowArray,
 {
-    fn into_parquet(mut self, p: impl AsRef<Path>) -> std::result::Result<(), crate::io::Error> {
+    fn into_parquet(mut self, p: impl AsRef<Path>) -> Result<()> {
         use crate::io::*;
         use std::mem::take;
         // build array from genotype matrix
@@ -221,20 +196,20 @@ where
         let row = take(&mut self.row_names).into_arrow_array();
         let col = take(&mut self.col_names).into_arrow_array();
 
-        let write_array = |fieldname, arr, p: &Path| -> std::result::Result<(), crate::io::Error> {
+        let write_array = |fieldname, arr, p: &Path| -> Result<()> {
             let batch = RecordBatch::try_from_iter(vec![(fieldname, Arc::new(arr) as ArrayRef)])
-                .context(ArrowSnafu {})?;
+                .change_context(IshareError::Matrix)?;
             // writer
             // use std::io::BufWriter;
-            let file = BufWriter::new(File::create(p).context(StdIoSnafu)?);
+            let file = BufWriter::new(File::create(p).change_context(IshareError::Matrix)?);
             // -- default writer properties
             let props = WriterProperties::builder().build();
-            let mut writer =
-                ArrowWriter::try_new(file, batch.schema(), Some(props)).context(ParquetSnafu)?;
+            let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))
+                .change_context(IshareError::Matrix)?;
             // write batch
-            writer.write(&batch).context(ParquetSnafu)?;
+            writer.write(&batch).change_context(IshareError::Matrix)?;
             // writer must be closed to write footer
-            writer.close().context(ParquetSnafu)?;
+            writer.close().change_context(IshareError::Matrix)?;
             Ok(())
         };
 
@@ -255,39 +230,45 @@ where
     Vec<T>: IntoArrowArray,
     [T]: FromArrowArray,
 {
-    fn from_parquet(p: impl AsRef<Path>) -> std::result::Result<Self, crate::io::Error> {
+    fn from_parquet(p: impl AsRef<Path>) -> Result<Self> {
         use crate::io::*;
         let mut row_genomes = Vec::<u32>::new();
         let mut col_genomes = Vec::<u32>::new();
         let mut data = Vec::<T>::new();
 
-        let file = File::open(&p).context(StdIoSnafu {})?;
-        let builder = ParquetRecordBatchReaderBuilder::try_new(file).context(ParquetSnafu {})?;
+        let file = File::open(&p).change_context(IshareError::Matrix)?;
+        let builder =
+            ParquetRecordBatchReaderBuilder::try_new(file).change_context(IshareError::Matrix)?;
 
-        let mut reader = builder.build().context(ParquetSnafu {})?;
+        let mut reader = builder.build().change_context(IshareError::Matrix)?;
         for record_batch in &mut reader {
-            let record_batch = record_batch.context(ArrowSnafu {})?;
+            let record_batch = record_batch.change_context(IshareError::Matrix)?;
             let arr = record_batch.column(0).as_ref();
-            let slice: &[T] = FromArrowArray::from_array_array(arr)?;
+            let slice: &[T] =
+                FromArrowArray::from_array_array(arr).change_context(IshareError::Matrix)?;
             data.extend_from_slice(slice);
         }
 
-        let file = File::open(p.as_ref().with_extension("row")).context(StdIoSnafu {})?;
-        let builder = ParquetRecordBatchReaderBuilder::try_new(file).context(ParquetSnafu {})?;
+        let file =
+            File::open(p.as_ref().with_extension("row")).change_context(IshareError::Matrix)?;
+        let builder =
+            ParquetRecordBatchReaderBuilder::try_new(file).change_context(IshareError::Matrix)?;
 
-        let mut reader = builder.build().context(ParquetSnafu {})?;
+        let mut reader = builder.build().change_context(IshareError::Matrix)?;
         for record_batch in &mut reader {
-            let record_batch = record_batch.context(ArrowSnafu {})?;
+            let record_batch = record_batch.change_context(IshareError::Matrix)?;
             row_genomes
                 .extend_from_slice(FromArrowArray::from_array_array(record_batch.column(0))?);
         }
 
-        let file = File::open(p.as_ref().with_extension("col")).context(StdIoSnafu {})?;
-        let builder = ParquetRecordBatchReaderBuilder::try_new(file).context(ParquetSnafu {})?;
+        let file =
+            File::open(p.as_ref().with_extension("col")).change_context(IshareError::Matrix)?;
+        let builder =
+            ParquetRecordBatchReaderBuilder::try_new(file).change_context(IshareError::Matrix)?;
 
-        let mut reader = builder.build().context(ParquetSnafu {})?;
+        let mut reader = builder.build().change_context(IshareError::Matrix)?;
         for record_batch in &mut reader {
-            let record_batch = record_batch.context(ArrowSnafu {})?;
+            let record_batch = record_batch.change_context(IshareError::Matrix)?;
             col_genomes
                 .extend_from_slice(FromArrowArray::from_array_array(record_batch.column(0))?);
         }

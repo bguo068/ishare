@@ -1,3 +1,6 @@
+use super::{GtencodeError, Result};
+use error_stack::*;
+
 use super::utils;
 use super::Commands;
 use ishare::genotype::rare::GenotypeRecords;
@@ -6,50 +9,6 @@ use ishare::io::IntoParquet;
 use ishare::share::mat::NamedMatrix;
 use ishare::site::Sites;
 use rayon::prelude::*;
-use snafu::prelude::*;
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    // #[snafu(transparent)]
-    GenotypeRare {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::genotype::rare::Error,
-    },
-    // #[snafu(transparent)]
-    Individuals {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::indiv::Error,
-    },
-    // #[snafu(transparent)]
-    Io {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::io::Error,
-    },
-    // #[snafu(transparent)]
-    Sites {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::site::Error,
-    },
-    // #[snafu(transparent)]
-    Matrix {
-        // non leaf
-        #[snafu(backtrace)]
-        #[snafu(source(from(ishare::share::mat::Error, Box::new)))]
-        source: Box<ishare::share::mat::Error>,
-    },
-    // #[snafu(transparent)]
-    GtencodeUtils {
-        // non leaf
-        #[snafu(backtrace)]
-        source: super::utils::Error,
-    },
-}
-
-type Result<T> = std::result::Result<T, Error>;
 
 pub fn main_grm(args: &Commands) -> Result<()> {
     if let Commands::Grm {
@@ -65,20 +24,26 @@ pub fn main_grm(args: &Commands) -> Result<()> {
             None => -0.001f64,
         };
 
-        let mut records = GenotypeRecords::from_parquet_file(rec).context(GenotypeRareSnafu)?;
+        let mut records =
+            GenotypeRecords::from_parquet_file(rec).change_context(GtencodeError::Input)?;
         let ind_file = rec.with_extension("ind");
-        let _inds = Individuals::from_parquet_file(&ind_file).context(IndividualsSnafu)?;
+        let _inds =
+            Individuals::from_parquet_file(&ind_file).change_context(GtencodeError::Input)?;
         let sites_file = rec.with_extension("sit");
-        let _sites = Sites::from_parquet_file(&sites_file).context(SitesSnafu)?;
+        let _sites = Sites::from_parquet_file(&sites_file).change_context(GtencodeError::Input)?;
         let freq_map =
             utils::calc_allele_frequency(&mut records, _inds.v().len() * 2, _sites.len())
-                .context(GtencodeUtilsSnafu)?;
+                .change_context(GtencodeError::Input)?;
 
-        records.sort_by_genome().context(GenotypeRareSnafu)?;
-        records.is_sorted_by_genome().context(GenotypeRareSnafu)?;
+        records
+            .sort_by_genome()
+            .change_context(GtencodeError::Library)?;
+        records
+            .is_sorted_by_genome()
+            .change_context(GtencodeError::Library)?;
 
         let (pairs, row_genomes, col_genomes) =
-            utils::prep_pairs(&records, genomes, lists).context(GtencodeUtilsSnafu)?;
+            utils::prep_pairs(&records, genomes, lists).change_context(GtencodeError::Library)?;
         let base_sum = utils::calc_base_relationship(&freq_map);
 
         // run in parallel and collect row results
@@ -139,7 +104,9 @@ pub fn main_grm(args: &Commands) -> Result<()> {
 
             println!("WARN: output option is specified, results are not printed on the screen, check file {p:?}");
             // println!("\n writing...");
-            resmat.into_parquet(&p).context(IoSnafu)?
+            resmat
+                .into_parquet(&p)
+                .change_context(GtencodeError::Output)?
         }
     }
     Ok(())

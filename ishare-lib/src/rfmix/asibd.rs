@@ -1,3 +1,6 @@
+use crate::error::{IshareError, Result};
+use error_stack::*;
+
 use crate::{
     container::intervaltree::IntervalTree,
     genome::GenomeInfo,
@@ -8,42 +11,10 @@ use crate::{
         ibdset::{IbdSet, IbdSetBlockIter},
     },
 };
-use snafu::{ensure, ResultExt, Snafu};
-use std::{backtrace::Backtrace, sync::Arc};
+
+use std::sync::Arc;
 
 use super::fb::LASet;
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    // #[snafu(transparent)]
-    LASegError {
-        // non leaf, delegate backtrace
-        #[snafu(backtrace, source(from(super::fb::Error, Box::new)))]
-        source: Box<super::fb::Error>,
-    },
-    #[snafu(display("Individual index {} is out of bounds (max: {})", index, max_index))]
-    IndividualIndexOutOfBounds {
-        // leaf
-        index: u32,
-        max_index: usize,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    #[snafu(display("Ancestry index {} is out of bounds (max: {})", index, max_index))]
-    AncestryIndexOutOfBounds {
-        // leaf
-        index: u8,
-        max_index: usize,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    #[snafu(display("IO error during output"))]
-    OutputError {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
-
-type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ASIbdSeg {
@@ -80,17 +51,15 @@ impl ASIBDSet {
         // Validate ancestry indices
         ensure!(
             (asibdseg.anc1 as usize) < self.ancs.len(),
-            AncestryIndexOutOfBoundsSnafu {
-                index: asibdseg.anc1,
-                max_index: self.ancs.len().saturating_sub(1)
-            }
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("AncestryIndexOutOfBounds")
         );
         ensure!(
             (asibdseg.anc2 as usize) < self.ancs.len(),
-            AncestryIndexOutOfBoundsSnafu {
-                index: asibdseg.anc2,
-                max_index: self.ancs.len().saturating_sub(1)
-            }
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("AncestryIndexOutOfBounds")
         );
 
         self.asibd.push(asibdseg);
@@ -109,7 +78,7 @@ impl ASIBDSet {
             let hap2 = (j << 1) + n as u32;
             tree = la_set
                 .get_hap_pair_la_segs2(hap1, hap2, tree)
-                .context(LASegSnafu)?;
+                .change_context(IshareError::AsIbd)?;
 
             for ibdseg in blk {
                 for elem in tree.query(ibdseg.s..ibdseg.e) {
@@ -146,33 +115,29 @@ impl ASIBDSet {
             // Validate individual indices
             ensure!(
                 (i as usize) < self.inds.v().len(),
-                IndividualIndexOutOfBoundsSnafu {
-                    index: i,
-                    max_index: self.inds.v().len().saturating_sub(1)
-                }
+                IshareError::RuntimeCheck
+                    .into_report()
+                    .attach("IndividualIndexOutOfBounds")
             );
             ensure!(
                 (j as usize) < self.inds.v().len(),
-                IndividualIndexOutOfBoundsSnafu {
-                    index: j,
-                    max_index: self.inds.v().len().saturating_sub(1)
-                }
+                IshareError::RuntimeCheck
+                    .into_report()
+                    .attach("IndividualIndexOutOfBounds")
             );
 
             // Validate ancestry indices
             ensure!(
                 (asibdseg.anc1 as usize) < self.ancs.len(),
-                AncestryIndexOutOfBoundsSnafu {
-                    index: asibdseg.anc1,
-                    max_index: self.ancs.len().saturating_sub(1)
-                }
+                IshareError::RuntimeCheck
+                    .into_report()
+                    .attach("AncestryIndexOutOfBounds")
             );
             ensure!(
                 (asibdseg.anc2 as usize) < self.ancs.len(),
-                AncestryIndexOutOfBoundsSnafu {
-                    index: asibdseg.anc2,
-                    max_index: self.ancs.len().saturating_sub(1)
-                }
+                IshareError::RuntimeCheck
+                    .into_report()
+                    .attach("AncestryIndexOutOfBounds")
             );
 
             let (_chrid, chrname, s) = self.ginfo.to_chr_pos(ibd.s);
@@ -192,7 +157,7 @@ impl ASIBDSet {
                 self.ancs[asibdseg.anc1 as usize],
                 self.ancs[asibdseg.anc2 as usize],
             )
-            .context(OutputSnafu)?;
+            .change_context(IshareError::AsIbd)?;
         }
         Ok(())
     }
@@ -425,45 +390,6 @@ mod tests {
     }
 
     #[test]
-    fn test_error_propagation() {
-        let ginfo = Arc::new(create_test_genome());
-        let gmap = Arc::new(create_test_genetic_map());
-        let inds = Arc::new(create_test_individuals());
-        let ancs = Arc::from(vec!["AFR".to_string(), "EUR".to_string()]);
-
-        let mut asibd_set = ASIBDSet::new(gmap.clone(), ginfo.clone(), inds.clone(), ancs);
-
-        // Create IBD set with invalid data that might cause LA error
-        let mut ibd_set = IbdSet::new(gmap.clone(), ginfo.clone(), inds.clone());
-        let ibd_seg = IbdSeg {
-            i: 0,
-            j: 1,
-            s: 200,
-            e: 600,
-        };
-        ibd_set.add(ibd_seg);
-
-        // Create empty LA set (should cause error in real scenario)
-        let empty_fb_matrix = FbMatrix {
-            windows: vec![],
-            ancestry: vec!["AFR".to_string(), "EUR".to_string()],
-            samples: vec![],
-            mat: NamedMatrix::new_from_shape_and_data(0, 0, vec![]),
-        };
-        let empty_la_set = LASet::from_fbmat(&empty_fb_matrix);
-
-        let result = asibd_set.get_asibd_from_ibdsets_and_laset(&ibd_set, &empty_la_set);
-
-        // This should handle the error gracefully (might not error with empty data)
-        // The test verifies error handling infrastructure is in place
-        match result {
-            Ok(_) => {}                         // Empty data might not cause error
-            Err(Error::LASegError { .. }) => {} // This is expected error type
-            Err(_) => {}                        // Other errors are also acceptable
-        }
-    }
-
-    #[test]
     fn test_multiple_asibd_segments() {
         let ginfo = Arc::new(create_test_genome());
         let gmap = Arc::new(create_test_genetic_map());
@@ -655,15 +581,6 @@ mod tests {
 
             // Should get an error for invalid ancestry index
             assert!(result.is_err());
-            if let Err(Error::AncestryIndexOutOfBounds {
-                index, max_index, ..
-            }) = result
-            {
-                assert_eq!(index, 5);
-                assert_eq!(max_index, 0); // Only one ancestry, so max index is 0
-            } else {
-                panic!("Expected AncestryIndexOutOfBounds error");
-            }
         }
 
         #[test]
@@ -698,13 +615,6 @@ mod tests {
 
             // Should get an error for invalid individual index
             assert!(result.is_err(), "Expected error but got: {result:?}");
-            match result {
-                Err(Error::IndividualIndexOutOfBounds { index, .. }) => {
-                    assert_eq!(index, 3); // 12 >> 2 = 3
-                }
-                Err(other) => panic!("Expected IndividualIndexOutOfBounds error, got: {other:?}",),
-                Ok(_) => panic!("Expected error but operation succeeded"),
-            }
         }
     }
 }

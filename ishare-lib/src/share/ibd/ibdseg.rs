@@ -1,10 +1,10 @@
-use super::WriteFileSnafu;
+use crate::error::{IshareError, Result};
+use error_stack::*;
+
 use crate::gmap::GeneticMap;
 use serde::{Deserialize, Serialize};
-use snafu::prelude::*;
-use std::path::Path;
 
-type Result<T> = std::result::Result<T, super::Error>;
+use std::path::Path;
 
 /// struct representing an *encoded* IBD segment:
 /// - for i and j, the lower 2 bits encode haplotype id, upper bits encodes individual id
@@ -128,31 +128,20 @@ pub fn write_ibdseg_vec(v: &[IbdSeg], out: impl AsRef<Path>) -> Result<()> {
     use std::io::Write;
     let mut file = std::fs::File::create(out.as_ref())
         .map(std::io::BufWriter::new)
-        .context(WriteFileSnafu {
-            path: out.as_ref().to_path_buf(),
-        })?;
+        .change_context(IshareError::Ibd)?;
     let sz = v.len() as u64;
-    file.write_all(&sz.to_le_bytes()).context(WriteFileSnafu {
-        path: out.as_ref().to_path_buf(),
-    })?;
+    file.write_all(&sz.to_le_bytes())
+        .change_context(IshareError::Ibd)?;
 
     for seg in v.iter() {
         file.write_all(&seg.i.to_le_bytes())
-            .context(WriteFileSnafu {
-                path: out.as_ref().to_path_buf(),
-            })?;
+            .change_context(IshareError::Ibd)?;
         file.write_all(&seg.j.to_le_bytes())
-            .context(WriteFileSnafu {
-                path: out.as_ref().to_path_buf(),
-            })?;
+            .change_context(IshareError::Ibd)?;
         file.write_all(&seg.s.to_le_bytes())
-            .context(WriteFileSnafu {
-                path: out.as_ref().to_path_buf(),
-            })?;
+            .change_context(IshareError::Ibd)?;
         file.write_all(&seg.e.to_le_bytes())
-            .context(WriteFileSnafu {
-                path: out.as_ref().to_path_buf(),
-            })?;
+            .change_context(IshareError::Ibd)?;
     }
     Ok(())
 }
@@ -160,34 +149,27 @@ pub fn write_ibdseg_vec(v: &[IbdSeg], out: impl AsRef<Path>) -> Result<()> {
 pub fn read_ibdseg_vec(out: impl AsRef<Path>) -> Result<Vec<IbdSeg>> {
     let mut file = std::fs::File::open(out.as_ref())
         .map(std::io::BufReader::new)
-        .context(WriteFileSnafu {
-            path: out.as_ref().to_path_buf(),
-        })?;
+        .change_context(IshareError::Ibd)?;
     let mut byte8 = [0u8; 8];
     let mut byte4 = [0u8; 4];
     use std::io::Read;
-    file.read_exact(&mut byte8).context(WriteFileSnafu {
-        path: out.as_ref().to_path_buf(),
-    })?;
+    file.read_exact(&mut byte8)
+        .change_context(IshareError::Ibd)?;
     let sz = u64::from_le_bytes(byte8);
     let mut v = Vec::with_capacity(sz as usize);
 
     for _ in 0..sz {
-        file.read_exact(&mut byte4).context(WriteFileSnafu {
-            path: out.as_ref().to_path_buf(),
-        })?;
+        file.read_exact(&mut byte4)
+            .change_context(IshareError::Ibd)?;
         let i = u32::from_le_bytes(byte4);
-        file.read_exact(&mut byte4).context(WriteFileSnafu {
-            path: out.as_ref().to_path_buf(),
-        })?;
+        file.read_exact(&mut byte4)
+            .change_context(IshareError::Ibd)?;
         let j = u32::from_le_bytes(byte4);
-        file.read_exact(&mut byte4).context(WriteFileSnafu {
-            path: out.as_ref().to_path_buf(),
-        })?;
+        file.read_exact(&mut byte4)
+            .change_context(IshareError::Ibd)?;
         let s = u32::from_le_bytes(byte4);
-        file.read_exact(&mut byte4).context(WriteFileSnafu {
-            path: out.as_ref().to_path_buf(),
-        })?;
+        file.read_exact(&mut byte4)
+            .change_context(IshareError::Ibd)?;
         let e = u32::from_le_bytes(byte4);
         let seg = IbdSeg { i, j, s, e };
         v.push(seg);
@@ -207,7 +189,7 @@ mod tests {
         #[test]
         fn test_new_basic_construction() {
             let seg = IbdSeg::new(10, 0, 20, 1, 1000, 2000, 0);
-            assert_eq!(seg.i, 10 * 4 ); // i=40
+            assert_eq!(seg.i, 10 * 4); // i=40
             assert_eq!(seg.j, 20 * 4 + 1); // j=81
             assert_eq!(seg.s, 1000);
             assert_eq!(seg.e, 2000);

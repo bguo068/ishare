@@ -1,3 +1,6 @@
+use super::{GtencodeError, Result};
+use error_stack::*;
+
 use ishare::{
     genome::GenomeInfo, genotype::rare::GenotypeRecords, indiv::Individuals, site::Sites,
     utils::path::from_prefix,
@@ -11,56 +14,6 @@ use itertools::Itertools;
 
 // use super::super::*;
 use super::args::Commands;
-type Result<T> = std::result::Result<T, Error>;
-use std::backtrace::Backtrace;
-
-use snafu::prelude::*;
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    // #[snafu(transparent)]
-    Sites {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::site::Error,
-    },
-    // #[snafu(transparent)]
-    Indiv {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::indiv::Error,
-    },
-    // #[snafu(transparent)]
-    Genome {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::genome::Error,
-    },
-    // #[snafu(transparent)]
-    GenotypeRare {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::genotype::rare::Error,
-    },
-    // #[snafu(transparent)]
-    PathUtils {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::utils::path::Error,
-    },
-    Hts {
-        // leaf
-        #[snafu(source(from(rust_htslib::errors::Error, Box::new)))]
-        source: Box<rust_htslib::errors::Error>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    // #[snafu(transparent)]
-    StdIo {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
 
 pub fn main_export(args: &Commands) -> Result<()> {
     if let Commands::Export {
@@ -71,14 +24,19 @@ pub fn main_export(args: &Commands) -> Result<()> {
         keep_sites_with_multi_common_alleles,
     } = args
     {
-        let mut records =
-            GenotypeRecords::from_parquet_file(from_prefix(rec, "rec").context(PathUtilsSnafu)?)
-                .context(GenotypeRareSnafu)?;
-        let sites = Sites::from_parquet_file(from_prefix(rec, ".sit").context(PathUtilsSnafu)?)
-            .context(SitesSnafu)?;
-        let inds = Individuals::from_parquet_file(from_prefix(rec, "ind").context(PathUtilsSnafu)?)
-            .context(IndivSnafu)?;
-        let ginfo = GenomeInfo::from_toml_file(genome_info).context(GenomeSnafu)?;
+        let mut records = GenotypeRecords::from_parquet_file(
+            from_prefix(rec, "rec").change_context(GtencodeError::Input)?,
+        )
+        .change_context(GtencodeError::Input)?;
+        let sites = Sites::from_parquet_file(
+            from_prefix(rec, ".sit").change_context(GtencodeError::Input)?,
+        )
+        .change_context(GtencodeError::Input)?;
+        let inds = Individuals::from_parquet_file(
+            from_prefix(rec, "ind").change_context(GtencodeError::Input)?,
+        )
+        .change_context(GtencodeError::Input)?;
+        let ginfo = GenomeInfo::from_toml_file(genome_info).change_context(GtencodeError::Input)?;
 
         let mut compressed = true;
         let mut format = bcf::Format::Bcf;
@@ -108,7 +66,8 @@ pub fn main_export(args: &Commands) -> Result<()> {
             .zip(ginfo.chromsize.as_slice().iter())
             .try_for_each(|(chrname, chrsize)| -> Result<()> {
                 line.clear();
-                write!(line, "##contig=<ID={chrname},length={chrsize}>").context(StdIoSnafu)?;
+                write!(line, "##contig=<ID={chrname},length={chrsize}>")
+                    .change_context(GtencodeError::Input)?;
                 header.push_record(line.as_bytes());
                 Ok(())
             })?;
@@ -121,16 +80,18 @@ pub fn main_export(args: &Commands) -> Result<()> {
         });
 
         let mut writer = match out_prefix {
-            Some(out) => {
-                bcf::Writer::from_path(out, &header, !compressed, format).context(HtsSnafu {})?
-            }
-            None => bcf::Writer::from_stdout(&header, !compressed, format).context(HtsSnafu {})?,
+            Some(out) => bcf::Writer::from_path(out, &header, !compressed, format)
+                .change_context(GtencodeError::Input)?,
+            None => bcf::Writer::from_stdout(&header, !compressed, format)
+                .change_context(GtencodeError::Input)?,
         };
 
         let mut bcf_record = writer.empty_record();
 
         // sort by postion
-        records.sort_by_position().context(GenotypeRareSnafu)?;
+        records
+            .sort_by_position()
+            .change_context(GtencodeError::Library)?;
 
         let mut allele = Vec::new();
         let mut is_rare = Vec::new();
@@ -152,7 +113,7 @@ pub fn main_export(args: &Commands) -> Result<()> {
                     Both(recs, (ipos, _)) => {
                         let gw_pos = recs[0].get_position();
                         let (_chrid, chrname, pos) = ginfo.to_chr_pos(gw_pos);
-                        let rid = writer.header().name2rid(chrname.as_bytes()).context(HtsSnafu{})?;
+                        let rid = writer.header().name2rid(chrname.as_bytes()).change_context(GtencodeError::Library)?;
 
                         allele.clear();
                         gt.clear();
@@ -196,7 +157,7 @@ pub fn main_export(args: &Commands) -> Result<()> {
 
                         bcf_record.set_rid(Some(rid));
                         bcf_record.set_pos(pos as i64);
-                        bcf_record.set_alleles(allele.as_slice()).context(HtsSnafu{})?;
+                        bcf_record.set_alleles(allele.as_slice()).change_context(GtencodeError::Library)?;
                         // figure out what alleles are rare
                         // convert to genotype vector
                         recs.iter()
@@ -215,9 +176,9 @@ pub fn main_export(args: &Commands) -> Result<()> {
                                 };
                                 gt.push(gta);
                             });
-                        bcf_record.push_genotypes(&gt[..]).context(HtsSnafu{})?;
+                        bcf_record.push_genotypes(&gt[..]).change_context(GtencodeError::Library)?;
 
-                        writer.write(&bcf_record).context(HtsSnafu{})?;
+                        writer.write(&bcf_record).change_context(GtencodeError::Output)?;
                     }
                 };
                 Ok(())

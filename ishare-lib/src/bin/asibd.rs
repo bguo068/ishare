@@ -1,18 +1,30 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 #![cfg_attr(not(test), warn(clippy::expect_used))]
 
+use error_stack::*;
+type Result<T> = std::result::Result<T, Report<AsIbdError>>;
+
+#[derive(Debug, thiserror::Error)]
+enum AsIbdError {
+    #[error("input error")]
+    Input,
+    #[error("output error")]
+    Output,
+    #[error("library error")]
+    Library,
+}
+
 use ishare::{
     genome::GenomeInfo,
     gmap::GeneticMap,
     indiv::Individuals,
     rfmix::{asibd::ASIBDSet, fb::*},
     share::ibd::ibdset::IbdSet,
-    utils::error::show_snafu_error,
 };
 use std::sync::Arc;
 use std::{
     fs::File,
-    io::{read_to_string, BufWriter},
+    io::BufWriter,
     path::{Path, PathBuf},
 };
 
@@ -64,125 +76,32 @@ struct Cli {
     buffer_size_mb: usize,
 
     /// path to output file
-    #[arg(short = 'p', long, required = true)]
+    #[arg(short = 'o', long, required = true)]
     out: PathBuf,
 }
 
-type Result<T> = std::result::Result<T, Error>;
-
-use snafu::prelude::*;
-use std::backtrace::Backtrace;
-
-#[derive(Debug, Snafu)]
-#[snafu(visibility)]
-pub enum Error {
-    // #[snafu(transparent)]
-    Io {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::io::Error,
-    },
-    // #[snafu(transparent)]
-    Sites {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::site::Error,
-    },
-    // #[snafu(transparent)]
-    Indiv {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::indiv::Error,
-    },
-    // #[snafu(transparent)]
-    Genome {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::genome::Error,
-    },
-    // #[snafu(transparent)]
-    GenotypeRare {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::genotype::rare::Error,
-    },
-    // #[snafu(transparent)]
-    Vcf {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::vcf::Error,
-    },
-    // #[snafu(transparent)]
-    Gmap {
-        // non leaf
-        #[snafu(backtrace)]
-        #[snafu(source(from(ishare::gmap::Error, Box::new)))]
-        source: Box<ishare::gmap::Error>,
-    },
-    // #[snafu(transparent)]
-    Ibd {
-        // non leaf
-        #[snafu(backtrace)]
-        #[snafu(source(from(ishare::share::ibd::Error, Box::new)))]
-        source: Box<ishare::share::ibd::Error>,
-    },
-    // #[snafu(transparent)]
-    Asibd {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::rfmix::asibd::Error,
-    },
-
-    // #[snafu(transparent)]
-    StdIo {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    // #[snafu(transparent)]
-    RfmixFb {
-        // non-leaf
-        #[snafu(source(from(ishare::rfmix::fb::Error, Box::new)))]
-        #[snafu(backtrace)]
-        source: Box<ishare::rfmix::fb::Error>,
-    },
-
-    RecordNotSorted {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    ReadChrname {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    ReadChrpos {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
-fn main() {
-    if let Err(e) = main_entry() {
-        show_snafu_error(e);
-        std::process::exit(-1);
-    }
+fn main() -> Result<()> {
+    main_entry()
 }
 
 fn main_entry() -> Result<()> {
     let cli = Cli::parse();
 
     eprintln!("reading gnome.toml");
-    let ginfo = Arc::new(GenomeInfo::from_toml_file(&cli.genome).context(GenomeSnafu)?);
+    let ginfo =
+        Arc::new(GenomeInfo::from_toml_file(&cli.genome).change_context(AsIbdError::Input)?);
     eprintln!("reading genetic map files");
-    let gmap = Arc::new(GeneticMap::from_genome_info(&ginfo).context(GmapSnafu)?);
+    let gmap = Arc::new(GeneticMap::from_genome_info(&ginfo).change_context(AsIbdError::Input)?);
     eprintln!("reading sample list");
-    let (indivs, opt) = Individuals::from_txt_file(&cli.samples).context(IndivSnafu)?;
+    let (indivs, opt) =
+        Individuals::from_txt_file(&cli.samples).change_context(AsIbdError::Input)?;
     let indivs = Arc::new(indivs);
     assert!(opt.is_none(), "should use single column samples list");
 
     eprintln!("reading ibd file");
     let mut ibd = IbdSet::new(gmap.clone(), ginfo.clone(), indivs.clone());
     ibd.read_hapibd_file(&cli.hapibd_ibd, cli.min_ibd_seg_cm)
-        .context(IbdSnafu)?;
+        .change_context(AsIbdError::Input)?;
     ibd.sort_by_haplotypes();
 
     eprintln!("reading LA position list");
@@ -198,7 +117,7 @@ fn main_entry() -> Result<()> {
             cli.min_prob,
             cli.buffer_size_mb,
         )
-        .context(RfmixFbSnafu)?;
+        .change_context(AsIbdError::Input)?;
         let ancestry = fb.get_ancestries().to_owned();
         let la_set = LASet::from_fbmat(&fb);
         (ancestry, la_set)
@@ -209,35 +128,32 @@ fn main_entry() -> Result<()> {
     let mut asibd = ASIBDSet::new(gmap, ginfo, indivs, ancestry);
     asibd
         .get_asibd_from_ibdsets_and_laset(&ibd, &la_set)
-        .context(AsibdSnafu)?;
+        .change_context(AsIbdError::Library)?;
 
     eprintln!("writing as-ibd file");
     let out = File::create(&cli.out)
         .map(BufWriter::new)
-        .context(StdIoSnafu)?;
-    asibd.flush(out).context(AsibdSnafu)?;
+        .change_context(AsIbdError::Output)?;
+    asibd.flush(out).change_context(AsIbdError::Output)?;
     Ok(())
 }
 
 fn read_chr_positions(p: impl AsRef<Path>, ginfo: &GenomeInfo) -> Result<Vec<u32>> {
-    let buf = File::open(p.as_ref())
-        .map(read_to_string)
-        .context(StdIoSnafu)?
-        .context(StdIoSnafu)?;
+    let buf = std::fs::read_to_string(p.as_ref()).change_context(AsIbdError::Input)?;
     let mut v = vec![];
     buf.trim().split("\n").try_for_each(|x| {
         let mut splits = x.split("\t");
-        let chrname = splits.next().context(ReadChrnameSnafu)?;
+        let chrname = splits.next().ok_or(AsIbdError::Input)?;
         let chr_pos = splits
             .next()
-            .context(ReadChrnameSnafu)?
+            .ok_or(AsIbdError::Input)?
             .parse::<u32>()
             .ok()
-            .context(ReadChrnameSnafu)?
+            .ok_or(AsIbdError::Input)?
             - 1; // 0-based position
         let chrid = ginfo.idx[chrname];
         v.push(ginfo.to_gw_pos(chrid, chr_pos));
-        Ok::<(), Error>(())
+        Ok::<(), AsIbdError>(())
     })?;
     Ok(v)
 }

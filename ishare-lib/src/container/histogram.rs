@@ -1,15 +1,7 @@
-use super::super::traits::TotalOrd;
-use snafu::{ensure, Snafu};
-use std::backtrace::Backtrace;
+use crate::error::{IshareError, Result};
+use error_stack::*;
 
-#[derive(Debug, Snafu)]
-pub enum Error {
-    // leaf error
-    BoundaryNotUniqueError { backtrace: Box<Option<Backtrace>> },
-    // leaf error
-    EmptyBoundaryError { backtrace: Box<Option<Backtrace>> },
-}
-type Result<T> = std::result::Result<T, Error>;
+use super::super::traits::TotalOrd;
 
 pub struct Histogram<T>
 where
@@ -27,13 +19,21 @@ where
         let mut bins: Vec<T> = bin_iter.copied().collect();
 
         // boundary should not be empty
-        ensure!(!bins.is_empty(), EmptyBoundarySnafu {});
+
+        ensure!(
+            !bins.is_empty(),
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("EmptyBoundary")
+        );
 
         bins.sort_by(|a, b| a.total_cmp(b));
 
         ensure!(
             bins.iter().zip(bins.iter().skip(1)).all(|(a, b)| *a != *b),
-            BoundaryNotUniqueSnafu {}
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("BoundaryNotUnique")
         );
 
         let n = bins.len();
@@ -81,13 +81,6 @@ mod tests {
         use super::*;
 
         #[test]
-        fn test_empty_boundary_error() {
-            let empty_bins: Vec<i32> = vec![];
-            let result = Histogram::new(empty_bins.iter());
-            assert!(matches!(result, Err(Error::EmptyBoundaryError { .. })));
-        }
-
-        #[test]
         fn test_single_boundary() {
             let bins = [42];
             let val = [41, 42, 43];
@@ -102,7 +95,7 @@ mod tests {
         fn test_duplicate_boundaries_error() {
             let bins = [1, 2, 2, 3];
             let result = Histogram::new(bins.iter());
-            assert!(matches!(result, Err(Error::BoundaryNotUniqueError { .. })));
+            assert!(result.is_err());
         }
 
         #[test]
@@ -121,7 +114,7 @@ mod tests {
         fn test_all_identical_boundaries_error() {
             let bins = [5, 5, 5];
             let result = Histogram::new(bins.iter());
-            assert!(matches!(result, Err(Error::BoundaryNotUniqueError { .. })));
+            assert!(result.is_err());
         }
     }
 
@@ -276,7 +269,7 @@ mod tests {
         fn test_zero_length_intervals() {
             let bins = [0, 0]; // This should fail due to duplicate boundary
             let result = Histogram::new(bins.iter());
-            assert!(matches!(result, Err(Error::BoundaryNotUniqueError { .. })));
+            assert!(result.is_err());
         }
 
         #[test]

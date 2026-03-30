@@ -1,59 +1,11 @@
-use std::backtrace::Backtrace;
-
 use crate::io::*;
 use crate::share::ibd::{ibdseg::IbdSeg, ibdset::*};
 use crate::traits::TotalOrd;
-use snafu::prelude::*;
-
-type Result<T> = std::result::Result<T, Error>;
-
-#[derive(Snafu, Debug)]
-pub enum Error {
-    Stats {
-        // leaf
-        source: statrs::distribution::GammaError,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    PositionsNotSorted {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    PositionsNotUnique {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    PositionsEmpty {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    PositionsOutOfRange {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    AlleleFrequenciesOutOfRange {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    UnequalLengthOfVectors {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    IbdNotSorted {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    IbdInvalidOrMerged {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    InvalidPloidyStatus {
-        // leaf
-        status: Box<String>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
-
 use statrs::distribution::{ChiSquared, ContinuousCDF};
+
+use crate::error::{IshareError, Result};
+use error_stack::{bail, ensure, IntoReport, ResultExt};
+
 /// Calcuate Xirs stats for each SNP
 ///
 /// Input:
@@ -105,23 +57,41 @@ impl<'a> XirsBuilder<'a> {
                 .iter()
                 .zip(site_pos.iter().skip(1))
                 .all(|(x, y)| { x.total_cmp(y).is_lt() }),
-            PositionsNotUniqueSnafu {}
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("positions not uniqueSnafu")
         );
         ensure!(
-            *site_pos.last().context(PositionsEmptySnafu {})? <= ibd.get_ginfo().get_total_len_bp(),
-            PositionsOutOfRangeSnafu {}
+            *site_pos.last().ok_or(IshareError::EmptyOption)? <= ibd.get_ginfo().get_total_len_bp(),
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("PositionsOutOfRangeSnafu")
         );
 
         // check p and calcuate pq_sqrt
         ensure!(
             afrq.iter().all(|x| (*x < 1.0) && (*x > 0.0)),
-            AlleleFrequenciesOutOfRangeSnafu {}
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("AlleleFrequenciesOutOfRangeSnafu")
         );
-        ensure!(site_pos.len() == afrq.len(), UnequalLengthOfVectorsSnafu {});
-        ensure!(ibd.is_sorted_by_haplotypes(), IbdNotSortedSnafu {});
+        ensure!(
+            site_pos.len() == afrq.len(),
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("UnequalLengthOfVectorsSnafu")
+        );
+        ensure!(
+            ibd.is_sorted_by_haplotypes(),
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("IbdNotSortedSnafu")
+        );
         ensure!(
             ibd.iter().all(|x| x.is_valid() && (!x.is_from_merge())),
-            IbdInvalidOrMergedSnafu {}
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("IbdInvalidOrMergedSnafu")
         );
 
         let nsites = site_pos.len();
@@ -129,10 +99,9 @@ impl<'a> XirsBuilder<'a> {
             IbdSetPloidyStatus::Haploid => ibd.get_inds().v().len(),
             IbdSetPloidyStatus::Diploid => ibd.get_inds().v().len() * 2,
             status => {
-                return InvalidPloidyStatusSnafu {
-                    status: format!("{status:?}"),
-                }
-                .fail();
+                bail!(IshareError::Stats
+                    .into_report()
+                    .attach(format!("InvalidPloidyStatusSnafu: {status:?}")));
             }
         };
         let npairs = nhap * (nhap - 1) / 2;
@@ -172,10 +141,9 @@ impl<'a> XirsBuilder<'a> {
             IbdSetPloidyStatus::Haploid => (id1, id2),
             IbdSetPloidyStatus::Diploid => ((id1 << 1) + (hap1 as u32), (id2 << 1) + (hap2 as u32)),
             status => {
-                return InvalidPloidyStatusSnafu {
-                    status: format!("{status:?}"),
-                }
-                .fail();
+                bail!(IshareError::Stats
+                    .into_report()
+                    .attach(format!("InvalidPloidyStatusSnafu: {status:?}")));
             }
         };
 
@@ -357,7 +325,7 @@ impl<'a> XirsBuilder<'a> {
         if self.xirs_i.len() != m {
             self.calculate_xirs()?;
         }
-        let chisq = ChiSquared::new(1.0).context(StatsSnafu {})?;
+        let chisq = ChiSquared::new(1.0).change_context(IshareError::Stats)?;
 
         self.pval_i.clear();
         // calculate pvalue using cdf function
@@ -445,23 +413,43 @@ impl<'a> XirsBuilder2<'a> {
                 .iter()
                 .zip(site_pos.iter().skip(1))
                 .all(|(x, y)| { x.total_cmp(y).is_lt() }),
-            PositionsNotUniqueSnafu {}
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("PositionsNotUniqueSnafu")
         );
         ensure!(
-            *site_pos.last().context(PositionsEmptySnafu {})? <= ibd.get_ginfo().get_total_len_bp(),
-            PositionsOutOfRangeSnafu {}
+            *site_pos.last().ok_or(IshareError::EmptyOption)? <= ibd.get_ginfo().get_total_len_bp(),
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("PositionsOutOfRangeSnafu")
         );
 
         // check p and calcuate pq_sqrt
         ensure!(
             afrq.iter().all(|x| (*x < 1.0) && (*x > 0.0)),
-            AlleleFrequenciesOutOfRangeSnafu {}
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("AlleleFrequenciesOutOfRangeSnafu")
         );
-        ensure!(site_pos.len() == afrq.len(), UnequalLengthOfVectorsSnafu {});
-        ensure!(ibd.is_sorted_by_haplotypes(), IbdNotSortedSnafu {});
+        ensure!(
+            site_pos.len() == afrq.len(),
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("UnequalLengthOfVectorsSnafu")
+        );
+
+        ensure!(
+            ibd.is_sorted_by_haplotypes(),
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("IbdNotSortedSnafu")
+        );
+
         ensure!(
             ibd.iter().all(|x| x.is_valid() && (!x.is_from_merge())),
-            IbdInvalidOrMergedSnafu {}
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("IbdInvalidOrMergedSnafu")
         );
 
         let nsites = site_pos.len();
@@ -469,10 +457,9 @@ impl<'a> XirsBuilder2<'a> {
             IbdSetPloidyStatus::Haploid => ibd.get_inds().v().len(),
             IbdSetPloidyStatus::Diploid => ibd.get_inds().v().len() * 2,
             status => {
-                return InvalidPloidyStatusSnafu {
-                    status: format!("{status:?}"),
-                }
-                .fail();
+                bail!(IshareError::Stats
+                    .into_report()
+                    .attach(format!("InvalidPloidyStatusSnafu: {status:?}")));
             }
         };
         let npairs = nhap * (nhap - 1) / 2;
@@ -508,10 +495,9 @@ impl<'a> XirsBuilder2<'a> {
             IbdSetPloidyStatus::Haploid => (id1, id2),
             IbdSetPloidyStatus::Diploid => ((id1 << 1) + (hap1 as u32), (id2 << 1) + (hap2 as u32)),
             status => {
-                return InvalidPloidyStatusSnafu {
-                    status: format!("{status:?}"),
-                }
-                .fail();
+                bail!(IshareError::Stats
+                    .into_report()
+                    .attach(format!("InvalidPloidyStatusSnafu: {status:?}")));
             }
         };
 
@@ -672,7 +658,7 @@ impl<'a> XirsBuilder2<'a> {
         if self.xirs_i.len() != m {
             self.calculate_xirs()?;
         }
-        let chisq = ChiSquared::new(1.0).context(StatsSnafu {})?;
+        let chisq = ChiSquared::new(1.0).change_context(IshareError::Stats)?;
 
         self.pval_i.clear();
         // calculate pvalue using cdf function
@@ -726,10 +712,7 @@ impl<'a> XirsBuilder2<'a> {
 }
 
 impl IntoParquet for XirsResult {
-    fn into_parquet(
-        mut self,
-        p: impl AsRef<std::path::Path>,
-    ) -> std::result::Result<(), crate::io::Error> {
+    fn into_parquet(mut self, p: impl AsRef<std::path::Path>) -> Result<()> {
         use crate::io::*;
         use arrow_array::RecordBatch;
         use parquet::arrow::arrow_writer::ArrowWriter;
@@ -745,18 +728,18 @@ impl IntoParquet for XirsResult {
             ("Xirs", take(&mut self.xirs).into_arrow_array()),
             ("Pval", take(&mut self.pval).into_arrow_array()),
         ])
-        .context(ArrowSnafu {})?;
+        .change_context(IshareError::Stats)?;
 
-        let file = File::create(p.as_ref()).context(StdIoSnafu {})?;
+        let file = File::create(p.as_ref()).change_context(IshareError::Stats)?;
         // Default writer properties
         let props = WriterProperties::builder().build();
-        let mut writer =
-            ArrowWriter::try_new(file, batch.schema(), Some(props)).context(ParquetSnafu {})?;
+        let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))
+            .change_context(IshareError::Stats)?;
 
-        writer.write(&batch).context(ParquetSnafu {})?;
+        writer.write(&batch).change_context(IshareError::Stats)?;
 
         // writer must be closed to write footer
-        writer.close().context(ParquetSnafu {})?;
+        writer.close().change_context(IshareError::Stats)?;
         Ok(())
     }
 }

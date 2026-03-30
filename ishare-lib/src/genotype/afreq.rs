@@ -1,33 +1,13 @@
+use crate::error::{IshareError, Result};
+use error_stack::*;
+
 use ahash::{HashMap, HashMapExt};
 use rust_htslib::{
     bcf::{self, record::GenotypeAllele, Read},
     htslib::bcf_is_snp,
 };
-use snafu::prelude::*;
-use std::backtrace::Backtrace;
 
 use crate::genome::GenomeInfo;
-
-#[derive(Snafu, Debug)]
-pub enum Error {
-    HtslibError {
-        // leaf
-        #[snafu(source(from(rust_htslib::errors::Error, Box::new)))]
-        source: Box<rust_htslib::errors::Error>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    VcfMissingRid {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    Utf8Error {
-        // leaf
-        source: std::str::Utf8Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
-
-type Result<T> = std::result::Result<T, Error>;
 
 /// similar to get_afreq_from_vcf but use genome-wide coordinates
 ///
@@ -63,7 +43,7 @@ pub fn get_afreq_from_vcf(vcf_files: &[String]) -> Result<HashMap<String, Vec<(u
         let mut last_chr_id = u32::MAX;
         let mut v_place_holder = vec![];
         let mut last_v = &mut v_place_holder;
-        let mut reader = bcf::Reader::from_path(vcf_file).context(HtslibSnafu {})?;
+        let mut reader = bcf::Reader::from_path(vcf_file).change_context(IshareError::Vcf)?;
         let header = reader.header().clone();
         let mut rec = reader.empty_record();
         while reader.read(&mut rec).is_some() {
@@ -72,7 +52,12 @@ pub fn get_afreq_from_vcf(vcf_files: &[String]) -> Result<HashMap<String, Vec<(u
                 continue;
             }
             let mut ref_alt_cnt = [0u32; 2];
-            for gt_sample in rec.format(b"GT").integer().context(HtslibSnafu {})?.iter() {
+            for gt_sample in rec
+                .format(b"GT")
+                .integer()
+                .change_context(IshareError::Vcf)?
+                .iter()
+            {
                 for gta in *gt_sample {
                     let a: GenotypeAllele = (*gta).into();
                     if let Some(i) = a.index() {
@@ -88,13 +73,13 @@ pub fn get_afreq_from_vcf(vcf_files: &[String]) -> Result<HashMap<String, Vec<(u
             let afreq = ref_alt_cnt[1] as f32 / (total as f32);
 
             let pos = rec.pos() as u32;
-            let chrid = rec.rid().context(VcfMissingRidSnafu {})?;
+            let chrid = rec.rid().ok_or(IshareError::Vcf)?;
             if chrid == last_chr_id {
                 last_v.push((pos, afreq));
             } else {
                 let last_chr_name =
-                    std::str::from_utf8(header.rid2name(chrid).context(HtslibSnafu {})?)
-                        .context(Utf8Snafu {})?;
+                    std::str::from_utf8(header.rid2name(chrid).change_context(IshareError::Vcf)?)
+                        .change_context(IshareError::Vcf)?;
                 println!("chrname: {last_chr_name}");
                 res.entry(last_chr_name.to_owned())
                     .and_modify(|v| v.push((pos, afreq)))
@@ -313,7 +298,6 @@ chr2	250	.	C	G	60	PASS	.	GT	1/1	1/1
         let vcf_files = vec!["nonexistent_file.vcf".to_string()];
         let result = get_afreq_from_vcf(&vcf_files);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::HtslibError { .. }));
     }
 
     #[test]
@@ -389,29 +373,6 @@ chr2	250	.	C	G	60	PASS	.	GT	1/1	1/1
 
         let result = get_afreq_from_vcf_genome_wide(&vcf_files, &ginfo);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::HtslibError { .. }));
-    }
-
-    #[test]
-    fn test_error_types_can_be_created() {
-        // Test that we can create each error type
-        let invalid_bytes = vec![0xFF, 0xFE]; // Invalid UTF-8 sequence
-        let utf8_error = std::str::from_utf8(&invalid_bytes).unwrap_err();
-        let _utf8_snafu_error = Error::Utf8Error {
-            source: utf8_error,
-            backtrace: Box::new(None),
-        };
-
-        let _vcf_missing_rid_error = VcfMissingRidSnafu {}.build();
-
-        // HtslibError would require creating an actual htslib error, which is complex
-        // so we'll just verify it can be pattern matched
-        let test_error = VcfMissingRidSnafu {}.build();
-        match test_error {
-            Error::VcfMissingRid { .. } => (),
-            Error::HtslibError { .. } => (),
-            Error::Utf8Error { .. } => (),
-        }
     }
 
     #[test]

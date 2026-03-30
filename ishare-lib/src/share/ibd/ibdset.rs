@@ -1,15 +1,15 @@
+use crate::error::{IshareError, Result};
+use error_stack::*;
+
 use super::ibdseg::IbdSeg;
-use super::{
-    BgzReadSnafu, CsvReadSnafu, InvalidEnumValueSnafu, InvalidFilenameSnafu, MissingDataSnafu,
-    ParseIntSnafu, ParseValueSnafu, ReadDirectorySnafu, ThreadPoolSnafu, Utf8ParseSnafu,
-};
+
 use crate::container::intervals::Intervals;
 use crate::container::intervaltree::IntervalTree;
 use crate::genome::GenomeInfo;
 use crate::genotype::common::GenotypeMatrix;
 use crate::gmap::GeneticMap;
 use crate::indiv::{Individuals, PloidyConverter};
-use crate::share::ibd::ContainerOperationSnafu;
+
 use crate::share::mat::NamedMatrix;
 use crate::site::Sites;
 use ahash::{HashMap, HashMapExt};
@@ -17,14 +17,12 @@ use itertools::Itertools;
 use rayon::prelude::*;
 use rust_htslib::bgzf;
 use rust_htslib::tpool::ThreadPool;
-use snafu::prelude::*;
+
 use std::cmp::Ordering;
 use std::path::Path;
 use std::sync::Arc;
 use IbdSetPloidyStatus::*;
 use IbdSetSortStatus::*;
-
-type Result<T> = std::result::Result<T, super::Error>;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum IbdSetPloidyStatus {
@@ -170,20 +168,17 @@ impl IbdSet {
     /// read all `*.ibd.gz` file (in hap-IBD format) into the IBD set
     /// by globing the folder and calling [IbdSet::read_hapibd_file]
     pub fn read_hapibd_dir(&mut self, p: impl AsRef<Path>) -> Result<()> {
-        let path = p.as_ref().to_path_buf();
         for entry in p
             .as_ref()
             .read_dir()
-            .context(ReadDirectorySnafu { path: path.clone() })?
+            .change_context(IshareError::Ibd)?
             .flatten()
         {
             let filename = entry.file_name();
             let filename = filename
                 .as_os_str()
                 .to_str()
-                .context(InvalidFilenameSnafu {
-                    filename: format!("{filename:?}"),
-                })?;
+                .ok_or(IshareError::EmptyOption)?;
             if !filename.ends_with("ibd.gz") {
                 continue;
             }
@@ -211,14 +206,14 @@ impl IbdSet {
 
         let tpool = ThreadPool::new(10)
             .map_err(Box::new)
-            .context(ThreadPoolSnafu {})?;
+            .change_context(IshareError::Ibd)?;
         let mut reader = bgzf::Reader::from_path(p.as_ref())
             .map_err(Box::new)
-            .context(BgzReadSnafu)?;
+            .change_context(IshareError::Ibd)?;
         reader
             .set_thread_pool(&tpool)
             .map_err(Box::new)
-            .context(BgzReadSnafu)?;
+            .change_context(IshareError::Ibd)?;
 
         let mut reader = ReaderBuilder::new()
             .delimiter(b'\t')
@@ -249,80 +244,55 @@ impl IbdSet {
             // filter out very short segments
             if let Some(min_cm) = min_cm {
                 let cm: f32 = from_utf8(&record[7])
-                    .context(Utf8ParseSnafu)?
+                    .change_context(IshareError::Ibd)?
                     .parse::<f32>()
-                    .context(ParseValueSnafu {
-                        msg: format!(
-                            "{} as type f32",
-                            from_utf8(&record[7]).unwrap_or("<invalid utf8>")
-                        ),
-                    })?;
+                    .change_context(IshareError::Ibd)?;
                 if cm < min_cm {
                     continue;
                 }
             }
             // filter out segment is Ibd sample names is not in individuals
-            let i = ind_map.get(from_utf8(&record[0]).context(Utf8ParseSnafu)?);
-            let j = ind_map.get(from_utf8(&record[2]).context(Utf8ParseSnafu)?);
+            let i = ind_map.get(from_utf8(&record[0]).change_context(IshareError::Ibd)?);
+            let j = ind_map.get(from_utf8(&record[2]).change_context(IshareError::Ibd)?);
             if i.is_none() || j.is_none() {
                 continue;
             }
-            let i = *i.context(MissingDataSnafu)? as u32;
-            let j = *j.context(MissingDataSnafu)? as u32;
+            let i = *i.ok_or(IshareError::EmptyOption)? as u32;
+            let j = *j.ok_or(IshareError::EmptyOption)? as u32;
             let m: u8 = match from_utf8(&record[1])
-                .context(Utf8ParseSnafu)?
+                .change_context(IshareError::Ibd)?
                 .parse::<u8>()
-                .context(ParseIntSnafu {
-                    value: from_utf8(&record[1])
-                        .unwrap_or("<invalid utf8>")
-                        .to_string(),
-                })? {
+                .change_context(IshareError::Ibd)?
+            {
                 1 => 0,
                 2 => 1,
                 0 => 2,
-                value => {
-                    return InvalidEnumValueSnafu {
-                        value: value.to_string(),
-                    }
-                    .fail()
+                _ => {
+                    bail!(IshareError::RuntimeCheck)
                 }
             };
             let n: u8 = match from_utf8(&record[3])
-                .context(Utf8ParseSnafu)?
+                .change_context(IshareError::Ibd)?
                 .parse::<u8>()
-                .context(ParseIntSnafu {
-                    value: from_utf8(&record[3])
-                        .unwrap_or("<invalid utf8>")
-                        .to_string(),
-                })? {
+                .change_context(IshareError::Ibd)?
+            {
                 1 => 0,
                 2 => 1,
                 0 => 2,
-                value => {
-                    return InvalidEnumValueSnafu {
-                        value: value.to_string(),
-                    }
-                    .fail()
+                _ => {
+                    bail!(IshareError::RuntimeCheck)
                 }
             };
-            let chr = from_utf8(&record[4]).context(Utf8ParseSnafu)?;
+            let chr = from_utf8(&record[4]).change_context(IshareError::Ibd)?;
             let s = from_utf8(&record[5])
-                .context(Utf8ParseSnafu)?
+                .change_context(IshareError::Ibd)?
                 .parse::<u32>()
-                .context(ParseIntSnafu {
-                    value: from_utf8(&record[5])
-                        .unwrap_or("<invalid utf8>")
-                        .to_string(),
-                })?
+                .change_context(IshareError::Ibd)?
                 - 1;
             let e = from_utf8(&record[6])
-                .context(Utf8ParseSnafu)?
+                .change_context(IshareError::Ibd)?
                 .parse::<u32>()
-                .context(ParseIntSnafu {
-                    value: from_utf8(&record[6])
-                        .unwrap_or("<invalid utf8>")
-                        .to_string(),
-                })?
+                .change_context(IshareError::Ibd)?
                 - 1;
 
             let chrid = self.ginfo.idx[chr];
@@ -356,7 +326,7 @@ impl IbdSet {
 
         let reader = bgzf::Reader::from_path(p.as_ref())
             .map_err(Box::new)
-            .context(BgzReadSnafu)?;
+            .change_context(IshareError::Ibd)?;
 
         let mut reader = ReaderBuilder::new()
             .delimiter(b'\t')
@@ -373,7 +343,7 @@ impl IbdSet {
         // let gw_chr_start_cm = self.gmap.get_gw_chr_start_cm_vec(self.ginfo);
 
         // check header column names
-        let header = &reader.headers().context(CsvReadSnafu)?;
+        let header = &reader.headers().change_context(IshareError::Ibd)?;
         assert_eq!(&header[0], "Id1");
         assert_eq!(&header[1], "Id2");
         assert_eq!(&header[2], "Start");
@@ -383,7 +353,10 @@ impl IbdSet {
         assert_eq!(&header[6], "HasMutation");
 
         let mut counter_invalid_ibd = 0usize;
-        while reader.read_record(&mut record).context(CsvReadSnafu)? {
+        while reader
+            .read_record(&mut record)
+            .change_context(IshareError::Ibd)?
+        {
             // haploid genome
             let m = 3;
             let n = 3;
@@ -398,15 +371,11 @@ impl IbdSet {
             };
 
             // allow converting floats to ints
-            let mut s = record[2].parse::<f32>().context(ParseValueSnafu {
-                msg: format!("{} as type f32", &record[2]),
-            })? as u32;
+            let mut s = record[2].parse::<f32>().change_context(IshareError::Ibd)? as u32;
             if s >= 1 {
                 s -= 1;
             }
-            let mut e = record[3].parse::<f32>().context(ParseValueSnafu {
-                msg: format!("{} as type f32", &record[3]),
-            })? as u32;
+            let mut e = record[3].parse::<f32>().change_context(IshareError::Ibd)? as u32;
             assert!(e <= chrmsize, "e={e}, chrmsize: {chrmsize}");
             if e >= 1 {
                 e -= 1;
@@ -432,29 +401,27 @@ impl IbdSet {
     /// read all `{chrname}.ibd` file (in hap-IBD format) into the IBD set
     /// by globing the folder and calling [IbdSet::read_hapibd_file]
     pub fn read_tskibd_dir(&mut self, p: impl AsRef<Path>) -> Result<()> {
-        let path = p.as_ref().to_path_buf();
+        let _path = p.as_ref().to_path_buf();
         for entry in p
             .as_ref()
             .read_dir()
-            .context(ReadDirectorySnafu { path: path.clone() })?
+            .change_context(IshareError::Ibd)?
             .flatten()
         {
             let filename = entry.file_name();
             let filename = filename
                 .as_os_str()
                 .to_str()
-                .context(InvalidFilenameSnafu {
-                    filename: format!("{filename:?}"),
-                })?;
+                .ok_or(IshareError::EmptyOption)?;
             if !filename.ends_with("ibd") {
                 continue;
             }
             let p = entry.path();
-            let chrname = p.file_stem().context(MissingDataSnafu)?.to_str().context(
-                InvalidFilenameSnafu {
-                    filename: format!("{:?}", p.file_stem()),
-                },
-            )?;
+            let chrname = p
+                .file_stem()
+                .ok_or(IshareError::EmptyOption)?
+                .to_str()
+                .ok_or(IshareError::EmptyOption)?;
             self.read_tskibd_file(&p, chrname)?;
         }
         Ok(())
@@ -463,20 +430,18 @@ impl IbdSet {
     /// read all `*.ibd.gz` file (in hap-IBD format) into the IBD set
     /// by globing the folder and calling [IbdSet::read_hapibd_file]
     pub fn read_hmmibd_dir(&mut self, p: impl AsRef<Path>) -> Result<()> {
-        let path = p.as_ref().to_path_buf();
+        let _path = p.as_ref().to_path_buf();
         for entry in p
             .as_ref()
             .read_dir()
-            .context(ReadDirectorySnafu { path: path.clone() })?
+            .change_context(IshareError::Ibd)?
             .flatten()
         {
             let filename = entry.file_name();
             let filename = filename
                 .as_os_str()
                 .to_str()
-                .context(InvalidFilenameSnafu {
-                    filename: format!("{filename:?}"),
-                })?;
+                .ok_or(IshareError::EmptyOption)?;
             if !filename.ends_with(".hmm.txt") {
                 continue;
             }
@@ -491,15 +456,18 @@ impl IbdSet {
             .delimiter(b'\t')
             .has_headers(true)
             .from_path(p.as_ref())
-            .context(CsvReadSnafu)?;
+            .change_context(IshareError::Ibd)?;
         let mut rec = csv::ByteRecord::new();
 
         fn to_str(b: &[u8]) -> Result<&str> {
-            std::str::from_utf8(b).context(Utf8ParseSnafu)
+            std::str::from_utf8(b).change_context(IshareError::Ibd)
         }
 
         let sam_map = self.inds.m();
-        while reader.read_byte_record(&mut rec).context(CsvReadSnafu)? {
+        while reader
+            .read_byte_record(&mut rec)
+            .change_context(IshareError::Ibd)?
+        {
             //  sample1,
             //  sample2,
             //  chrname,
@@ -509,21 +477,23 @@ impl IbdSet {
             //  n_snp,
 
             // skip nonibd information
-            let ibd = to_str(&rec[5])?.parse::<u8>().context(ParseIntSnafu {
-                value: to_str(&rec[5])?.to_string(),
-            })?;
+            let ibd = to_str(&rec[5])?
+                .parse::<u8>()
+                .change_context(IshareError::Ibd)?;
             if ibd != 0 {
                 continue;
             }
 
             let chrname = to_str(&rec[2])?;
             let chrid = self.ginfo.idx[chrname];
-            let start_pos = to_str(&rec[3])?.parse::<u32>().context(ParseIntSnafu {
-                value: to_str(&rec[3])?.to_string(),
-            })? - 1; // 1-based to 0-based
-            let end_pos = to_str(&rec[4])?.parse::<u32>().context(ParseIntSnafu {
-                value: to_str(&rec[4])?.to_string(),
-            })? - 1; // 1-based to 0-based
+            let start_pos = to_str(&rec[3])?
+                .parse::<u32>()
+                .change_context(IshareError::Ibd)?
+                - 1; // 1-based to 0-based
+            let end_pos = to_str(&rec[4])?
+                .parse::<u32>()
+                .change_context(IshareError::Ibd)?
+                - 1; // 1-based to 0-based
             let s = self.ginfo.to_gw_pos(chrid, start_pos);
             let e = s + end_pos - start_pos;
 
@@ -606,8 +576,8 @@ impl IbdSet {
         self.inds = diploid_inds;
         self.ibd.iter_mut().try_for_each(|seg| -> Result<()> {
             let (ind1, ind2) = seg.individual_pair();
-            let (ind1, hap1) = ploidy_converter.h2d(ind1).context(MissingDataSnafu)?;
-            let (ind2, hap2) = ploidy_converter.h2d(ind2).context(MissingDataSnafu)?;
+            let (ind1, hap1) = ploidy_converter.h2d(ind1).ok_or(IshareError::EmptyOption)?;
+            let (ind2, hap2) = ploidy_converter.h2d(ind2).ok_or(IshareError::EmptyOption)?;
             seg.i = (ind1 << 2) + hap1 as u32;
             seg.j = (ind2 << 2) + hap2 as u32;
             seg.normalized();
@@ -650,7 +620,7 @@ impl IbdSet {
             .chunk_by(|x| x.individual_pair())
             .into_iter()
             .try_for_each(|(_pair, mut grp)| -> Result<()> {
-                let mut ibd1 = grp.next().context(MissingDataSnafu)?;
+                let mut ibd1 = grp.next().ok_or(IshareError::EmptyOption)?;
                 for (i, x) in grp.enumerate() {
                     if i == 0 {
                         ibd1 = x;
@@ -711,7 +681,7 @@ impl IbdSet {
             .chunk_by(|x| x.individual_pair())
             .into_iter()
             .try_for_each(|(ind_pair, mut grp)| -> Result<()> {
-                let mut ibd1 = grp.next().context(MissingDataSnafu)?;
+                let mut ibd1 = grp.next().ok_or(IshareError::EmptyOption)?;
                 for x in grp {
                     let ibd2 = x;
                     let (s1, e1) = (ibd1.s, ibd1.e);
@@ -857,12 +827,9 @@ impl IbdSet {
         // get complement of regions
         let mut regions = regions.clone();
         let genome_size = self.get_ginfo().get_total_len_bp();
-        regions.complement(0, genome_size).map_err(|e| {
-            ContainerOperationSnafu {
-                details: Box::new(e.to_string()),
-            }
-            .build()
-        })?;
+        regions
+            .complement(0, genome_size)
+            .change_context(IshareError::Ibd)?;
         // generate ibdseg that intersect the complement regions
         let tree = IntervalTree::from_iter(regions.iter().map(|x| (x.to_owned(), ())));
         let gmap = &self.gmap;

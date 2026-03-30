@@ -1,73 +1,14 @@
-use crate::genome::{self, GenomeInfo};
+use crate::genome::GenomeInfo;
 use bincode::{Decode, Encode};
 use csv;
 use serde::{Deserialize, Serialize};
-use snafu::{ensure, OptionExt, ResultExt, Snafu};
 use std::{
-    backtrace::Backtrace,
     io::{BufWriter, Write},
-    num::{ParseFloatError, ParseIntError},
     path::Path,
 };
 
-#[derive(Debug, Snafu)]
-pub enum Error {
-    // #[snafu(transparent)]
-    GnomeError {
-        // non leaf
-        #[snafu(source(from(genome::Error, Box::new)))]
-        #[snafu(backtrace)]
-        source: Box<genome::Error>,
-    },
-    #[snafu(display("{source:?}, {path:?}"))]
-    CsvError {
-        // leaf
-        source: csv::Error,
-        path: Box<String>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    IoError {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    NotEnoughItem {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    MapBpOutOfRange {
-        // leaf
-        bp: u32,
-        chrlen: u32,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    MapItemNotOrderred {
-        // leaf
-        last_bp: u32,
-        bp: u32,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    ParseFloatErr {
-        // leaf
-        source: ParseFloatError,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    ParseIntErr {
-        // leaf
-        source: ParseIntError,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    PrefixIsTwoDots {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    PathParentError {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
-
-type Result<T> = std::result::Result<T, Error>;
+use crate::error::{IshareError, Result};
+use error_stack::{bail, ensure, ResultExt};
 
 /// Genetic Map represented as vector of 2-tuple: 0-based bp position and the
 /// corresponding cM coordinatesg
@@ -134,7 +75,7 @@ impl GeneticMap {
             // trim on the right size
             v_o_chr.retain(|(bp, _cm)| bp < chrlen);
             // add right end
-            let (last_bp, last_cm) = v_o_chr.last().context(NotEnoughItemSnafu {})?;
+            let (last_bp, last_cm) = v_o_chr.last().ok_or(IshareError::EmptyOption)?;
             if *last_bp != chrlen - 1 {
                 let avg_rate = last_cm / *last_bp as f32;
                 v_o_chr.push((chrlen - 1, avg_rate * (chrlen - 1) as f32));
@@ -179,29 +120,28 @@ impl GeneticMap {
         let mut v = vec![(0, 0.0)];
         let mut record = csv::StringRecord::new();
 
-        let p_str = p.as_ref().to_string_lossy().into_owned();
+        let _p_str = p.as_ref().to_string_lossy().into_owned();
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(false)
             .delimiter(b' ')
             .from_path(&p)
-            .context(CsvSnafu {
-                path: p_str.clone(),
-            })?;
+            .change_context(IshareError::Gmap)?;
 
-        while reader.read_record(&mut record).context(CsvSnafu {
-            path: p_str.clone(),
-        })? {
+        while reader
+            .read_record(&mut record)
+            .change_context(IshareError::Gmap)?
+        {
             // println!("{:?}", record);
-            let cm = record[2].parse::<f32>().context(ParseFloatErrSnafu {})?;
+            let cm = record[2].parse::<f32>().change_context(IshareError::Gmap)?;
 
             // use 0-based position
-            let bp: u32 = record[3].parse::<u32>().context(ParseIntErrSnafu {})? - 1;
+            let bp: u32 = record[3].parse::<u32>().change_context(IshareError::Gmap)? - 1;
             if bp == 0 {
                 continue;
             }
 
-            let last_bp = v.last().context(NotEnoughItemSnafu {})?.0;
-            ensure!(bp > last_bp, MapItemNotOrderredSnafu { last_bp, bp });
+            let last_bp = v.last().ok_or(IshareError::EmptyOption)?.0;
+            ensure!(bp > last_bp, IshareError::RuntimeCheck);
             v.push((bp, cm));
         }
         v.sort_by_key(|x| x.0);
@@ -210,9 +150,9 @@ impl GeneticMap {
         // should be chrlen-1 not chrlen. Otherwise, there might be collision of
         // bp between end bp of current chromosome with the starting bp of the
         // next chromosome
-        let (bp, cm) = *v.last().context(NotEnoughItemSnafu {})?;
+        let (bp, cm) = *v.last().ok_or(IshareError::EmptyOption)?;
         let avg_rate = cm / bp as f32;
-        ensure!(bp <= chrlen, MapBpOutOfRangeSnafu { bp, chrlen });
+        ensure!(bp <= chrlen, IshareError::RuntimeCheck);
 
         let end_bp = chrlen - 1;
         let mut end_cm = ((end_bp - bp) as f32) * avg_rate + cm;
@@ -275,7 +215,7 @@ impl GeneticMap {
     pub fn get_size_cm(&self) -> Result<f32> {
         match (self.0.last(), self.0.first()) {
             (Some(last), Some(first)) => Ok(last.1 - first.1),
-            _ => NotEnoughItemSnafu.fail(),
+            _ => bail!(IshareError::EmptyOption),
         }
     }
 
@@ -294,14 +234,14 @@ impl GeneticMap {
 
         for (i, chrname) in ginfo.chromnames.iter().enumerate() {
             let p = dir.join(&ginfo.gmaps[i]);
-            let parent = p.parent().context(PathParentSnafu {})?;
+            let parent = p.parent().ok_or(IshareError::EmptyOption)?;
             if !parent.exists() {
-                std::fs::create_dir_all(parent).context(IoSnafu {})?;
+                std::fs::create_dir_all(parent).change_context(IshareError::Gmap)?;
             }
 
             let mut f = std::fs::File::create(&p)
                 .map(BufWriter::new)
-                .context(IoSnafu {})?;
+                .change_context(IshareError::Gmap)?;
             // find the first end record for each chromosome
             let gwstart = ginfo.gwstarts[i];
             let gwend = match ginfo.gwstarts.get(i + 1) {
@@ -316,7 +256,7 @@ impl GeneticMap {
                 let pos = *pos - pos_offset + 1; // 1-based position
                 let cm = *cm - cm_offset;
 
-                writeln!(f, "{chrname} . {cm} {pos}").context(IoSnafu {})?;
+                writeln!(f, "{chrname} . {cm} {pos}").change_context(IshareError::Gmap)?;
             }
         }
         Ok(())

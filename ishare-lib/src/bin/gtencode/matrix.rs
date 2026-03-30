@@ -1,24 +1,10 @@
+use super::{GtencodeError, Result};
+use error_stack::*;
+
 use ishare::{genotype::common::GenotypeMatrix, site::Sites};
 use itertools::Itertools;
 
 use super::Commands;
-use snafu::prelude::*;
-#[derive(Debug, Snafu)]
-pub enum Error {
-    // non-local
-    // #[snafu(transparent)]
-    Matrix {
-        #[snafu(source(from(ishare::genotype::common::Error, Box::new)))]
-        source: Box<ishare::genotype::common::Error>,
-    },
-
-    // #[snafu(transparent)]
-    Sites {
-        source: ishare::site::Error,
-    },
-    // local
-}
-type Result<T> = std::result::Result<T, Error>;
 
 pub fn main_matrix(args: &Commands) -> Result<()> {
     if let Commands::Matrix {
@@ -27,9 +13,9 @@ pub fn main_matrix(args: &Commands) -> Result<()> {
         positions,
     } = args
     {
-        let gm = GenotypeMatrix::from_parquet_file(mat).context(MatrixSnafu)?;
+        let gm = GenotypeMatrix::from_parquet_file(mat).change_context(GtencodeError::Input)?;
         let sit_file = mat.clone().with_extension("sit");
-        let sites = Sites::from_parquet_file(sit_file).context(SitesSnafu)?;
+        let sites = Sites::from_parquet_file(sit_file).change_context(GtencodeError::Input)?;
 
         let genomes = match genomes {
             Some(v) if v.is_empty() => Vec::new(),

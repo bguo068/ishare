@@ -1,21 +1,8 @@
+use super::{GtencodeError, Result};
+use error_stack::*;
+
 use super::Commands;
 use ishare::indiv::Individuals;
-
-use snafu::prelude::*;
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    // non-local
-    // #[snafu(transparent)]
-    Individuals {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::indiv::Error,
-    },
-    // local
-}
-
-type Result<T> = std::result::Result<T, Error>;
 
 pub fn main_samples(args: &Commands) -> Result<()> {
     if let Commands::Samples {
@@ -25,7 +12,7 @@ pub fn main_samples(args: &Commands) -> Result<()> {
         idx_genome,
     } = args
     {
-        let inds = Individuals::from_parquet_file(ind).context(IndividualsSnafu)?;
+        let inds = Individuals::from_parquet_file(ind).change_context(GtencodeError::Input)?;
 
         let print_sample = |i: usize, s: &str| {
             println!(

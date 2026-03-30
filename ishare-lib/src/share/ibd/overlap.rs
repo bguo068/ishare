@@ -1,14 +1,15 @@
 use super::ibdset::*;
-use super::{CreateFileSnafu, WriteFileSnafu};
+
 use crate::container::intervals::Intervals;
 use crate::container::intervaltree::IntervalTree;
 use crate::genome::GenomeInfo;
 use crate::gmap::GeneticMap;
-use snafu::prelude::*;
+
 use std::io::BufWriter;
 use std::path::PathBuf;
 
-type Result<T> = std::result::Result<T, super::Error>;
+use crate::error::{IshareError, Result};
+use error_stack::*;
 
 pub struct IbdOverlapAnalyzer<'a> {
     ibd1: &'a IbdSet,
@@ -68,14 +69,12 @@ impl<'a> IbdOverlapAnalyzer<'a> {
             (None, _) => None,
             (Some(prefix_for_detials), true) => {
                 let file_path = prefix_for_detials.with_extension("abyb");
-                let file = std::fs::File::create(&file_path)
-                    .context(CreateFileSnafu { path: file_path })?;
+                let file = std::fs::File::create(&file_path).change_context(IshareError::Ibd)?;
                 Some(BufWriter::with_capacity(100000000, file))
             }
             (Some(prefix_for_detials), false) => {
                 let file_path = prefix_for_detials.with_extension("bbya");
-                let file = std::fs::File::create(&file_path)
-                    .context(CreateFileSnafu { path: file_path })?;
+                let file = std::fs::File::create(&file_path).change_context(IshareError::Ibd)?;
                 Some(BufWriter::with_capacity(100000000, file))
             }
         };
@@ -174,7 +173,7 @@ impl<'a> IbdOverlapAnalyzer<'a> {
                             let interval_lwr = len_ranges[which];
                             let (_ichr, chrname, astart) = ginfo.to_chr_pos(a.start);
                             let aend = astart + (a.end - a.start);
-                            writeln!(detail_file, "{sample1}\t{hapid1}\t{sample2}\t{hapid2}\t{chrname}\t{astart}\t{aend}\t{interval_lwr}\t{:.4}", intersect/cm ).context(WriteFileSnafu { path: std::path::PathBuf::from("detail_file") })?;
+                            writeln!(detail_file, "{sample1}\t{hapid1}\t{sample2}\t{hapid2}\t{chrname}\t{astart}\t{aend}\t{interval_lwr}\t{:.4}", intersect/cm ).change_context(IshareError::Ibd)?;
                         }
                     }
                     Some((sample1, hapid1, sample2, hapid2))
@@ -237,7 +236,7 @@ impl<'a> IbdOverlapAnalyzer<'a> {
                             let interval_lwr = len_ranges[which];
                             let (_ichr, chrname, astart) = ginfo.to_chr_pos(a.start);
                             let aend = astart + (a.end - a.start);
-                            writeln!(detail_file, "{sample1}\t{hapid1}\t{sample2}\t{hapid2}\t{chrname}\t{astart}\t{aend}\t{interval_lwr}\t{:.4}", intersect/cm ).context(WriteFileSnafu { path: std::path::PathBuf::from("detail_file") })?;
+                            writeln!(detail_file, "{sample1}\t{hapid1}\t{sample2}\t{hapid2}\t{chrname}\t{astart}\t{aend}\t{interval_lwr}\t{:.4}", intersect/cm ).change_context(IshareError::Ibd)?;
                         }
                     }
                     Some((sample1, hapid1, sample2, hapid2))
@@ -258,9 +257,7 @@ impl<'a> IbdOverlapAnalyzer<'a> {
                         "{sample1}\t{hapid1}\t{sample2}\t{hapid2}\tgenome_wide\t-1\t-1\t-1\t{:.4}",
                         gw_total_intersect / gw_total_a
                     )
-                    .context(WriteFileSnafu {
-                        path: std::path::PathBuf::from("detail_file"),
-                    })?;
+                    .change_context(IshareError::Ibd)?;
                 }
             }
         }
@@ -384,11 +381,9 @@ impl IbdOverlapResult {
         use std::io::Write;
         let mut file = std::fs::File::create(p.as_ref())
             .map(BufWriter::new)
-            .context(CreateFileSnafu {
-                path: p.as_ref().to_path_buf(),
-            })?;
+            .change_context(IshareError::Ibd)?;
 
-        writeln!(file, "LenBinStart,RateAOverlapByBMean,RateAOverlapByBStd,RateBOverlapByAMean,RateBOverlapByAStd").context(WriteFileSnafu { path: p.as_ref().to_path_buf() })?;
+        writeln!(file, "LenBinStart,RateAOverlapByBMean,RateAOverlapByBStd,RateBOverlapByAMean,RateBOverlapByAStd").change_context(IshareError::Ibd)?;
         for ((((bin, ab_mean), ab_std), ba_mean), ba_std) in self
             .bins
             .iter()
@@ -397,20 +392,15 @@ impl IbdOverlapResult {
             .zip(self.b_by_a_means.iter())
             .zip(self.b_by_a_stds.iter())
         {
-            writeln!(file, "{bin},{ab_mean},{ab_std},{ba_mean},{ba_std}").context(
-                WriteFileSnafu {
-                    path: p.as_ref().to_path_buf(),
-                },
-            )?;
+            writeln!(file, "{bin},{ab_mean},{ab_std},{ba_mean},{ba_std}")
+                .change_context(IshareError::Ibd)?;
         }
         writeln!(
             file,
             "genome_wide,{},{},{},{}",
             self.a_by_b_gw_mean, self.a_by_b_gw_std, self.b_by_a_gw_mean, self.b_by_a_gw_std
         )
-        .context(WriteFileSnafu {
-            path: p.as_ref().to_path_buf(),
-        })?;
+        .change_context(IshareError::Ibd)?;
         Ok(())
     }
 }
@@ -425,12 +415,10 @@ pub fn write_per_winddow_overlap_res(
     use std::io::Write;
     let mut file = std::fs::File::create(p.as_ref())
         .map(BufWriter::new)
-        .context(CreateFileSnafu {
-            path: p.as_ref().to_path_buf(),
-        })?;
+        .change_context(IshareError::Ibd)?;
 
     // write csv header
-    writeln!(file, "Chrom,StartBp,EndBp,StartCm,EndCm,GwStartBp,GwEndBp,GwStartCm,GwEndCm,LenBinStart,AOvByB,BOvByA").context(WriteFileSnafu { path: p.as_ref().to_path_buf() })?;
+    writeln!(file, "Chrom,StartBp,EndBp,StartCm,EndCm,GwStartBp,GwEndBp,GwStartCm,GwEndCm,LenBinStart,AOvByB,BOvByA").change_context(IshareError::Ibd)?;
     for (&(win_start, win_end), ov_res) in windows.iter().zip(ov_res_slice.iter()) {
         let (idx_s, chr_s, chr_pos_s) = ginfo.to_chr_pos(win_start);
         let gwcm_s = gmap.get_cm(win_start);
@@ -446,14 +434,14 @@ pub fn write_per_winddow_overlap_res(
             .zip(ov_res.a_by_b_means.iter())
             .zip(ov_res.b_by_a_means.iter())
         {
-            writeln!(file, "{chr_s},{chr_pos_s},{chr_pos_e},{chrcm_s},{chrcm_e},{win_start},{win_end},{gwcm_s},{gwcm_e},{bin},{ab},{ba}").context(WriteFileSnafu { path: p.as_ref().to_path_buf() })?;
+            writeln!(file, "{chr_s},{chr_pos_s},{chr_pos_e},{chrcm_s},{chrcm_e},{win_start},{win_end},{gwcm_s},{gwcm_e},{bin},{ab},{ba}").change_context(IshareError::Ibd)?;
         }
         writeln!(
             file,
             "{chr_s},{chr_pos_s},{chr_pos_e},{chrcm_s},{chrcm_e},{win_start},{win_end},{gwcm_s},{gwcm_e},genome_wide,{},{}",
             ov_res.a_by_b_gw_mean, ov_res.b_by_a_gw_mean
         )
-        .context(WriteFileSnafu { path: p.as_ref().to_path_buf() })?;
+        .change_context(IshareError::Ibd)?;
     }
     Ok(())
 }

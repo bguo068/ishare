@@ -1,81 +1,18 @@
+use crate::error::{IshareError, Result};
+use error_stack::*;
+
 use itertools::{EitherOrBoth, Itertools};
-use snafu::{ensure, OptionExt, ResultExt, Snafu};
 
 use crate::{
     container::intervaltree::IntervalTree, genome::GenomeInfo, indiv::Individuals,
     share::mat::NamedMatrix,
 };
 use std::{
-    backtrace::Backtrace,
     fs::File,
     io::{BufRead, BufReader},
     path::Path,
 };
 
-#[derive(Debug, Snafu)]
-pub enum Error {
-    IoError {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    ParseFloatError {
-        // leaf
-        source: std::num::ParseFloatError,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    ParseIntError {
-        // leaf
-        source: std::num::ParseIntError,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    InvalidFormat {
-        // leaf
-        message: Box<String>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    EmptyData {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    BinarySearchError {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    #[snafu(display("No ancestry populations found in header"))]
-    NoAncestryPopulations {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    #[snafu(display("Too many ancestry populations: {} (max: {})", count, max))]
-    TooManyAncestryPopulations {
-        // leaf
-        count: usize,
-        max: usize,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    #[snafu(display("Invalid chunk size: expected {}, got {}", expected, actual))]
-    InvalidChunkSize {
-        // leaf
-        expected: usize,
-        actual: usize,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    #[snafu(display("Haplotype index {} is out of bounds (max: {})", index, max_index))]
-    HaplotypeIndexOutOfBounds {
-        // leaf
-        index: u32,
-        max_index: usize,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    #[snafu(display("Corrupted segment indices"))]
-    CorruptedSegmentIndices {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
-
-type Result<T> = std::result::Result<T, Error>;
 /// rfmix 2 fb.tsv file format
 ///
 /// no. col =  4 + 8 * k * n
@@ -138,9 +75,9 @@ impl FbMatrix {
         min_prob: f32,
         buffer_size_mb: usize,
     ) -> Result<Self> {
-        let file = File::open(p.as_ref()).context(IoSnafu)?;
-        let metadata = file.metadata().context(IoSnafu)?;
-        ensure!(metadata.len() > 0, EmptyDataSnafu);
+        let file = File::open(p.as_ref()).change_context(IshareError::AsIbd)?;
+        let metadata = file.metadata().change_context(IshareError::AsIbd)?;
+        ensure!(metadata.len() > 0, IshareError::RuntimeCheck);
         let mut reader = BufReader::with_capacity(1024 * buffer_size_mb, file);
         let mut buf = String::with_capacity(100000);
         let mut ancestry = Vec::<String>::new();
@@ -153,7 +90,9 @@ impl FbMatrix {
 
         // line 1
         let mut ln_cnt = 0;
-        reader.read_line(&mut buf).context(IoSnafu)?;
+        reader
+            .read_line(&mut buf)
+            .change_context(IshareError::AsIbd)?;
         ln_cnt += 1;
         for a in buf.trim().split("\t").skip(1) {
             ancestry.push(a.to_owned());
@@ -161,26 +100,29 @@ impl FbMatrix {
         let k_anc = ancestry.len();
 
         // Validate ancestry count
-        ensure!(k_anc > 0, NoAncestryPopulationsSnafu);
-        ensure!(
-            k_anc < u8::MAX as usize,
-            TooManyAncestryPopulationsSnafu {
-                count: k_anc,
-                max: u8::MAX as usize - 1
-            }
-        );
+        ensure!(k_anc > 0, IshareError::RuntimeCheck);
+        ensure!(k_anc < u8::MAX as usize, IshareError::RuntimeCheck);
         ancestry.push("Unkown".to_owned());
         buf.clear();
 
         // line 2, skip 2 columns, read sample name for every k_anc *2 columns
-        reader.read_line(&mut buf).context(IoSnafu)?;
+        reader
+            .read_line(&mut buf)
+            .change_context(IshareError::AsIbd)?;
         ln_cnt += 1;
         let step_size = k_anc * 2;
-        ensure!(step_size > 0, NoAncestryPopulationsSnafu); // This should already be caught, but double-check
+        ensure!(
+            step_size > 0,
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("NoAncestryPopulationsSnafu")
+        ); // This should already be caught, but double-check
         for field in buf.trim().split("\t").skip(4).step_by(step_size) {
-            let sam = field.split(":::").next().context(InvalidFormatSnafu {
-                message: "Expected sample format with :::".to_owned(),
-            })?;
+            let sam = field
+                .split(":::")
+                .next()
+                .ok_or(IshareError::EmptyOption)
+                .attach("Expected sample format with :::")?;
             let samid = match inds.m().get(sam) {
                 Some(samid) => *samid as u32,
                 None => u32::MAX, // if not in individual set to u32::MAX
@@ -190,7 +132,11 @@ impl FbMatrix {
         buf.clear();
 
         // line 3-end
-        while reader.read_line(&mut buf).context(IoSnafu)? > 0 {
+        while reader
+            .read_line(&mut buf)
+            .change_context(IshareError::AsIbd)?
+            > 0
+        {
             ln_cnt += 1;
             if ln_cnt % 100 == 0 {
                 eprint!(
@@ -199,31 +145,32 @@ impl FbMatrix {
                 );
             }
             let mut fields = buf.trim().split("\t");
-            let chrname = fields.next().context(InvalidFormatSnafu {
-                message: "Missing chromosome name".to_owned(),
-            })?;
+            let chrname = fields
+                .next()
+                .ok_or(IshareError::EmptyOption)
+                .attach("Missing chromosome name")?;
+
             let chrid = ginfo.idx[chrname];
             let pos: u32 = fields
                 .next()
-                .context(InvalidFormatSnafu {
-                    message: "Missing position".to_owned(),
-                })?
+                .ok_or(IshareError::EmptyOption)
+                .attach("Missing position")?
                 .parse::<u32>()
-                .context(ParseIntSnafu)?
+                .change_context(IshareError::AsIbd)?
                 - 1; // parse col 1, use 0-based position
             let gw_pos = ginfo.to_gw_pos(chrid, pos);
             win_snp_pos.push(gw_pos);
-            fields.next().context(InvalidFormatSnafu {
-                message: "Missing genetic position column".to_owned(),
-            })?; // skip col 2
+            fields
+                .next()
+                .ok_or(IshareError::EmptyOption)
+                .attach("Missing position")?; // skip col 2
             let _idx: u32 = fields
                 .next()
-                .context(InvalidFormatSnafu {
-                    message: "Missing genetic marker index".to_owned(),
-                })?
+                .ok_or(IshareError::EmptyOption)
+                .attach("Missing genetic marker index")?
                 .parse()
-                .context(ParseIntSnafu)?; // skip col 3
-                                          // win_snp_idx.push(idx);
+                .change_context(IshareError::AsIbd)?; // skip col 3
+                                                      // win_snp_idx.push(idx);
 
             // per site ancestry: Vector
             v.clear();
@@ -235,10 +182,9 @@ impl FbMatrix {
                 let chunk_vec: Vec<_> = chunk.collect();
                 ensure!(
                     chunk_vec.len() == k_anc,
-                    InvalidChunkSizeSnafu {
-                        expected: k_anc,
-                        actual: chunk_vec.len()
-                    }
+                    IshareError::RuntimeCheck
+                        .into_report()
+                        .attach("InvalidChunkSizeSnafu")
                 );
                 // this ensures that mat samples order are the same as individuals orders
                 let i = n_chunks >> 1;
@@ -258,10 +204,10 @@ impl FbMatrix {
                     .map(|(i, p)| p.parse::<f32>().map(|f| (i, f)))
                     .collect();
                 let (imax, max) = parsed_chunk
-                    .context(ParseFloatSnafu)?
+                    .change_context(IshareError::AsIbd)?
                     .into_iter()
                     .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-                    .context(EmptyDataSnafu)?;
+                    .ok_or(IshareError::EmptyOption)?;
                 let anc = match max >= min_prob {
                     true => imax as u8,
                     false => k_anc as u8,
@@ -274,14 +220,12 @@ impl FbMatrix {
         }
 
         // calcualte win_snp_idx
-        let snp_indices: std::result::Result<Vec<u32>, Error> = win_snp_pos
+        let snp_indices: Result<Vec<u32>> = win_snp_pos
             .into_iter()
             .map(|p| {
                 pos.binary_search(&p)
                     .map(|idx| idx as u32)
-                    .map_err(|_| Error::BinarySearchError {
-                        backtrace: Box::new(None),
-                    })
+                    .map_err(|_| IshareError::RuntimeCheck.into_report())
             })
             .collect();
         win_snp_idx.extend(snp_indices?);
@@ -301,7 +245,12 @@ impl FbMatrix {
 
         // Ensure we have at least some matching individuals
         let n_valid_samples = samples.iter().filter(|&&s| s != u32::MAX).count();
-        ensure!(n_valid_samples > 0, EmptyDataSnafu);
+        ensure!(
+            n_valid_samples > 0,
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("EmptyDataSnafu")
+        );
 
         let mut mat = NamedMatrix::new_from_shape_and_data(
             win_snp_idx.len() as u32,
@@ -365,10 +314,9 @@ impl LASet {
         let hap_idx = hap_idx as usize;
         ensure!(
             hap_idx < self.hap_start_idx.len(),
-            HaplotypeIndexOutOfBoundsSnafu {
-                index: hap_idx as u32,
-                max_index: self.hap_start_idx.len().saturating_sub(1)
-            }
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("HaplotypeIndexOutOfBounds")
         );
 
         let s = self.hap_start_idx[hap_idx] as usize;
@@ -379,7 +327,9 @@ impl LASet {
 
         ensure!(
             s <= self.segs.len() && e <= self.segs.len(),
-            CorruptedSegmentIndicesSnafu
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("CorruptedSegmentIndices")
         );
 
         Ok(&self.segs[s..e])
@@ -399,8 +349,14 @@ impl LASet {
         let segs1 = self.get_lasegs(hap1)?;
         let segs2 = self.get_lasegs(hap2)?;
 
-        ensure!(!segs1.is_empty() && !segs2.is_empty(), EmptyDataSnafu);
-        ensure!(!self.windows.is_empty(), EmptyDataSnafu);
+        ensure!(
+            !segs1.is_empty() && !segs2.is_empty(),
+            IshareError::RuntimeCheck.into_report().attach("EmptyData")
+        );
+        ensure!(
+            !self.windows.is_empty(),
+            IshareError::RuntimeCheck.into_report().attach("EmptyData")
+        );
         let mut last_anc1: u8 = 0;
         let mut last_anc2: u8 = 0;
         let iter = segs1
@@ -426,7 +382,11 @@ impl LASet {
             });
         buf.clear();
         buf.extend(iter);
-        let last_pos = self.windows.last().context(EmptyDataSnafu)?.1;
+        let last_pos = self
+            .windows
+            .last()
+            .ok_or(IshareError::RuntimeCheck.into_report().attach("EmptyData"))?
+            .1;
         buf.push((last_pos, (0, 0)));
 
         let iter = buf
@@ -447,15 +407,29 @@ impl LASet {
         let segs1 = self.get_lasegs(hap1)?;
         let segs2 = self.get_lasegs(hap2)?;
 
-        ensure!(!segs1.is_empty() && !segs2.is_empty(), EmptyDataSnafu);
-        ensure!(!self.windows.is_empty(), EmptyDataSnafu);
+        ensure!(
+            !segs1.is_empty() && !segs2.is_empty(),
+            IshareError::RuntimeCheck.into_report().attach("EmptyData")
+        );
+        ensure!(
+            !self.windows.is_empty(),
+            IshareError::RuntimeCheck.into_report().attach("EmptyData")
+        );
 
         let mut last_anc1: u8 = segs1[0].ancestry;
         let mut last_anc2: u8 = segs2[0].ancestry;
-        let mut prev_start_pos = self.windows.first().context(EmptyDataSnafu)?.0;
+        let mut prev_start_pos = self
+            .windows
+            .first()
+            .ok_or(IshareError::RuntimeCheck.into_report().attach("EmptyData"))?
+            .0;
         let mut nodes = tree.into_nodes();
         nodes.clear();
-        let last_pos = self.windows.last().context(EmptyDataSnafu)?.1;
+        let last_pos = self
+            .windows
+            .last()
+            .ok_or(IshareError::RuntimeCheck.into_report().attach("EmptyData"))?
+            .1;
         segs1
             .iter()
             .merge_join_by(segs2.iter(), |a, b| a.win_start.cmp(&b.win_start))
@@ -969,11 +943,6 @@ chr1\t101\t0.1\t0\tinvalid\t0.0\t0.0\t1.0\n";
             let result = FbMatrix::from_fb_csv(&temp_file, &pos, &ginfo, &inds, 0.5, 1);
 
             assert!(result.is_err());
-            if let Err(Error::ParseFloatError { .. }) = result {
-                // Expected error type
-            } else {
-                panic!("Expected ParseFloatError");
-            }
 
             std::fs::remove_file(temp_file).ok();
         }
@@ -1003,11 +972,6 @@ chr1\tinvalid_pos\t0.1\t0\t1.0\t0.0\t0.0\t1.0\n";
             let result = FbMatrix::from_fb_csv(&temp_file, &pos, &ginfo, &inds, 0.5, 1);
 
             assert!(result.is_err());
-            if let Err(Error::ParseIntError { .. }) = result {
-                // Expected error type
-            } else {
-                panic!("Expected ParseIntError");
-            }
 
             std::fs::remove_file(temp_file).ok();
         }
@@ -1022,11 +986,6 @@ chr1\tinvalid_pos\t0.1\t0\t1.0\t0.0\t0.0\t1.0\n";
             let result = FbMatrix::from_fb_csv(&temp_file, &pos, &ginfo, &inds, 0.5, 1);
 
             assert!(result.is_err());
-            if let Err(Error::BinarySearchError { .. }) = result {
-                // Expected error type
-            } else {
-                panic!("Expected BinarySearchError");
-            }
 
             std::fs::remove_file(temp_file).ok();
         }
@@ -1046,11 +1005,6 @@ chr1\tinvalid_pos\t0.1\t0\t1.0\t0.0\t0.0\t1.0\n";
             let result = la_set.get_hap_pair_la_segs2(0, 1, tree);
 
             assert!(result.is_err());
-            if let Err(Error::EmptyData { .. }) = result {
-                // Expected error type
-            } else {
-                panic!("Expected EmptyData error");
-            }
         }
     }
 

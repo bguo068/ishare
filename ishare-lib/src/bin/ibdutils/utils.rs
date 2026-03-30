@@ -1,36 +1,11 @@
 use arrow_array::{ArrayRef, Float32Array, RecordBatch};
-use arrow_schema::ArrowError;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
-use std::backtrace::Backtrace;
 use std::fs::File;
 use std::sync::Arc;
 
-use parquet::errors::ParquetError;
-use snafu::prelude::*;
-#[derive(Debug, Snafu)]
-pub enum Error {
-    // #[snafu(transparent)]
-    Parquet {
-        // non leaf
-        #[snafu(source(from(ParquetError, Box::new)))]
-        source: Box<ParquetError>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    // #[snafu(transparent)]
-    Arrow {
-        // non leaf
-        #[snafu(source(from(ArrowError, Box::new)))]
-        source: Box<ArrowError>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    StdIo {
-        // non leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
-type Result<T> = std::result::Result<T, Error>;
+use super::Result;
+use error_stack::*;
 
 pub fn write_pair_total(
     total1_vec: Vec<f32>,
@@ -45,19 +20,23 @@ pub fn write_pair_total(
         (colname1.to_owned(), Arc::new(t1) as ArrayRef),
         (colname2.to_owned(), Arc::new(t2) as ArrayRef),
     ])
-    .context(ArrowSnafu)?;
+    .change_context(crate::IbdUtilsError::Library)?;
 
-    let file = File::create(p.as_ref()).context(StdIoSnafu)?;
+    let file = File::create(p.as_ref()).change_context(crate::IbdUtilsError::Library)?;
 
     // Default writer properties
     let props = WriterProperties::builder().build();
 
-    let mut writer =
-        ArrowWriter::try_new(file, batch.schema(), Some(props)).context(ParquetSnafu)?;
+    let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))
+        .change_context(crate::IbdUtilsError::Library)?;
 
-    writer.write(&batch).context(ParquetSnafu)?;
+    writer
+        .write(&batch)
+        .change_context(crate::IbdUtilsError::Output)?;
 
     // writer must be closed to write footer
-    writer.close().context(ParquetSnafu)?;
+    writer
+        .close()
+        .change_context(crate::IbdUtilsError::Output)?;
     Ok(())
 }

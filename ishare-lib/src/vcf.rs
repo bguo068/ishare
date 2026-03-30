@@ -1,106 +1,20 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 use ahash::AHashSet;
+
+use std::path::Path;
 
 use crate::{
     container::intervals::Intervals,
     genome::GenomeInfo,
     genotype::{common::*, rare::*},
-    gmap::{self, GeneticMap},
+    gmap::GeneticMap,
     indiv::Individuals,
     site::*,
 };
 use rust_htslib::bcf::{record::GenotypeAllele, IndexedReader, Read, Reader};
-use std::{backtrace::Backtrace, num::ParseIntError, path::Path, str::Utf8Error};
 
-use snafu::{ensure, OptionExt, ResultExt, Snafu};
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    // #[snafu(transparent)]
-    GmapError {
-        // non leaf
-        #[snafu(backtrace, source(from(gmap::Error, Box::new)))]
-        source: Box<gmap::Error>,
-    },
-    // #[snafu(transparent)]
-    SiteError {
-        // non leaf
-        #[snafu(backtrace, source(from(crate::site::Error, Box::new)))]
-        source: Box<crate::site::Error>,
-    },
-
-    // #[snafu(transparent)]
-    HtslibError {
-        // leaf
-        #[snafu(source(from(rust_htslib::errors::Error, Box::new)))]
-        source: Box<rust_htslib::errors::Error>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    Utf8Error {
-        // leaf
-        source: Utf8Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    SampleNameUtf8Error {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    VcfRidError {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    VcfPosUnsorted {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    IoError {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    ReadPosFileMissingChrname {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    ReadPosFileMissingPos {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    ParseIntError {
-        // leaf
-        source: ParseIntError,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    RefInconsistAtSamePos {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    FmtGtError {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    AlleleIdError {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    MissingGenotype {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    MissingRid {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    BcfError {
-        // leaf
-        #[snafu(source(from(rust_htslib::errors::Error, Box::new)))]
-        source: Box<rust_htslib::errors::Error>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
-
-type Result<T> = std::result::Result<T, Error>;
+use crate::error::{IshareError, Result};
+use error_stack::{bail, ensure, IntoReport, ResultExt};
 
 pub fn read_vcf(
     target_samples: &AHashSet<String>,
@@ -109,17 +23,18 @@ pub fn read_vcf(
     max_maf: f64,
     region: Option<(u32, u64, Option<u64>)>,
 ) -> Result<(Sites, Individuals, GenotypeRecords)> {
-    let mut bcf = IndexedReader::from_path(vcf_path).context(HtslibSnafu {})?;
+    let mut bcf = IndexedReader::from_path(vcf_path).change_context(IshareError::Vcf)?;
 
     if let Some((rid, start, end_opt)) = region {
         let chrname = &gconfig.chromnames[rid as usize];
         let rid2 = bcf
             .header()
             .name2rid(chrname.as_bytes())
-            .context(HtslibSnafu {})?;
-        bcf.fetch(rid2, start, end_opt).context(HtslibSnafu {})?;
+            .change_context(IshareError::Vcf)?;
+        bcf.fetch(rid2, start, end_opt)
+            .change_context(IshareError::Vcf)?;
     }
-    bcf.set_threads(3).context(HtslibSnafu {})?;
+    bcf.set_threads(3).change_context(IshareError::Vcf)?;
 
     let header = bcf.header().clone();
     let nsam = header.sample_count();
@@ -133,7 +48,10 @@ pub fn read_vcf(
         .into_iter()
         .flat_map(|x| std::str::from_utf8(x));
 
-    ensure!(it.clone().count() == nsam as usize, SampleNameUtf8Snafu {});
+    ensure!(
+        it.clone().count() == nsam as usize,
+        IshareError::RuntimeCheck
+    );
 
     // calculate sample_mask
     let mut sample_mask = vec![true; header.sample_count() as usize];
@@ -163,7 +81,7 @@ pub fn read_vcf(
     let mut allele_counts = Vec::new();
     let mut allele_is_rare = Vec::<bool>::new();
     for record_result in bcf.records() {
-        let record = record_result.context(HtslibSnafu {})?;
+        let record = record_result.change_context(IshareError::Vcf)?;
 
         let alleles = record.alleles();
 
@@ -182,9 +100,9 @@ pub fn read_vcf(
 
         // chromosome id
         let chrid = {
-            let rid = record.rid().context(VcfRidSnafu {})?;
-            let chrname = header.rid2name(rid).context(HtslibSnafu {})?;
-            let chrname = std::str::from_utf8(chrname).context(Utf8Snafu {})?;
+            let rid = record.rid().ok_or(IshareError::Vcf)?;
+            let chrname = header.rid2name(rid).change_context(IshareError::Vcf)?;
+            let chrname = std::str::from_utf8(chrname).change_context(IshareError::Vcf)?;
             gconfig.idx[chrname]
         };
 
@@ -194,7 +112,7 @@ pub fn read_vcf(
         let mut is_new_pos = true;
         if let (Some(pos_last), Some(rid_last)) = (pos_last, rid_last) {
             if rid_last == chrid {
-                ensure!(pos_last <= pos, VcfPosUnsortedSnafu {});
+                ensure!(pos_last <= pos, IshareError::RuntimeCheck);
             }
             is_new_pos = !((pos_last == pos) && (rid_last == chrid));
         }
@@ -225,7 +143,7 @@ pub fn read_vcf(
             start_allele = ab.len() as u8 - 1;
             // assert different lines of the same position have a consistent REF allele
             let alleles = record.alleles();
-            ensure!(ab.get(0) == alleles[0], RefInconsistAtSamePosSnafu {});
+            ensure!(ab.get(0) == alleles[0], IshareError::RuntimeCheck);
             // skip the ref allele as it has been added
             for allele in alleles.iter().skip(1) {
                 ab.push(allele);
@@ -237,8 +155,8 @@ pub fn read_vcf(
         // see https://github.com/samtools/htslib/blob/99415e2a2ce26bdbf4e910954330ea769de2c3f0/htslib/vcf.h#L156
         // https://samtools.github.io/hts-specs/VCFv4.2.pdf
         // assert_eq!(bcf_fmt.type_, 1);
-        ensure!(bcf_fmt.n == 2, FmtGtSnafu {});
-        ensure!(bcf_fmt.p_len == 2 * nsam, FmtGtSnafu {});
+        ensure!(bcf_fmt.n == 2, IshareError::RuntimeCheck);
+        ensure!(bcf_fmt.p_len == 2 * nsam, IshareError::RuntimeCheck);
 
         let raw_gt_bytes = unsafe { std::slice::from_raw_parts(bcf_fmt.p, bcf_fmt.p_len as usize) };
 
@@ -264,7 +182,9 @@ pub fn read_vcf(
                 let mut i = match (y as i32).into() {
                     GenotypeAllele::Unphased(i) => Ok(i as u8),
                     GenotypeAllele::Phased(i) => Ok(i as u8),
-                    _ => MissingGenotypeSnafu {}.fail(),
+                    _ => Err(IshareError::Vcf
+                        .into_report()
+                        .attach("Unexpected missing genotype")),
                 }?;
                 if i != 0 {
                     // rebase
@@ -320,17 +240,18 @@ pub fn read_vcf_for_genotype_matrix(
     region: Option<(u32, u64, Option<u64>)>,
 ) -> Result<(Sites, Individuals, GenotypeMatrix)> {
     use rust_htslib::bcf::{record::GenotypeAllele, IndexedReader, Read};
-    let mut bcf = IndexedReader::from_path(vcf_path).context(HtslibSnafu {})?;
+    let mut bcf = IndexedReader::from_path(vcf_path).change_context(IshareError::Vcf)?;
 
     if let Some((rid, start, end_opt)) = region {
         let chrname = &gconfig.chromnames[rid as usize];
         let rid2 = bcf
             .header()
             .name2rid(chrname.as_bytes())
-            .context(HtslibSnafu {})?;
-        bcf.fetch(rid2, start, end_opt).context(HtslibSnafu {})?;
+            .change_context(IshareError::Vcf)?;
+        bcf.fetch(rid2, start, end_opt)
+            .change_context(IshareError::Vcf)?;
     }
-    bcf.set_threads(3).context(HtslibSnafu {})?;
+    bcf.set_threads(3).change_context(IshareError::Vcf)?;
 
     let header = bcf.header().clone();
     let nsam = header.sample_count();
@@ -343,7 +264,12 @@ pub fn read_vcf_for_genotype_matrix(
         .into_iter()
         .flat_map(|x| std::str::from_utf8(x));
 
-    ensure!(it.clone().count() == nsam as usize, SampleNameUtf8Snafu {});
+    ensure!(
+        it.clone().count() == nsam as usize,
+        IshareError::RuntimeCheck
+            .into_report()
+            .attach("sample count mismatch")
+    );
 
     // calculate sample_mask
     let mut sample_mask = vec![true; header.sample_count() as usize];
@@ -371,7 +297,7 @@ pub fn read_vcf_for_genotype_matrix(
 
     // let mut allele_counts = Vec::new();
     for record_result in bcf.records() {
-        let record = record_result.context(HtslibSnafu {})?;
+        let record = record_result.change_context(IshareError::Vcf)?;
 
         let alleles = record.alleles();
 
@@ -396,9 +322,9 @@ pub fn read_vcf_for_genotype_matrix(
 
         // chromosome id
         let chrid = {
-            let rid = record.rid().context(VcfRidSnafu {})?;
-            let chrname = header.rid2name(rid).context(HtslibSnafu {})?;
-            let chrname = std::str::from_utf8(chrname).context(Utf8Snafu {})?;
+            let rid = record.rid().ok_or(IshareError::Vcf)?;
+            let chrname = header.rid2name(rid).change_context(IshareError::Vcf)?;
+            let chrname = std::str::from_utf8(chrname).change_context(IshareError::Vcf)?;
             gconfig.idx[chrname]
         };
 
@@ -409,7 +335,12 @@ pub fn read_vcf_for_genotype_matrix(
         let mut _is_new_pos = true;
         if let (Some(pos_last), Some(rid_last)) = (pos_last, rid_last) {
             if rid_last == chrid {
-                ensure!(pos_last <= pos, VcfPosUnsortedSnafu {});
+                ensure!(
+                    pos_last <= pos,
+                    IshareError::RuntimeCheck
+                        .into_report()
+                        .attach("position out of range")
+                );
             }
             _is_new_pos = !((pos_last == pos) && (rid_last == chrid));
         }
@@ -417,8 +348,18 @@ pub fn read_vcf_for_genotype_matrix(
         let fmt = record.format(b"GT");
         let bcf_fmt = fmt.inner();
         // assert_eq!(bcf_fmt.type_, 1); // uint8_t
-        ensure!(bcf_fmt.n == 2, FmtGtSnafu {});
-        ensure!(bcf_fmt.p_len == 2 * nsam, FmtGtSnafu {});
+        ensure!(
+            bcf_fmt.n == 2,
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("GT format has wrong number of alleles")
+        );
+        ensure!(
+            bcf_fmt.p_len == 2 * nsam,
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("GT has wrong number of values")
+        );
 
         let raw_gt_slice = unsafe { std::slice::from_raw_parts(bcf_fmt.p, bcf_fmt.p_len as usize) };
 
@@ -447,7 +388,9 @@ pub fn read_vcf_for_genotype_matrix(
                 }
             });
         if gt_iter.clone().count() < nhaps {
-            MissingGenotypeSnafu {}.fail()?;
+            bail!(IshareError::Vcf
+                .into_report()
+                .attach("not enough genotype values"));
         }
         let ac: usize = gt_iter.clone().filter(|x| *x).count();
 
@@ -458,7 +401,7 @@ pub fn read_vcf_for_genotype_matrix(
         gm.extend_gt_calls(gt_iter);
         sites
             .add_site_with_bytes(pos, alleles[0])
-            .context(SiteSnafu)?;
+            .change_context(IshareError::Vcf)?;
         sites.append_bytes_to_last_allele(b" ");
         sites.append_bytes_to_last_allele(alleles[1]);
 
@@ -512,7 +455,12 @@ fn output_rare_allele_records(
         } else {
             allele_is_rare.push(false);
         }
-        ensure!(i < u8::MAX as usize - 1, AlleleIdSnafu {});
+        ensure!(
+            i < u8::MAX as usize - 1,
+            IshareError::RuntimeCheck
+                .into_report()
+                .attach("allele id out of range")
+        );
         // for ALT allele with allele count > 0
         if *ac > 0 {
             ab.set_enc(i as u8, new_encode);
@@ -543,25 +491,29 @@ fn output_rare_allele_records(
     }
 
     // add sites info
-    sites.add_site(pos, ab).context(SiteSnafu)?;
+    sites.add_site(pos, ab).change_context(IshareError::Vcf)?;
     Ok(())
 }
 
 pub fn read_pos_from_text_file(file_path: &str, ginfo: &GenomeInfo) -> Result<Vec<u32>> {
     let mut out = vec![];
     for line in std::fs::read_to_string(file_path)
-        .context(IoSnafu {})?
+        .change_context(IshareError::Vcf)?
         .trim()
         .split("\n")
     {
         let mut fields = line.split("\t");
-        let chrname = fields.next().context(ReadPosFileMissingChrnameSnafu {})?;
+        let chrname = fields
+            .next()
+            .ok_or(IshareError::RuntimeCheck)
+            .attach("not enough fields")?;
         let chr_id = ginfo.idx[chrname];
         let chr_pos = fields
             .next()
-            .context(ReadPosFileMissingPosSnafu {})?
+            .ok_or(IshareError::RuntimeCheck)
+            .attach("not enough fields")?
             .parse()
-            .context(ParseIntSnafu {})?;
+            .change_context(IshareError::Vcf)?;
         let gw_pos = ginfo.to_gw_pos(chr_id, chr_pos);
         out.push(gw_pos);
     }
@@ -570,15 +522,21 @@ pub fn read_pos_from_text_file(file_path: &str, ginfo: &GenomeInfo) -> Result<Ve
 
 pub fn read_pos_from_vcf_file(vcf_path: &str, ginfo: &GenomeInfo) -> Result<Vec<u32>> {
     let mut out = vec![];
-    let mut bcf = Reader::from_path(vcf_path).context(HtslibSnafu {})?;
+    let mut bcf = Reader::from_path(vcf_path).change_context(IshareError::Vcf)?;
     let mut last_rid = u32::MAX;
     let mut chrid = 0usize;
     for record_res in bcf.records() {
-        let record = record_res.context(HtslibSnafu {})?;
-        let this_rid = record.rid().context(MissingRidSnafu {})?;
+        let record = record_res.change_context(IshareError::Vcf)?;
+        let this_rid = record
+            .rid()
+            .ok_or(IshareError::RuntimeCheck)
+            .attach("missing rid")?;
         if this_rid != last_rid {
-            let rname_bstr = record.header().rid2name(this_rid).context(BcfSnafu {})?;
-            let rname_str = std::str::from_utf8(rname_bstr).context(Utf8Snafu {})?;
+            let rname_bstr = record
+                .header()
+                .rid2name(this_rid)
+                .change_context(IshareError::Vcf)?;
+            let rname_str = std::str::from_utf8(rname_bstr).change_context(IshareError::Vcf)?;
             chrid = ginfo.idx[rname_str];
             last_rid = this_rid;
         }
@@ -601,7 +559,7 @@ pub fn find_intervals_with_low_snps_density(
     for start in ginfo.gwstarts.iter() {
         cm_boundaries.push(gmap.get_cm(*start));
     }
-    cm_boundaries.push(gmap.get_size_cm().context(GmapSnafu)?);
+    cm_boundaries.push(gmap.get_size_cm().change_context(IshareError::Gmap)?);
 
     // for each chromosome, add windows with size of window_size_cm centimorgans
     let mut bp_win_boundaries = vec![];

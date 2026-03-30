@@ -1,5 +1,17 @@
 #![cfg_attr(not(test), warn(clippy::unwrap_used))]
 #![cfg_attr(not(test), warn(clippy::expect_used))]
+use error_stack::*;
+type Result<T> = std::result::Result<T, Report<GtencodeError>>;
+
+#[derive(Debug, thiserror::Error)]
+pub enum GtencodeError {
+    #[error("input error")]
+    Input,
+    #[error("output error")]
+    Output,
+    #[error("library error")]
+    Library,
+}
 
 pub mod args;
 pub mod cosine;
@@ -20,109 +32,9 @@ pub mod utils;
 
 use args::{Cli, Commands};
 use clap::Parser;
-use ishare::utils::error::show_snafu_error;
-use snafu::prelude::*;
 
-#[derive(Debug, Snafu)]
-pub enum Error {
-    // #[snafu(transparent)]
-    GtencodeSampleDiff {
-        // non leaf
-        #[snafu(source(from(samplediff::Error, Box::new)))]
-        #[snafu(backtrace)]
-        source: Box<samplediff::Error>,
-    },
-    // #[snafu(transparent)]
-    GtencodeRvibd {
-        // non leaf
-        #[snafu(source(from(rvibd::Error, Box::new)))]
-        #[snafu(backtrace)]
-        source: Box<rvibd::Error>,
-    },
-    // #[snafu(transparent)]
-    GtencodeExport {
-        // non leaf
-        #[snafu(source(from(export::Error, Box::new)))]
-        #[snafu(backtrace)]
-        source: Box<export::Error>,
-    },
-    // #[snafu(transparent)]
-    GtencodeSites {
-        // non leaf
-        #[snafu(source(from(sites::Error, Box::new)))]
-        #[snafu(backtrace)]
-        source: Box<sites::Error>,
-    },
-    // #[snafu(transparent)]
-    GtencodeCosine {
-        // non leaf
-        #[snafu(source(from(cosine::Error, Box::new)))]
-        #[snafu(backtrace)]
-        source: Box<cosine::Error>,
-    },
-    // #[snafu(transparent)]
-    GtencodeEncode {
-        // non leaf
-        #[snafu(source(from(encode::Error, Box::new)))]
-        #[snafu(backtrace)]
-        source: Box<encode::Error>,
-    },
-    // #[snafu(transparent)]
-    GtencodeRecords {
-        // non leaf
-        #[snafu(source(from(records::Error, Box::new)))]
-        #[snafu(backtrace)]
-        source: Box<records::Error>,
-    },
-    // #[snafu(transparent)]
-    GtencodeMatrix {
-        // non leaf
-        #[snafu(backtrace)]
-        source: matrix::Error,
-    },
-    // #[snafu(transparent)]
-    GtencodeSamples {
-        // non leaf
-        #[snafu(backtrace)]
-        source: samples::Error,
-    },
-    // #[snafu(transparent)]
-    GtencodeShare {
-        // non leaf
-        #[snafu(backtrace)]
-        source: share::Error,
-    },
-    // #[snafu(transparent)]
-    GtencodeJaccard {
-        // non leaf
-        #[snafu(source(from(jaccard::Error, Box::new)))]
-        #[snafu(backtrace)]
-        source: Box<jaccard::Error>,
-    },
-    // #[snafu(transparent)]
-    GtencodeGrm {
-        // non leaf
-        #[snafu(source(from(grm::Error, Box::new)))]
-        #[snafu(backtrace)]
-        source: Box<grm::Error>,
-    },
-    #[cfg(feature = "skato")]
-    // #[snafu(transparent)]
-    GtencodeSkato {
-        // non leaf
-        #[snafu(backtrace)]
-        #[snafu(source(from(skato::Error, Box::new)))]
-        source: Box<skato::Error>,
-    },
-}
-
-type Result<T> = std::result::Result<T, Error>;
-
-pub fn main() {
-    if let Err(e) = main_entry() {
-        show_snafu_error(e);
-        std::process::exit(-1);
-    }
+pub fn main() -> Result<()> {
+    main_entry()
 }
 
 // mod gtencode_imp;
@@ -132,34 +44,34 @@ fn main_entry() -> Result<()> {
     match &cli.command {
         Some(c) => match c {
             args @ Commands::Encode { .. } => {
-                encode::main_encode(args).context(GtencodeEncodeSnafu)?
+                encode::main_encode(args).attach("gtencode encode")?
             }
             args @ Commands::Records { .. } => {
-                records::main_records(args).context(GtencodeRecordsSnafu)?
+                records::main_records(args).attach("gtencode recode")?
             }
             args @ Commands::Matrix { .. } => {
-                matrix::main_matrix(args).context(GtencodeMatrixSnafu)?
+                matrix::main_matrix(args).attach("gtencode matrix")?
             }
-            args @ Commands::Sites { .. } => sites::main_sites(args).context(GtencodeSitesSnafu)?,
+            args @ Commands::Sites { .. } => sites::main_sites(args).attach("gtencode sites")?,
             args @ Commands::Samples { .. } => {
-                samples::main_samples(args).context(GtencodeSamplesSnafu)?
+                samples::main_samples(args).attach("gtencode samples")?
             }
-            args @ Commands::Share { .. } => share::main_share(args).context(GtencodeShareSnafu)?,
+            args @ Commands::Share { .. } => share::main_share(args).attach("gtencode share")?,
             args @ Commands::Jaccard { .. } => {
-                jaccard::main_jaccard(args).context(GtencodeJaccardSnafu)?
+                jaccard::main_jaccard(args).attach("gtencode jaccard")?
             }
             args @ Commands::SampleDiff { .. } => {
-                samplediff::main_samplediff(args).context(GtencodeSampleDiffSnafu)?
+                samplediff::main_samplediff(args).attach("gtencode sample-diff")?
             }
             args @ Commands::Cosine { .. } => {
-                cosine::main_cosine(args).context(GtencodeCosineSnafu)?
+                cosine::main_cosine(args).attach("gtencode cosine")?
             }
-            args @ Commands::Grm { .. } => grm::main_grm(args).context(GtencodeGrmSnafu)?,
+            args @ Commands::Grm { .. } => grm::main_grm(args).attach("gtencode grm")?,
             #[cfg(feature = "skato")]
-            args @ Commands::Skato { .. } => skato::main_skato(args).context(GtencodeSkatoSnafu)?,
-            args @ Commands::RvIBD { .. } => rvibd::main_rvibd(args).context(GtencodeRvibdSnafu)?,
+            args @ Commands::Skato { .. } => skato::main_skato(args).attach("gtencode skato")?,
+            args @ Commands::RvIBD { .. } => rvibd::main_rvibd(args).attach("gtencode rv-ibd")?,
             args @ Commands::Export { .. } => {
-                export::main_export(args).context(GtencodeExportSnafu)?
+                export::main_export(args).attach("gtencode export")?
             }
         },
         None => {

@@ -1,5 +1,8 @@
+use crate::error::{IshareError, Result};
+use error_stack::*;
+
 use arrow_array::{ArrayRef, RecordBatch, UInt64Array};
-use arrow_schema::ArrowError;
+
 use bitvec::prelude::*;
 use itertools::{
     EitherOrBoth::{self, Both, Left, Right},
@@ -11,53 +14,12 @@ use parquet::file::properties::WriterProperties;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use slice_group_by::GroupBy;
-use snafu::prelude::*;
+use std::fmt::Debug;
 use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
-use std::{backtrace::Backtrace, fmt::Debug};
 
 use crate::traits::TotalOrd;
-type Result<T> = std::result::Result<T, Error>;
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    GenomeIdsNotSorted {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    Io {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    Parquet {
-        // leaf
-        #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
-        source: Box<parquet::errors::ParquetError>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    ParseInt {
-        // leaf
-        source: std::num::ParseIntError,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    Arrow {
-        // leaf
-        #[snafu(source(from(ArrowError, Box::new)))]
-        source: Box<ArrowError>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    Downcast {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    InvalidSortStatus {
-        // leaf
-        status: i32,
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct GenotypeRecord {
@@ -161,10 +123,9 @@ impl GenotypeRecords {
                 Ok(())
             }
             1 => Ok(()),
-            _ => InvalidSortStatusSnafu {
-                status: self.sort_status,
-            }
-            .fail(),
+            _ => bail!(IshareError::RuntimeCheck
+                .into_report()
+                .attach(format!("InvalidSortStatusSnafu: {}", self.sort_status))),
         }
     }
 
@@ -178,10 +139,9 @@ impl GenotypeRecords {
                 Ok(())
             }
             2 => Ok(()),
-            _ => InvalidSortStatusSnafu {
-                status: self.sort_status,
-            }
-            .fail(),
+            _ => bail!(IshareError::RuntimeCheck
+                .into_report()
+                .attach(format!("InvalidSortStatusSnafu: {}", self.sort_status))),
         }
     }
 
@@ -189,20 +149,18 @@ impl GenotypeRecords {
         match self.sort_status {
             1 => Ok(true),
             0 | 2 => Ok(false),
-            _ => InvalidSortStatusSnafu {
-                status: self.sort_status,
-            }
-            .fail(),
+            _ => bail!(IshareError::RuntimeCheck
+                .into_report()
+                .attach(format!("InvalidSortStatusSnafu: {}", self.sort_status))),
         }
     }
     pub fn is_sorted_by_genome(&self) -> Result<bool> {
         match self.sort_status {
             2 => Ok(true),
             0 | 1 => Ok(false),
-            _ => InvalidSortStatusSnafu {
-                status: self.sort_status,
-            }
-            .fail(),
+            _ => bail!(IshareError::RuntimeCheck
+                .into_report()
+                .attach(format!("InvalidSortStatusSnafu: {}", self.sort_status))),
         }
     }
 
@@ -269,39 +227,42 @@ impl GenotypeRecords {
 
         // record batch
         let batch = RecordBatch::try_from_iter(vec![(fieldname, Arc::new(u64values) as ArrayRef)])
-            .context(ArrowSnafu {})?;
+            .change_context(IshareError::RareGenotype)?;
         // writer
-        let file = File::create(p.as_ref()).context(IoSnafu {})?;
+        let file = File::create(p.as_ref()).change_context(IshareError::RareGenotype)?;
         // -- default writer properties
         let props = WriterProperties::builder().build();
-        let mut writer =
-            ArrowWriter::try_new(file, batch.schema(), Some(props)).context(ParquetSnafu {})?;
+        let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(props))
+            .change_context(IshareError::RareGenotype)?;
         // write batch
-        writer.write(&batch).context(ParquetSnafu {})?;
+        writer
+            .write(&batch)
+            .change_context(IshareError::RareGenotype)?;
         // writer must be closed to write footer
-        writer.close().context(ParquetSnafu {})?;
+        writer.close().change_context(IshareError::RareGenotype)?;
         Ok(())
     }
 
     pub fn from_parquet_file(p: impl AsRef<Path>) -> Result<Self> {
-        let file = File::open(p).context(IoSnafu {})?;
-        let builder = ParquetRecordBatchReaderBuilder::try_new(file).context(ParquetSnafu {})?;
+        let file = File::open(p).change_context(IshareError::RareGenotype)?;
+        let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+            .change_context(IshareError::RareGenotype)?;
         // get sort_status from the field name
         let sort_status = builder
             .schema()
             .field(0)
             .name()
             .parse()
-            .context(ParseIntSnafu {})?;
-        let mut reader = builder.build().context(ParquetSnafu {})?;
+            .change_context(IshareError::RareGenotype)?;
+        let mut reader = builder.build().change_context(IshareError::RareGenotype)?;
         let mut records = Vec::<GenotypeRecord>::new();
         for record_batch in &mut reader {
-            let record_batch = record_batch.context(ArrowSnafu {})?;
+            let record_batch = record_batch.change_context(IshareError::RareGenotype)?;
             let rec_iter = record_batch
                 .column(0)
                 .as_any()
                 .downcast_ref::<UInt64Array>()
-                .context(DowncastSnafu {})?
+                .ok_or(IshareError::EmptyOption)?
                 .values()
                 .iter()
                 .map(|x| GenotypeRecord::new(*x));
@@ -319,10 +280,14 @@ impl GenotypeRecords {
             .zip(sorted_genome_ids.iter().skip(1))
             .all(|(a, b)| *a <= *b)
         {
-            return GenomeIdsNotSortedSnafu {}.fail();
+            bail!(IshareError::RuntimeCheck
+                .into_report()
+                .attach("GenomeIdsNotSorted"));
         }
         if !self.is_sorted_by_genome()? {
-            return GenomeIdsNotSortedSnafu {}.fail();
+            bail!(IshareError::RuntimeCheck
+                .into_report()
+                .attach("GenomeIdsNotSorted"));
         }
 
         let mut v = vec![];

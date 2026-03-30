@@ -1,35 +1,14 @@
+use crate::error::{IshareError, Result};
+use error_stack::*;
+
 use crate::container::intervaltree::{Element, IntervalTree};
 use arrow_array::RecordBatch;
 use arrow_array::{ArrayRef, UInt32Array, UInt64Array};
-use arrow_schema::ArrowError;
+
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::file::properties::WriterProperties;
-use snafu::{ResultExt, Snafu};
+use std::ops::Range;
 use std::sync::Arc;
-use std::{backtrace::Backtrace, ops::Range};
-
-#[derive(Debug, Snafu)]
-pub enum Error {
-    IoError {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    ArrowError {
-        // leaf
-        #[snafu(source(from(ArrowError, Box::new)))]
-        source: Box<ArrowError>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    ParquetError {
-        // leaf
-        #[snafu(source(from(parquet::errors::ParquetError, Box::new)))]
-        source: Box<parquet::errors::ParquetError>,
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
-
-type Result<T> = std::result::Result<T, Error>;
 
 pub struct CovCounter {
     tree: IntervalTree<u32, usize>,
@@ -121,15 +100,15 @@ impl CovCounter {
             ("End", ends),
             ("Coverage", coverage),
         ])
-        .context(ArrowSnafu)?;
+        .change_context(IshareError::Ibd)?;
 
-        let file = std::fs::File::create(p.as_ref()).context(IoSnafu)?;
+        let file = std::fs::File::create(p.as_ref()).change_context(IshareError::Ibd)?;
         let prop = WriterProperties::builder().build();
-        let mut writer =
-            ArrowWriter::try_new(file, batch.schema(), Some(prop)).context(ParquetSnafu)?;
+        let mut writer = ArrowWriter::try_new(file, batch.schema(), Some(prop))
+            .change_context(IshareError::Ibd)?;
 
-        writer.write(&batch).context(ParquetSnafu)?;
-        writer.close().context(ParquetSnafu)?;
+        writer.write(&batch).change_context(IshareError::Ibd)?;
+        writer.close().change_context(IshareError::Ibd)?;
         Ok(())
     }
 }

@@ -8,49 +8,12 @@ use ishare::{
     share::ibd::ibdset::*,
 };
 use log::*;
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::{backtrace::Backtrace, path::PathBuf};
 
-use snafu::prelude::*;
-
-#[derive(Debug, Snafu)]
-#[snafu(visibility)]
-pub enum Error {
-    // #[snafu(transparent)]
-    Indiv {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::indiv::Error,
-    },
-    // #[snafu(transparent)]
-    Genome {
-        // non leaf
-        #[snafu(backtrace)]
-        source: ishare::genome::Error,
-    },
-    // #[snafu(transparent)]
-    Gmap {
-        // non leaf
-        #[snafu(backtrace)]
-        #[snafu(source(from(ishare::gmap::Error, Box::new)))]
-        source: Box<ishare::gmap::Error>,
-    },
-    // #[snafu(transparent)]
-    Ibd {
-        // non leaf
-        #[snafu(source(from(ishare::share::ibd::Error, Box::new)))]
-        #[snafu(backtrace)]
-        source: Box<ishare::share::ibd::Error>,
-    },
-    // local error
-    IbdBlkEmpty,
-    StdIo {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
-type Result<T> = std::result::Result<T, Error>;
+use super::IbdUtilsError;
+use super::Result;
+use error_stack::ResultExt;
 
 pub fn main_unrelated(args: &Commands) -> Result<()> {
     if let Commands::GetUnrelated {
@@ -67,11 +30,17 @@ pub fn main_unrelated(args: &Commands) -> Result<()> {
             .format_module_path(false)
             .init();
         info!("read genome toml file");
-        let ginfo = Arc::new(GenomeInfo::from_toml_file(genome_info).context(GenomeSnafu)?);
+        let ginfo = Arc::new(
+            GenomeInfo::from_toml_file(genome_info).change_context(crate::IbdUtilsError::Input)?,
+        );
         info!("read genetic map files");
-        let gmap = Arc::new(gmap::GeneticMap::from_genome_info(&ginfo).context(GmapSnafu)?);
+        let gmap = Arc::new(
+            gmap::GeneticMap::from_genome_info(&ginfo)
+                .change_context(crate::IbdUtilsError::Input)?,
+        );
         info!("read samples list file");
-        let (inds, _inds_opt) = Individuals::from_txt_file(sample_lst).context(IndivSnafu)?;
+        let (inds, _inds_opt) =
+            Individuals::from_txt_file(sample_lst).change_context(crate::IbdUtilsError::Input)?;
         let inds = Arc::new(inds);
 
         // read ibd
@@ -101,24 +70,29 @@ fn read_ibd(
 
     info!("read ibd list file");
     if fmt.as_str() == "hapibd" {
-        ibd.read_hapibd_dir(ibd_dir).context(IbdSnafu)?;
+        ibd.read_hapibd_dir(ibd_dir)
+            .change_context(crate::IbdUtilsError::Input)?;
     } else if fmt.as_str() == "tskibd" {
-        ibd.read_tskibd_dir(ibd_dir).context(IbdSnafu)?;
+        ibd.read_tskibd_dir(ibd_dir)
+            .change_context(crate::IbdUtilsError::Input)?;
     } else if fmt.as_str() == "hmmibd" {
-        ibd.read_hmmibd_dir(ibd_dir).context(IbdSnafu)?;
+        ibd.read_hmmibd_dir(ibd_dir)
+            .change_context(crate::IbdUtilsError::Input)?;
     } else {
         panic!("format {fmt} is not supported.");
     }
     ibd.infer_ploidy();
     // this will also sort by samples
     info!("sort and merge ibd");
-    ibd.merge().context(IbdSnafu)?;
+    ibd.merge().change_context(crate::IbdUtilsError::Library)?;
     Ok(ibd)
 }
 
 fn get_related_pairs(ibd: &IbdSet, threshold: f64) -> Result<Vec<(u32, u32)>> {
     let gmap = ibd.get_gmap();
-    let gsize = gmap.get_size_cm().context(GmapSnafu)?;
+    let gsize = gmap
+        .get_size_cm()
+        .change_context(crate::IbdUtilsError::Library)?;
     let min_totibd_related = gsize * threshold as f32;
     info!("related pair total ibd theshold in cM: {min_totibd_related:.3}",);
 
@@ -128,7 +102,11 @@ fn get_related_pairs(ibd: &IbdSet, threshold: f64) -> Result<Vec<(u32, u32)>> {
         if totibd <= min_totibd_related {
             continue;
         }
-        let related_pair = blk.first().context(IbdBlkEmptySnafu)?.individual_pair();
+        let related_pair = blk
+            .first()
+            .ok_or(crate::IbdUtilsError::Input)
+            .attach("empty IBD set")?
+            .individual_pair();
         v.push(related_pair);
     }
     info!("found related pairs:: {}", v.len());
@@ -192,10 +170,10 @@ fn write_sample_to_keep(
     use std::io::Write;
     let mut file = std::fs::File::create(out)
         .map(std::io::BufWriter::new)
-        .context(StdIoSnafu)?;
+        .change_context(IbdUtilsError::Output)?;
     for (i, name) in inds.v().iter().enumerate() {
         if !samples_to_rm.contains(&(i as u32)) {
-            writeln!(file, "{name}").context(StdIoSnafu)?;
+            writeln!(file, "{name}").change_context(IbdUtilsError::Output)?;
         }
     }
     Ok(())

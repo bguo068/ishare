@@ -1,55 +1,29 @@
+use super::{GtencodeError, Result};
+use error_stack::*;
+
 use ahash::AHashMap;
-use ishare::genotype::rare::{Error as GenotypeError, GenotypeRecords};
+use ishare::genotype::rare::GenotypeRecords;
 use itertools::Itertools;
 use slice_group_by::GroupBy;
-use std::backtrace::Backtrace;
 use std::collections::HashSet;
-use std::num::ParseIntError;
 use std::path::{Path, PathBuf};
-
-use snafu::prelude::*;
-
-#[derive(Snafu, Debug)]
-pub enum Error {
-    RecordIsEmpty {
-        // leaf
-        backtrace: Box<Option<Backtrace>>,
-    },
-    // #[snafu(transparent)]
-    GenotypeRare {
-        // non leaf
-        #[snafu(backtrace)]
-        source: GenotypeError,
-    },
-    // #[snafu(transparent)]
-    Io {
-        // leaf
-        source: std::io::Error,
-        backtrace: Box<Option<Backtrace>>,
-    },
-    // #[snafu(transparent)]
-    ParseInt {
-        // leaf
-        source: ParseIntError,
-        backtrace: Box<Option<Backtrace>>,
-    },
-}
-type Result<T> = std::result::Result<T, Error>;
 
 pub fn file_to_u32_vec(p: impl AsRef<Path>) -> Result<Vec<u32>> {
     let mut s = String::new();
     let mut reader = std::fs::File::open(p)
         .map(std::io::BufReader::new)
-        .context(IoSnafu)?;
+        .change_context(GtencodeError::Input)?;
     s.clear();
     use std::io::Read;
-    reader.read_to_string(&mut s).context(IoSnafu)?;
+    reader
+        .read_to_string(&mut s)
+        .change_context(GtencodeError::Input)?;
     let mut v: Vec<u32> = s
         .trim()
         .split("\n")
         .map(str::parse)
         .collect::<std::result::Result<_, _>>()
-        .context(ParseIntSnafu)?;
+        .change_context(GtencodeError::Input)?;
     assert!(!v.is_empty());
     v.sort();
     Ok(v)
@@ -107,12 +81,14 @@ pub fn prep_pairs(
     let min_gid = records
         .records()
         .first()
-        .with_context(|| RecordIsEmptySnafu {})?
+        .ok_or(GtencodeError::Library)
+        .attach("Record is empty")?
         .get_genome();
     let max_gid = records
         .records()
         .last()
-        .with_context(|| RecordIsEmptySnafu {})?
+        .ok_or(GtencodeError::Library)
+        .attach("Record is empty")?
         .get_genome();
     let mut row_genomes = Vec::<u32>::new();
     let mut col_genomes = Vec::<u32>::new();
@@ -172,7 +148,8 @@ pub fn calc_allele_frequency(
     num_hap: usize,
     num_sites: usize,
 ) -> Result<AHashMap<u32, f64>> {
-    rec.sort_by_position().context(GenotypeRareSnafu)?;
+    rec.sort_by_position()
+        .change_context(GtencodeError::Input)?;
     let mut freq_map = AHashMap::<u32, f64>::with_capacity(num_sites);
     let mut target_pos = u32::MAX;
     let mut cnt = 0u32;
@@ -197,7 +174,8 @@ pub fn calc_allele_frequency(
 }
 
 pub fn calc_allele_count(rec: &mut GenotypeRecords) -> Result<AHashMap<u32, u32>> {
-    rec.sort_by_position().context(GenotypeRareSnafu)?;
+    rec.sort_by_position()
+        .change_context(GtencodeError::Input)?;
     let mut count_map = AHashMap::<u32, u32>::new();
     for set in rec.records().linear_group_by_key(|x| x.get_position()) {
         let pos = set[0].get_position();
