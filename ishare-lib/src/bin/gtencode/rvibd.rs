@@ -1,5 +1,6 @@
 use super::{GtencodeError, Result};
 use error_stack::*;
+use ishare::share::mat::NamedMatrix;
 
 use crate::utils::calc_allele_count;
 
@@ -81,6 +82,9 @@ pub fn main_rvibd(args: &Commands) -> Result<()> {
                 &gmap,
                 out_prefix,
             )?,
+            3 => {
+                cmp_rv_and_ibd_len(&mut ibd, &mut records, &gmap, out_prefix)?;
+            }
             _ => panic!("Not implemented"),
         }
     }
@@ -515,6 +519,69 @@ struct MetricRecord {
     jaccard: f32,
 }
 
+/// The goal is generate a table, where rows are different IBD length bins,
+/// and columns are for different AC values/value bins. The cells are the the
+/// number of counts of allels shared that has AC and IBD length belongs each
+/// categories.
+fn cmp_rv_ac_and_ibd_len_chunks(
+    ibd: &[IbdSeg],
+    rvgt: &GenotypeRecords,
+    rvgt2: &GenotypeRecords,
+    pair_chunk: &[(u32, u32)],
+    gmap: &GeneticMap,
+    ibdlen_bins: &[f32],
+    ac_bins: &[u32],
+) -> Result<(Vec<u32>, NamedMatrix<u32>)> {
+    // [0, 1, 2, 3], then we need to bins [-inf, 0), [0, 1), [1, 2), [2, 3) and [3, Inf)
+    let n_ibdbins = ibdlen_bins.len() + 1;
+    let n_ac = ac_bins.len() + 1;
+    let mut mat = NamedMatrix::<u32>::new_from_shape(n_ibdbins as u32, n_ac as u32);
+    let mut nonibd_ac = vec![0u32; n_ac];
+
+    let ibdblk_iter = ibd.linear_group_by_key(|seg| seg.genome_id_pair());
+    let merged_iter = pair_chunk
+        .iter()
+        .merge_join_by(ibdblk_iter, |&a, b| a.cmp(&b[0].genome_id_pair()));
+
+    let mut tree = IntervalTree::new(100);
+
+    for item in merged_iter {
+        match item {
+            itertools::EitherOrBoth::Both(pair, blk) => {
+                let (genome1, genome2) = pair;
+                // all IBD for a given pair is in the tree
+                tree.clear_and_fill_with_iter(blk.iter().map(|seg| {
+                    let cm = seg.get_seg_len_cm(gmap);
+                    let ibdbin_idx = ibdlen_bins.partition_point(|x| *x <= cm);
+                    (seg.s..seg.e, ibdbin_idx)
+                }));
+
+                for (pos, allele) in rvgt.iterate_rv_shared_for_genome_pair(*genome1, *genome2) {
+                    let ac = rvgt2.get_allele_count_by_position_allele(pos, allele);
+                    let ac_bin_ix = ac_bins.partition_point(|x| *x <= ac as u32);
+                    if let Some(e) = tree.query_point(pos).next() {
+                        let ibdlen_idx = e.value;
+                        *mat.ref_mut_by_positions(ibdlen_idx as u32, ac_bin_ix as u32) += 1;
+                    } else {
+                        nonibd_ac[ac_bin_ix] += 1;
+                    }
+                }
+            }
+            itertools::EitherOrBoth::Left(pair) => {
+                let (genome1, genome2) = pair;
+                for (pos, allele) in rvgt.iterate_rv_shared_for_genome_pair(*genome1, *genome2) {
+                    let ac = rvgt2.get_allele_count_by_position_allele(pos, allele);
+                    let ac_bin_ix = ac_bins.partition_point(|x| *x <= ac as u32);
+                    nonibd_ac[ac_bin_ix] += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok((nonibd_ac, mat))
+}
+
 fn cmp_rv_and_ibd_similarity_chunks(
     ibd: &[IbdSeg],
     rvgt: &GenotypeRecords,
@@ -662,5 +729,143 @@ fn cmp_rv_and_ibd_similarity(
         })?;
 
     eprintln!("genome_span = {genome_span}");
+    Ok(())
+}
+
+fn cmp_rv_and_ibd_len(
+    ibd: &mut Vec<IbdSeg>,
+    rvgt: &mut GenotypeRecords,
+    gmap: &GeneticMap,
+    out_prefix: impl AsRef<Path>,
+) -> Result<()> {
+    // subsampling ibd and rv
+    let factor = 64;
+    subsample(ibd, rvgt, factor);
+
+    // assumes: (1) IBD are sorted by genome pairs
+    ensure!(
+        ibd.is_sorted_by_key(|seg| (seg.genome_id_pair(), seg.coords())),
+        GtencodeError::Library
+            .into_report()
+            .attach("IBD records are not sorted by genome pair and then by position")
+    );
+
+    // assumption 2: rvgt are sorted by genome pairs then by position and allele (use to find shared rv)
+    ensure!(
+        rvgt.is_sorted_by_genome()
+            .change_context(GtencodeError::Library)
+            .attach("error in checking if rvgt is properly sorted")?,
+        GtencodeError::Library
+            .into_report()
+            .attach("rare genotype `rvgt` is not sorted by genome")
+    );
+    // assumption 3: rvgt2 are sorted by position and alleles (used to cout AC)
+    let mut rvgt2 = rvgt.clone();
+    rvgt2
+        .sort_by_position()
+        .change_context(GtencodeError::Library)
+        .attach("fail to sort rare genotype by position")?;
+    // ensure!(
+    //     rvgt2
+    //         .is_sorted_by_postion()
+    //         .change_context(GtencodeError::Library)
+    //         .attach("error in checking if rvgt is properly sorted")?,
+    //     GtencodeError::Library
+    //         .into_report()
+    //         .attach("rare genotype `rvgt2` is not sorted by position")
+    // );
+
+    // sortting
+    ibd.sort();
+    rvgt.sort_by_genome()
+        .change_context(GtencodeError::Library)?;
+
+    // let npairs = nhap as usize * (nhap - 1) as usize;
+    let pairs = (factor..1000)
+        .step_by(factor as usize)
+        .flat_map(|i| (0..i).step_by(factor as usize).map(move |j| (i, j)))
+        .filter(|(i, j)| (i % factor == 0) && (j % factor == 0) && (i > j))
+        .collect_vec();
+
+    let ibdlens = [0.0f32, 2.0, 3.0, 4.0, 6.0, 10.0, 18.0, 30.0];
+    let ac_bins = [2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 30, 50, 100];
+
+    let mut res_vec: Vec<_> = pairs
+        .chunks(2000)
+        .par_bridge()
+        .into_par_iter()
+        .flat_map(|pair_chunks| -> Result<(Vec<u32>, NamedMatrix<u32>)> {
+            let (nonibd_vec, ibd_mat) = cmp_rv_ac_and_ibd_len_chunks(
+                ibd,
+                rvgt,
+                &rvgt2,
+                pair_chunks,
+                gmap,
+                &ibdlens,
+                &ac_bins,
+            )?;
+            Ok((nonibd_vec, ibd_mat))
+        })
+        .collect::<Vec<_>>();
+
+    ensure!(
+        pairs.len().div_ceil(2000) == res_vec.len(),
+        GtencodeError::Library
+            .into_report()
+            .attach("not all chunks successfully completed rvs-ac-vs-IBD-len comparison analysis")
+    );
+
+    // combine data to the first element
+    let (first, rest) = res_vec
+        .split_first_mut()
+        .ok_or(GtencodeError::Library)
+        .attach("Empty result vector")?;
+    let (nonibd_vec, ibd_mat) = first;
+    for (nonibd_vec2, ibd_mat2) in rest {
+        nonibd_vec
+            .iter_mut()
+            .zip(nonibd_vec2.iter())
+            .for_each(|(a, b)| *a += *b);
+        ibd_mat
+            .get_data_slice_mut()
+            .iter_mut()
+            .zip(ibd_mat2.get_data_slice().iter())
+            .for_each(|(a, b)| *a += *b);
+    }
+    // prepare output file
+    let mut file = {
+        let filename = out_prefix.as_ref().with_extension("pairwise_metrics.txt");
+        File::create(&filename)
+            .map(std::io::BufWriter::new)
+            .change_context(GtencodeError::Output)?
+    };
+
+    // write header
+    write!(file, "ibdlen_bin").change_context(GtencodeError::Output)?;
+    for bin in &ac_bins {
+        write!(file, "\tAC<{bin}").change_context(GtencodeError::Output)?;
+    }
+    writeln!(file, "\tAC<Inf").change_context(GtencodeError::Output)?;
+
+    // write the non-ibd counts (first row)
+    // write index first, then counts for ac bins
+    write!(file, "NonIBD").change_context(GtencodeError::Output)?;
+    for cnt in nonibd_vec.iter() {
+        write!(file, "\t{cnt}").change_context(GtencodeError::Output)?;
+    }
+    writeln!(file).change_context(GtencodeError::Output)?; // add a newline
+
+    // write IBD counts (non-first row)
+    for (lenbin, ibd_vec) in ibdlens
+        .iter()
+        .zip(ibd_mat.get_data_slice().chunks(ac_bins.len() + 1))
+    {
+        write!(file, "IBD<{lenbin}>").change_context(GtencodeError::Output)?;
+        for cnt in ibd_vec.iter() {
+            write!(file, "\t{cnt}").change_context(GtencodeError::Output)?;
+        }
+        writeln!(file).change_context(GtencodeError::Output)?; // add a newline
+    }
+
     Ok(())
 }

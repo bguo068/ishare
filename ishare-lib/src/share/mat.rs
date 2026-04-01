@@ -103,6 +103,12 @@ where
         let idx = (row_idx as usize) * self.col_names.len() + (col_idx as usize);
         self.data[idx] = v;
     }
+
+    pub fn ref_mut_by_positions(&mut self, row_idx: u32, col_idx: u32) -> &mut T {
+        let idx = (row_idx as usize) * self.col_names.len() + (col_idx as usize);
+        &mut self.data[idx]
+    }
+
     pub fn set_by_names(&mut self, row_genome: u32, col_genome: u32, v: T) {
         let row_idx = self.row_names_map[&row_genome];
         let col_idx = self.col_names_map[&col_genome];
@@ -180,6 +186,14 @@ where
         let data = take(&mut self.data);
         (row_names, col_names, data)
     }
+
+    pub fn get_data_slice_mut(&mut self) -> &mut [T] {
+        &mut self.data
+    }
+
+    pub fn get_data_slice(&mut self) -> &[T] {
+        &self.data
+    }
 }
 
 impl<T> IntoParquet for NamedMatrix<T>
@@ -219,7 +233,7 @@ where
         let col_file = p.as_ref().with_extension("col");
         write_array("col", col, &col_file)?;
 
-        write_array("jaccard", mat, p.as_ref())?;
+        write_array("value", mat, p.as_ref())?;
         Ok(())
     }
 }

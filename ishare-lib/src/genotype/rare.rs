@@ -164,6 +164,44 @@ impl GenotypeRecords {
         }
     }
 
+    /// assume data is sorted by genome
+    pub fn iterate_rv_shared_for_genome_pair(
+        &self,
+        genome1: u32,
+        genome2: u32,
+    ) -> impl Iterator<Item = (u32, u8)> + '_ {
+        let s1 = self.data.partition_point(|x| x.get_genome() < genome1);
+        let e1 = self.data.partition_point(|x| x.get_genome() <= genome1);
+        let s2 = self.data.partition_point(|x| x.get_genome() < genome2);
+        let e2 = self.data.partition_point(|x| x.get_genome() <= genome2);
+        self.data[s1..e1]
+            .iter()
+            .merge_join_by(self.data[s2..e2].iter(), |a, b| {
+                (*a).get_position().total_cmp(&(*b).get_position())
+            })
+            .filter_map(move |res| match res {
+                itertools::EitherOrBoth::Both(a, b) => {
+                    if a.get_allele() == b.get_allele() {
+                        Some((a.get_position(), a.get_allele()))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            })
+    }
+
+    /// assert data is sorted by position and allele
+    pub fn get_allele_count_by_position_allele(&self, pos: u32, allele: u8) -> usize {
+        let s = self
+            .records()
+            .partition_point(|r| r.get_pos_allele() < (pos, allele));
+        let e = self
+            .records()
+            .partition_point(|r| r.get_pos_allele() <= (pos, allele));
+        e - s
+    }
+
     pub fn iter_genome_pair_genotypes(
         &self,
         genome1: u32,
