@@ -53,12 +53,12 @@ pub fn main_encode(args: &Commands) -> Result<()> {
             (Arc::new(ginfo), Arc::new(gmap))
         };
         info!("read samples list file");
-        let (inds, _inds_opt) =
+        let (inds, inds_opt) =
             Individuals::from_txt_file(sample_lst).change_context(IbdUtilsError::Input)?;
         let inds = Arc::new(inds);
 
         // read ibd into memory
-        let ibd = read_ibd(ginfo.clone(), gmap.clone(), inds, ibd_dir, fmt)?;
+        let ibd = read_ibd(ginfo.clone(), gmap.clone(), inds, inds_opt, ibd_dir, fmt)?;
         info!("before encoding no. ibd: {}", ibd.as_slice().len());
 
         // read positions
@@ -118,6 +118,7 @@ fn read_ibd(
     ginfo: Arc<GenomeInfo>,
     gmap: Arc<GeneticMap>,
     inds: Arc<Individuals>,
+    inds_opt: IndividualOptionalInfo,
     ibd_dir: &PathBuf,
     fmt: &String,
 ) -> Result<IbdSet> {
@@ -127,12 +128,46 @@ fn read_ibd(
     if fmt.as_str() == "hapibd" {
         ibd.read_hapibd_dir(ibd_dir)
             .change_context(IbdUtilsError::Input)?;
+        ibd.infer_ploidy();
+        if let Some((converter, haploid_inds, direction)) = inds_opt {
+            ensure!(
+                matches!(direction, PloidConvertDirection::Diploid2Haploid),
+                IbdUtilsError::Input
+                    .into_report()
+                    .attach("IBD data in hapibd format can only convert to haploid")
+            );
+            ibd.covert_to_haploid(Arc::new(haploid_inds), &converter);
+        }
     } else if fmt.as_str() == "tskibd" {
         ibd.read_tskibd_dir(ibd_dir)
             .change_context(IbdUtilsError::Input)?;
+        ibd.infer_ploidy();
+        if let Some((converter, diploid_inds, direction)) = inds_opt {
+            ensure!(
+                matches!(direction, PloidConvertDirection::Haploid2Diploid),
+                IbdUtilsError::Input
+                    .into_report()
+                    .attach("IBD data in tskibd format can only convert to diploid")
+            );
+            ibd.covert_to_het_diploid(Arc::new(diploid_inds), &converter)
+                .change_context(IbdUtilsError::Library)
+                .attach("fail to convert IBD in tskibd to diploid-level IBD")?;
+        }
     } else if fmt.as_str() == "hmmibd" {
         ibd.read_hmmibd_dir(ibd_dir)
             .change_context(IbdUtilsError::Input)?;
+        ibd.infer_ploidy();
+        if let Some((converter, diploid_inds, direction)) = inds_opt {
+            ensure!(
+                matches!(direction, PloidConvertDirection::Haploid2Diploid),
+                IbdUtilsError::Input
+                    .into_report()
+                    .attach("IBD data in hmmibd format can only convert to diploid")
+            );
+            ibd.covert_to_het_diploid(Arc::new(diploid_inds), &converter)
+                .change_context(IbdUtilsError::Library)
+                .attach("fail to convert IBD in hmmibd to diploid-level IBD")?;
+        }
     } else {
         bail!(IbdUtilsError::Input
             .into_report()

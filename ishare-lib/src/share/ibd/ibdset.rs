@@ -571,6 +571,7 @@ impl IbdSet {
         ploidy_converter: &PloidyConverter,
     ) -> Result<()> {
         let is_haploid = matches!(self.ploidy_status, Haploid);
+        dbg!(self.ploidy_status);
         assert!(is_haploid);
 
         self.inds = diploid_inds;

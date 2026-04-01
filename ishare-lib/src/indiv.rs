@@ -26,7 +26,7 @@ pub enum PloidConvertDirection {
     Diploid2Haploid,
     Haploid2Diploid,
 }
-type IndividualOptionalInfo = Option<(PloidyConverter, Individuals, PloidConvertDirection)>;
+pub type IndividualOptionalInfo = Option<(PloidyConverter, Individuals, PloidConvertDirection)>;
 
 impl Individuals {
     /// Reads individual data from a text file.
