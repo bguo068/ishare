@@ -1,5 +1,6 @@
 use super::{GtencodeError, Result};
 use error_stack::*;
+use ishare::genome::Genome;
 use ishare::share::mat::NamedMatrix;
 
 use crate::utils::calc_allele_count;
@@ -43,7 +44,7 @@ pub fn main_rvibd(args: &Commands) -> Result<()> {
         which,
     } = args
     {
-        let valid_which = [0, 1, 2];
+        let valid_which = [0, 1, 2, 3];
         if !valid_which.iter().any(|x| x == which) {
             eprintln!("please specify the correct which!");
             std::process::exit(-1);
@@ -53,8 +54,21 @@ pub fn main_rvibd(args: &Commands) -> Result<()> {
             .init();
 
         info!("read genome info"); // (for ibd) to compare with that from rare variants
-        let ginfo = GenomeInfo::from_toml_file(genome_info).change_context(GtencodeError::Input)?;
-        let gmap = GeneticMap::from_genome_info(&ginfo).change_context(GtencodeError::Input)?;
+        let (ginfo, gmap) = if genome_info
+            .extension()
+            .map(|e| e == "toml")
+            .unwrap_or(false)
+        {
+            let ginfo =
+                GenomeInfo::from_toml_file(genome_info).change_context(GtencodeError::Input)?;
+            let gmap = GeneticMap::from_genome_info(&ginfo).change_context(GtencodeError::Input)?;
+            (ginfo, gmap)
+        } else {
+            Genome::load_from_bincode_file(genome_info)
+                .change_context(GtencodeError::Input)
+                .attach("cannot load genome from binary flile")?
+                .into_parts()
+        };
 
         info!("read rv records");
         let mut records =
@@ -733,15 +747,11 @@ fn cmp_rv_and_ibd_similarity(
 }
 
 fn cmp_rv_and_ibd_len(
-    ibd: &mut Vec<IbdSeg>,
+    ibd: &mut [IbdSeg],
     rvgt: &mut GenotypeRecords,
     gmap: &GeneticMap,
     out_prefix: impl AsRef<Path>,
 ) -> Result<()> {
-    // subsampling ibd and rv
-    let factor = 64;
-    subsample(ibd, rvgt, factor);
-
     // assumes: (1) IBD are sorted by genome pairs
     ensure!(
         ibd.is_sorted_by_key(|seg| (seg.genome_id_pair(), seg.coords())),
@@ -765,46 +775,32 @@ fn cmp_rv_and_ibd_len(
         .sort_by_position()
         .change_context(GtencodeError::Library)
         .attach("fail to sort rare genotype by position")?;
-    // ensure!(
-    //     rvgt2
-    //         .is_sorted_by_postion()
-    //         .change_context(GtencodeError::Library)
-    //         .attach("error in checking if rvgt is properly sorted")?,
-    //     GtencodeError::Library
-    //         .into_report()
-    //         .attach("rare genotype `rvgt2` is not sorted by position")
-    // );
+
+    // get total number of haplotype/genomes
+    let nhap = rvgt
+        .records()
+        .last()
+        .map(|rec| rec.get_genome())
+        .unwrap_or(0)
+        + 1;
 
     // sortting
-    ibd.sort();
     rvgt.sort_by_genome()
         .change_context(GtencodeError::Library)?;
 
-    // let npairs = nhap as usize * (nhap - 1) as usize;
-    let pairs = (factor..1000)
-        .step_by(factor as usize)
-        .flat_map(|i| (0..i).step_by(factor as usize).map(move |j| (i, j)))
-        .filter(|(i, j)| (i % factor == 0) && (j % factor == 0) && (i > j))
+    let pairs = (1..nhap)
+        .flat_map(|i| (0..i).map(move |j| (i, j)))
+        .filter(|(i, j)| i > j)
         .collect_vec();
-
     let ibdlens = [0.0f32, 2.0, 3.0, 4.0, 6.0, 10.0, 18.0, 30.0];
-    let ac_bins = [2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 30, 50, 100];
+    let ac_bins = (0..51).collect_vec();
 
     let mut res_vec: Vec<_> = pairs
         .chunks(2000)
         .par_bridge()
         .into_par_iter()
         .flat_map(|pair_chunks| -> Result<(Vec<u32>, NamedMatrix<u32>)> {
-            let (nonibd_vec, ibd_mat) = cmp_rv_ac_and_ibd_len_chunks(
-                ibd,
-                rvgt,
-                &rvgt2,
-                pair_chunks,
-                gmap,
-                &ibdlens,
-                &ac_bins,
-            )?;
-            Ok((nonibd_vec, ibd_mat))
+            cmp_rv_ac_and_ibd_len_chunks(ibd, rvgt, &rvgt2, pair_chunks, gmap, &ibdlens, &ac_bins)
         })
         .collect::<Vec<_>>();
 
@@ -860,7 +856,7 @@ fn cmp_rv_and_ibd_len(
         .iter()
         .zip(ibd_mat.get_data_slice().chunks(ac_bins.len() + 1))
     {
-        write!(file, "IBD<{lenbin}>").change_context(GtencodeError::Output)?;
+        write!(file, "IBD<{lenbin}").change_context(GtencodeError::Output)?;
         for cnt in ibd_vec.iter() {
             write!(file, "\t{cnt}").change_context(GtencodeError::Output)?;
         }

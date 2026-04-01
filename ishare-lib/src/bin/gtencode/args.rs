@@ -200,7 +200,7 @@ pub enum Commands {
         #[arg(short, long, group = "genome_selection")]
         genomes: Option<Vec<u32>>,
     },
-    /// analyze concordance/discordance of rare variant sharing and IBD sharing  
+    /// analyze concordance/discordance of rare variant sharing and IBD sharing
     RvIBD {
         /// Path to encoded ibd (input)
         eibd: PathBuf,
@@ -226,7 +226,9 @@ pub enum Commands {
         /// and a list of counts of different states for all genome pairs and
         /// all sites; || 2 => cmp RV and IBD similarity, is used to compare
         /// different metrics of genome-pair similarity, including pairwise
-        /// totalibd, cosine and jaccard values.
+        /// totalibd, cosine and jaccard values; || 3 => count number of shared
+        /// rare variants between genome pairs categorizing by IBD length bins
+        /// and allele frequency bins.
         #[arg(short = 'w', long, default_value_t = 0)]
         which: u32,
     },
