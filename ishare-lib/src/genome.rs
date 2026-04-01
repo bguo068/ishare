@@ -409,6 +409,10 @@ impl Genome {
             })
             .collect::<Vec<_>>();
     }
+
+    pub fn into_parts(self) -> (GenomeInfo, GeneticMap) {
+        (self.ginfo, self.gmap)
+    }
 }
 
 #[derive(Clone, ValueEnum, Debug)]

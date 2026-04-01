@@ -1,6 +1,7 @@
 use super::IbdUtilsError;
 use super::Result;
 use error_stack::*;
+use ishare::genome::Genome;
 
 use super::args::*;
 use env_logger;
@@ -33,13 +34,24 @@ pub fn main_encode(args: &Commands) -> Result<()> {
             .filter(None, log::LevelFilter::Info)
             .format_module_path(false)
             .init();
-        info!("read genome toml file");
-        let ginfo =
-            Arc::new(GenomeInfo::from_toml_file(genome_info).change_context(IbdUtilsError::Input)?);
-        info!("read genetic map files");
-        let gmap = Arc::new(
-            gmap::GeneticMap::from_genome_info(&ginfo).change_context(IbdUtilsError::Input)?,
-        );
+
+        let (ginfo, gmap) = if genome_info.extension().map(|s| s == "toml") == Some(true) {
+            info!("read genome toml file");
+            let ginfo = Arc::new(
+                GenomeInfo::from_toml_file(genome_info).change_context(IbdUtilsError::Input)?,
+            );
+            info!("read genetic map files");
+            let gmap = Arc::new(
+                gmap::GeneticMap::from_genome_info(&ginfo).change_context(IbdUtilsError::Input)?,
+            );
+            (ginfo, gmap)
+        } else {
+            info!("read genome from binary file");
+            let genome =
+                Genome::load_from_bincode_file(genome_info).change_context(IbdUtilsError::Input)?;
+            let (ginfo, gmap) = genome.into_parts();
+            (Arc::new(ginfo), Arc::new(gmap))
+        };
         info!("read samples list file");
         let (inds, _inds_opt) =
             Individuals::from_txt_file(sample_lst).change_context(IbdUtilsError::Input)?;
