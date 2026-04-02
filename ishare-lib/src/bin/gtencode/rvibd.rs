@@ -1,7 +1,9 @@
 use super::{GtencodeError, Result};
+use arrow_array::builder::UInt32Builder;
+use arrow_array::{ArrayRef, RecordBatch};
 use error_stack::*;
 use ishare::genome::Genome;
-use ishare::share::mat::NamedMatrix;
+use parquet::arrow::ArrowWriter;
 
 use crate::utils::calc_allele_count;
 
@@ -543,14 +545,14 @@ fn cmp_rv_ac_and_ibd_len_chunks(
     rvgt2: &GenotypeRecords,
     pair_chunk: &[(u32, u32)],
     gmap: &GeneticMap,
-    ibdlen_bins: &[f32],
-    ac_bins: &[u32],
-) -> Result<(Vec<u32>, NamedMatrix<u32>)> {
-    // [0, 1, 2, 3], then we need to bins [-inf, 0), [0, 1), [1, 2), [2, 3) and [3, Inf)
-    let n_ibdbins = ibdlen_bins.len() + 1;
-    let n_ac = ac_bins.len() + 1;
-    let mut mat = NamedMatrix::<u32>::new_from_shape(n_ibdbins as u32, n_ac as u32);
-    let mut nonibd_ac = vec![0u32; n_ac];
+) -> Result<RecordBatch> {
+    let mut g1_bld = UInt32Builder::new();
+    let mut g2_bld = UInt32Builder::new();
+    let mut s_bld = UInt32Builder::new();
+    let mut e_bld = UInt32Builder::new();
+    let mut pos_bld = UInt32Builder::new();
+    let mut ac_bld = UInt32Builder::new();
+    let mut cm100x_bld = UInt32Builder::new();
 
     let ibdblk_iter = ibd.linear_group_by_key(|seg| seg.genome_id_pair());
     let merged_iter = pair_chunk
@@ -566,18 +568,29 @@ fn cmp_rv_ac_and_ibd_len_chunks(
                 // all IBD for a given pair is in the tree
                 tree.clear_and_fill_with_iter(blk.iter().map(|seg| {
                     let cm = seg.get_seg_len_cm(gmap);
-                    let ibdbin_idx = ibdlen_bins.partition_point(|x| *x <= cm);
-                    (seg.s..seg.e, ibdbin_idx)
+                    let cm100x = (cm * 100.0) as u32;
+                    (seg.s..seg.e, cm100x)
                 }));
 
                 for (pos, allele) in rvgt.iterate_rv_shared_for_genome_pair(*genome1, *genome2) {
                     let ac = rvgt2.get_allele_count_by_position_allele(pos, allele);
-                    let ac_bin_ix = ac_bins.partition_point(|x| *x <= ac as u32);
                     if let Some(e) = tree.query_point(pos).next() {
-                        let ibdlen_idx = e.value;
-                        *mat.ref_mut_by_positions(ibdlen_idx as u32, ac_bin_ix as u32) += 1;
+                        let cm100x = e.value;
+                        g1_bld.append_value(*genome1);
+                        g2_bld.append_value(*genome2);
+                        s_bld.append_value(e.range.start);
+                        e_bld.append_value(e.range.end);
+                        pos_bld.append_value(pos);
+                        ac_bld.append_value(ac as u32);
+                        cm100x_bld.append_value(cm100x);
                     } else {
-                        nonibd_ac[ac_bin_ix] += 1;
+                        g1_bld.append_value(*genome1);
+                        g2_bld.append_value(*genome2);
+                        s_bld.append_null();
+                        e_bld.append_null();
+                        pos_bld.append_value(pos);
+                        ac_bld.append_value(ac as u32);
+                        cm100x_bld.append_null();
                     }
                 }
             }
@@ -585,15 +598,32 @@ fn cmp_rv_ac_and_ibd_len_chunks(
                 let (genome1, genome2) = pair;
                 for (pos, allele) in rvgt.iterate_rv_shared_for_genome_pair(*genome1, *genome2) {
                     let ac = rvgt2.get_allele_count_by_position_allele(pos, allele);
-                    let ac_bin_ix = ac_bins.partition_point(|x| *x <= ac as u32);
-                    nonibd_ac[ac_bin_ix] += 1;
+                    g1_bld.append_value(*genome1);
+                    g2_bld.append_value(*genome2);
+                    s_bld.append_null();
+                    e_bld.append_null();
+                    pos_bld.append_value(pos);
+                    ac_bld.append_value(ac as u32);
+                    cm100x_bld.append_null();
                 }
             }
             _ => {}
         }
     }
 
-    Ok((nonibd_ac, mat))
+    let rec_batch = RecordBatch::try_from_iter(vec![
+        ("genome1", Arc::new(g1_bld.finish()) as ArrayRef),
+        ("genome2", Arc::new(g2_bld.finish()) as ArrayRef),
+        ("start", Arc::new(s_bld.finish()) as ArrayRef),
+        ("end", Arc::new(e_bld.finish()) as ArrayRef),
+        ("pos", Arc::new(pos_bld.finish()) as ArrayRef),
+        ("ac", Arc::new(ac_bld.finish()) as ArrayRef),
+        ("cm100x", Arc::new(cm100x_bld.finish()) as ArrayRef),
+    ])
+    .change_context(GtencodeError::Library)
+    .attach("error in creating record batch")?;
+
+    Ok(rec_batch)
 }
 
 fn cmp_rv_and_ibd_similarity_chunks(
@@ -792,76 +822,52 @@ fn cmp_rv_and_ibd_len(
         .flat_map(|i| (0..i).map(move |j| (i, j)))
         .filter(|(i, j)| i > j)
         .collect_vec();
-    let ibdlens = [0.0f32, 2.0, 3.0, 4.0, 6.0, 10.0, 18.0, 30.0];
-    let ac_bins = (0..51).collect_vec();
 
-    let mut res_vec: Vec<_> = pairs
-        .chunks(2000)
+    let chunksize = 10000; // pairs
+    let record_batch_vec: Vec<_> = pairs
+        .chunks(chunksize)
         .par_bridge()
         .into_par_iter()
-        .flat_map(|pair_chunks| -> Result<(Vec<u32>, NamedMatrix<u32>)> {
-            cmp_rv_ac_and_ibd_len_chunks(ibd, rvgt, &rvgt2, pair_chunks, gmap, &ibdlens, &ac_bins)
+        .flat_map(|pair_chunks| -> Result<RecordBatch> {
+            cmp_rv_ac_and_ibd_len_chunks(ibd, rvgt, &rvgt2, pair_chunks, gmap)
         })
         .collect::<Vec<_>>();
 
     ensure!(
-        pairs.len().div_ceil(2000) == res_vec.len(),
+        pairs.len().div_ceil(chunksize) == record_batch_vec.len(),
         GtencodeError::Library
             .into_report()
             .attach("not all chunks successfully completed rvs-ac-vs-IBD-len comparison analysis")
     );
 
-    // combine data to the first element
-    let (first, rest) = res_vec
-        .split_first_mut()
-        .ok_or(GtencodeError::Library)
-        .attach("Empty result vector")?;
-    let (nonibd_vec, ibd_mat) = first;
-    for (nonibd_vec2, ibd_mat2) in rest {
-        nonibd_vec
-            .iter_mut()
-            .zip(nonibd_vec2.iter())
-            .for_each(|(a, b)| *a += *b);
-        ibd_mat
-            .get_data_slice_mut()
-            .iter_mut()
-            .zip(ibd_mat2.get_data_slice().iter())
-            .for_each(|(a, b)| *a += *b);
-    }
-    // prepare output file
-    let mut file = {
-        let filename = out_prefix.as_ref().with_extension("pairwise_metrics.txt");
+    ensure!(
+        !record_batch_vec.is_empty(),
+        GtencodeError::Library
+            .into_report()
+            .attach("empty result vector")
+    );
+
+    let file = {
+        let filename = out_prefix.as_ref().with_extension("ibdsegrvac");
         File::create(&filename)
             .map(std::io::BufWriter::new)
             .change_context(GtencodeError::Output)?
     };
+    let schema = record_batch_vec[0].schema();
+    let mut writer = ArrowWriter::try_new(file, schema, None)
+        .change_context(GtencodeError::Output)
+        .attach("cannot create ArrowWriter")?;
 
-    // write header
-    write!(file, "ibdlen_bin").change_context(GtencodeError::Output)?;
-    for bin in &ac_bins {
-        write!(file, "\tAC<{bin}").change_context(GtencodeError::Output)?;
+    for batch in record_batch_vec {
+        writer
+            .write(&batch)
+            .change_context(GtencodeError::Output)
+            .attach("failed to write record batch")?;
     }
-    writeln!(file, "\tAC<Inf").change_context(GtencodeError::Output)?;
-
-    // write the non-ibd counts (first row)
-    // write index first, then counts for ac bins
-    write!(file, "NonIBD").change_context(GtencodeError::Output)?;
-    for cnt in nonibd_vec.iter() {
-        write!(file, "\t{cnt}").change_context(GtencodeError::Output)?;
-    }
-    writeln!(file).change_context(GtencodeError::Output)?; // add a newline
-
-    // write IBD counts (non-first row)
-    for (lenbin, ibd_vec) in ibdlens
-        .iter()
-        .zip(ibd_mat.get_data_slice().chunks(ac_bins.len() + 1))
-    {
-        write!(file, "IBD<{lenbin}").change_context(GtencodeError::Output)?;
-        for cnt in ibd_vec.iter() {
-            write!(file, "\t{cnt}").change_context(GtencodeError::Output)?;
-        }
-        writeln!(file).change_context(GtencodeError::Output)?; // add a newline
-    }
+    writer
+        .close()
+        .change_context(GtencodeError::Output)
+        .attach("failed to close arrow writer")?;
 
     Ok(())
 }
