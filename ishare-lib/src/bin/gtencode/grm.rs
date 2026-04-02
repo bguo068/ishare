@@ -36,11 +36,9 @@ pub fn main_grm(args: &Commands) -> Result<()> {
                 .change_context(GtencodeError::Input)?;
 
         records
-            .sort_by_genome()
+            .sort_by_genome_position_allele()
             .change_context(GtencodeError::Library)?;
-        records
-            .is_sorted_by_genome()
-            .change_context(GtencodeError::Library)?;
+        records.is_sorted_by_genome_position_allele();
 
         let (pairs, row_genomes, col_genomes) =
             utils::prep_pairs(&records, genomes, lists).change_context(GtencodeError::Library)?;

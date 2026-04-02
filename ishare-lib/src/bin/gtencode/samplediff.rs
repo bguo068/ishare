@@ -17,9 +17,7 @@ pub fn main_samplediff(args: &Commands) -> Result<()> {
     if let Commands::SampleDiff { rec, pairs, out } = args {
         let mut records =
             GenotypeRecords::from_parquet_file(rec).change_context(GtencodeError::Input)?;
-        records
-            .is_sorted_by_genome()
-            .change_context(GtencodeError::Input)?;
+        records.is_sorted_by_genome_position_allele();
 
         let ind_file = rec.with_extension("ind");
         let inds =

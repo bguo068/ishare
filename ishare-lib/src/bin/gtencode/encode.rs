@@ -189,10 +189,18 @@ pub fn main_encode(args: &Commands) -> Result<()> {
 
         // sort
         _ = sites.sort_by_position_then_allele();
+        // dbg!(records.get_sort_status());
+        // dbg!(records.is_sorted_by_genome_position_allele());
+        // dbg!(records.is_sorted_by_genome_position_allele_slow());
+        // dbg!(records.is_sorted_by_position_genome_allele_slow());
+        // dbg!(records.is_sorted_by_position_allele_genome_slow());
         records
-            .sort_by_genome()
+            .sort_by_genome_position_allele()
             .change_context(GtencodeError::Library)?;
         // write to files
+        // dbg!(records.get_sort_status());
+        // dbg!(records.is_sorted_by_genome_position_allele());
+        // dbg!(records.is_sorted_by_genome_position_allele_slow());
 
         records
             .into_parquet_file(&gt_file)

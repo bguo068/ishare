@@ -227,7 +227,10 @@ pub fn read_vcf(
         output_rare_allele_records(buffers, &gt, pos_last, ac_thres)?;
     }
 
-    let gtrec = GenotypeRecords::new(records, 1);
+    let gtrec = GenotypeRecords::new(
+        records,
+        GenotypeRecordSortStatus::SortedByPositionGenomeAllele,
+    );
 
     Ok((sites, individuals, gtrec))
 }

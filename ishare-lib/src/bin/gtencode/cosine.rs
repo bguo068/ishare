@@ -28,9 +28,7 @@ pub fn main_cosine(args: &Commands) -> Result<()> {
         let records =
             GenotypeRecords::from_parquet_file(rec).change_context(GtencodeError::Input)?;
         ensure!(
-            records
-                .is_sorted_by_genome()
-                .change_context(GtencodeError::Input)?,
+            records.is_sorted_by_genome_position_allele(),
             GtencodeError::Input
                 .into_report()
                 .attach("records not sorted")

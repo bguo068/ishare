@@ -148,7 +148,7 @@ fn position_scan(
 
     info!("sort rv records by position");
     records
-        .sort_by_position()
+        .sort_by_position_genome_allele()
         .change_context(GtencodeError::Library)?;
     info!("build ibd interval tress");
 
@@ -284,7 +284,7 @@ fn pairwise_compare(
 
     info!("sort rv records by genome");
     records
-        .sort_by_genome()
+        .sort_by_genome_position_allele()
         .change_context(GtencodeError::Library)?;
 
     info!("sort ibd by genome pair");
@@ -721,7 +721,7 @@ fn cmp_rv_and_ibd_similarity(
 
     // sortting
     ibd.sort();
-    rvgt.sort_by_genome()
+    rvgt.sort_by_genome_position_allele()
         .change_context(GtencodeError::Library)?;
 
     // prepare output file
@@ -791,18 +791,15 @@ fn cmp_rv_and_ibd_len(
     );
 
     // assumption 2: rvgt are sorted by genome pairs then by position and allele (use to find shared rv)
-    ensure!(
-        rvgt.is_sorted_by_genome()
+    if !rvgt.is_sorted_by_genome_position_allele() {
+        rvgt.sort_by_genome_position_allele()
             .change_context(GtencodeError::Library)
-            .attach("error in checking if rvgt is properly sorted")?,
-        GtencodeError::Library
-            .into_report()
-            .attach("rare genotype `rvgt` is not sorted by genome")
-    );
+            .attach("fail to sort rare genotype by genome/position/allele")?;
+    }
     // assumption 3: rvgt2 are sorted by position and alleles (used to cout AC)
     let mut rvgt2 = rvgt.clone();
     rvgt2
-        .sort_by_position()
+        .sort_by_position_allele_genome()
         .change_context(GtencodeError::Library)
         .attach("fail to sort rare genotype by position")?;
 
@@ -815,7 +812,7 @@ fn cmp_rv_and_ibd_len(
         + 1;
 
     // sortting
-    rvgt.sort_by_genome()
+    rvgt.sort_by_genome_position_allele()
         .change_context(GtencodeError::Library)?;
 
     let pairs = (1..nhap)

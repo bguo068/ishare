@@ -368,7 +368,9 @@ impl RVar {
 
         // sort
         _ = sites.sort_by_position_then_allele();
-        records.sort_by_genome().map_err(convert_err)?;
+        records
+            .sort_by_genome_position_allele()
+            .map_err(convert_err)?;
 
         Ok(RVar {
             records: Some(records),

@@ -90,7 +90,7 @@ pub fn main_export(args: &Commands) -> Result<()> {
 
         // sort by postion
         records
-            .sort_by_position()
+            .sort_by_position_genome_allele()
             .change_context(GtencodeError::Library)?;
 
         let mut allele = Vec::new();

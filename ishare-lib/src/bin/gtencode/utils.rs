@@ -148,7 +148,7 @@ pub fn calc_allele_frequency(
     num_hap: usize,
     num_sites: usize,
 ) -> Result<AHashMap<u32, f64>> {
-    rec.sort_by_position()
+    rec.sort_by_position_genome_allele()
         .change_context(GtencodeError::Input)?;
     let mut freq_map = AHashMap::<u32, f64>::with_capacity(num_sites);
     let mut target_pos = u32::MAX;
@@ -174,7 +174,7 @@ pub fn calc_allele_frequency(
 }
 
 pub fn calc_allele_count(rec: &mut GenotypeRecords) -> Result<AHashMap<u32, u32>> {
-    rec.sort_by_position()
+    rec.sort_by_position_genome_allele()
         .change_context(GtencodeError::Input)?;
     let mut count_map = AHashMap::<u32, u32>::new();
     for set in rec.records().linear_group_by_key(|x| x.get_position()) {

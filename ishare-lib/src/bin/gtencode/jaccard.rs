@@ -35,9 +35,7 @@ pub fn main_jaccard(args: &Commands) -> Result<()> {
 
         let records =
             GenotypeRecords::from_parquet_file(rec).change_context(GtencodeError::Input)?;
-        records
-            .is_sorted_by_genome()
-            .change_context(GtencodeError::Input)?;
+        records.is_sorted_by_genome_position_allele();
 
         let ind_file = rec.with_extension("ind");
         let _inds = Individuals::from_parquet_file(&ind_file);

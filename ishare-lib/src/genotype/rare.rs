@@ -92,16 +92,24 @@ impl GenotypeRecord {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GenotypeRecordSortStatus {
+    Unsorted,
+    SortedByPositionGenomeAllele,
+    SortedByGenomePositionAllele,
+    SortedByPositionAlleleGenome,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GenotypeRecords {
     data: Vec<GenotypeRecord>,
-    sort_status: u8, // 0: unsorted, 1: sorted by position, 2: sorted_by_genome
+    sort_status: GenotypeRecordSortStatus,
 }
 
 impl GenotypeRecords {
     // Create `GenotypeRecords` from a vector of `GenotypeRecord` and an indicator
     // of sort status.
-    pub fn new(records: Vec<GenotypeRecord>, sort_status: u8) -> Self {
+    pub fn new(records: Vec<GenotypeRecord>, sort_status: GenotypeRecordSortStatus) -> Self {
         Self {
             data: records,
             sort_status,
@@ -110,58 +118,98 @@ impl GenotypeRecords {
 
     pub fn merge(&mut self, other: Self) {
         self.data.extend(other.data);
-        self.sort_status = 0;
+        self.sort_status = GenotypeRecordSortStatus::Unsorted;
     }
 
-    pub fn sort_by_position(&mut self) -> Result<()> {
+    pub fn assume_unsorted(&mut self) {
+        self.sort_status = GenotypeRecordSortStatus::Unsorted;
+    }
+
+    /// useful for write genotype to vcf or genotype matrix
+    pub fn sort_by_position_genome_allele(&mut self) -> Result<()> {
         match self.sort_status {
-            0 | 2 => {
-                self.data.par_sort_unstable_by_key(|x| {
-                    (x.get_pos_genome(), x.get_position(), x.get_allele())
-                });
-                self.sort_status = 1;
+            GenotypeRecordSortStatus::SortedByGenomePositionAllele => Ok(()),
+            _ => {
+                self.data
+                    .par_sort_unstable_by_key(|x| (x.get_pos_genome(), x.get_allele()));
+                self.sort_status = GenotypeRecordSortStatus::SortedByPositionGenomeAllele;
                 Ok(())
             }
-            1 => Ok(()),
-            _ => bail!(IshareError::RuntimeCheck
-                .into_report()
-                .attach(format!("InvalidSortStatusSnafu: {}", self.sort_status))),
         }
     }
 
-    pub fn sort_by_genome(&mut self) -> Result<()> {
+    /// useful for counting shared rare variants by genome paris along chromosomal positions
+    pub fn sort_by_genome_position_allele(&mut self) -> Result<()> {
         match self.sort_status {
-            0 | 1 => {
-                self.data.par_sort_unstable_by_key(|x| {
-                    (x.get_genome_pos(), x.get_position(), x.get_allele())
-                });
-                self.sort_status = 2;
+            GenotypeRecordSortStatus::SortedByGenomePositionAllele => Ok(()),
+            _ => {
+                self.data
+                    .par_sort_unstable_by_key(|x| (x.get_genome_pos(), x.get_allele()));
+                self.sort_status = GenotypeRecordSortStatus::SortedByGenomePositionAllele;
                 Ok(())
             }
-            2 => Ok(()),
-            _ => bail!(IshareError::RuntimeCheck
-                .into_report()
-                .attach(format!("InvalidSortStatusSnafu: {}", self.sort_status))),
         }
     }
 
-    pub fn is_sorted_by_postion(&self) -> Result<bool> {
+    /// useful for count allele freuquency
+    pub fn sort_by_position_allele_genome(&mut self) -> Result<()> {
         match self.sort_status {
-            1 => Ok(true),
-            0 | 2 => Ok(false),
-            _ => bail!(IshareError::RuntimeCheck
-                .into_report()
-                .attach(format!("InvalidSortStatusSnafu: {}", self.sort_status))),
+            GenotypeRecordSortStatus::SortedByPositionAlleleGenome => Ok(()),
+            _ => {
+                self.data
+                    .par_sort_unstable_by_key(|x| (x.get_pos_allele(), x.get_genome()));
+                self.sort_status = GenotypeRecordSortStatus::SortedByPositionAlleleGenome;
+                Ok(())
+            }
         }
     }
-    pub fn is_sorted_by_genome(&self) -> Result<bool> {
-        match self.sort_status {
-            2 => Ok(true),
-            0 | 1 => Ok(false),
-            _ => bail!(IshareError::RuntimeCheck
-                .into_report()
-                .attach(format!("InvalidSortStatusSnafu: {}", self.sort_status))),
-        }
+    pub fn is_sorted_by_postion_genome_allele(&self) -> bool {
+        matches!(
+            self.sort_status,
+            GenotypeRecordSortStatus::SortedByPositionGenomeAllele
+        )
+    }
+
+    pub fn is_sorted_by_genome_position_allele_slow(&self) -> bool {
+        let recs = self.records();
+        recs.iter().zip(recs.iter().skip(1)).all(|(a, b)| {
+            (a.get_genome_pos(), a.get_allele()) < (b.get_genome_pos(), b.get_allele())
+        })
+    }
+
+    pub fn is_sorted_by_position_genome_allele_slow(&self) -> bool {
+        let recs = self.records();
+        recs.iter().zip(recs.iter().skip(1)).all(|(a, b)| {
+            (a.get_pos_genome(), a.get_allele()) < (b.get_pos_genome(), b.get_allele())
+        })
+    }
+
+    pub fn is_sorted_by_position_allele_genome_slow(&self) -> bool {
+        let recs = self.records();
+        recs.iter().zip(recs.iter().skip(1)).all(|(a, b)| {
+            (a.get_pos_allele(), a.get_genome()) < (b.get_pos_allele(), b.get_genome())
+        })
+    }
+
+    pub fn is_unsorted(&self) -> bool {
+        matches!(self.sort_status, GenotypeRecordSortStatus::Unsorted)
+    }
+
+    pub fn is_sorted_by_postion_allele_genome(&self) -> bool {
+        matches!(
+            self.sort_status,
+            GenotypeRecordSortStatus::SortedByPositionAlleleGenome
+        )
+    }
+
+    pub fn get_sort_status(&self) -> GenotypeRecordSortStatus {
+        self.sort_status
+    }
+    pub fn is_sorted_by_genome_position_allele(&self) -> bool {
+        matches!(
+            self.sort_status,
+            GenotypeRecordSortStatus::SortedByGenomePositionAllele
+        )
     }
 
     /// assume data is sorted by genome
@@ -207,7 +255,7 @@ impl GenotypeRecords {
         genome1: u32,
         genome2: u32,
     ) -> impl Iterator<Item = (u32, Option<u8>, Option<u8>)> + '_ {
-        assert_eq!(self.sort_status, 2);
+        assert!(self.is_sorted_by_genome_position_allele());
         let s1 = self.data.partition_point(|x| x.get_genome() < genome1);
         let e1 = self.data.partition_point(|x| x.get_genome() <= genome1);
         let s2 = self.data.partition_point(|x| x.get_genome() < genome2);
@@ -233,7 +281,7 @@ impl GenotypeRecords {
     }
 
     pub fn filter_multi_allelic_site(&mut self) -> Result<()> {
-        self.sort_by_position()?;
+        self.sort_by_position_genome_allele()?;
         use slice_group_by::*;
         for blk in self
             .data
@@ -261,7 +309,7 @@ impl GenotypeRecords {
         let u64values = UInt64Array::from(v);
 
         // save sort_status as field name
-        let fieldname = format!("{}", self.sort_status);
+        let fieldname = format!("{:?}", self.sort_status);
 
         // record batch
         let batch = RecordBatch::try_from_iter(vec![(fieldname, Arc::new(u64values) as ArrayRef)])
@@ -286,12 +334,18 @@ impl GenotypeRecords {
         let builder = ParquetRecordBatchReaderBuilder::try_new(file)
             .change_context(IshareError::RareGenotype)?;
         // get sort_status from the field name
-        let sort_status = builder
-            .schema()
-            .field(0)
-            .name()
-            .parse()
-            .change_context(IshareError::RareGenotype)?;
+        let sort_status = match builder.schema().field(0).name().as_str() {
+            "SortedByPositionGenomeAllele" => {
+                GenotypeRecordSortStatus::SortedByPositionGenomeAllele
+            }
+            "SortedByGenomePositionAllele" => {
+                GenotypeRecordSortStatus::SortedByGenomePositionAllele
+            }
+            "SortedByPositionAlleleGenome" => {
+                GenotypeRecordSortStatus::SortedByPositionAlleleGenome
+            }
+            _ => GenotypeRecordSortStatus::Unsorted,
+        };
         let mut reader = builder.build().change_context(IshareError::RareGenotype)?;
         let mut records = Vec::<GenotypeRecord>::new();
         for record_batch in &mut reader {
@@ -322,7 +376,7 @@ impl GenotypeRecords {
                 .into_report()
                 .attach("GenomeIdsNotSorted"));
         }
-        if !self.is_sorted_by_genome()? {
+        if !self.is_sorted_by_genome_position_allele() {
             bail!(IshareError::RuntimeCheck
                 .into_report()
                 .attach("GenomeIdsNotSorted"));
@@ -485,10 +539,11 @@ mod tests {
         #[test]
         fn test_new_and_basic_properties() {
             let records = create_test_records();
-            let genotype_records = GenotypeRecords::new(records.clone(), 0);
+            let genotype_records =
+                GenotypeRecords::new(records.clone(), GenotypeRecordSortStatus::Unsorted);
 
             assert_eq!(genotype_records.records().len(), records.len());
-            assert_eq!(genotype_records.sort_status, 0);
+            assert!(genotype_records.is_unsorted());
         }
 
         #[test]
@@ -496,28 +551,31 @@ mod tests {
             let records1 = create_test_records();
             let records2 = create_test_records();
 
-            let mut genotype_records1 = GenotypeRecords::new(records1.clone(), 1);
-            let genotype_records2 = GenotypeRecords::new(records2.clone(), 2);
+            let mut genotype_records1 =
+                GenotypeRecords::new(records1.clone(), GenotypeRecordSortStatus::Unsorted);
+            let genotype_records2 =
+                GenotypeRecords::new(records2.clone(), GenotypeRecordSortStatus::Unsorted);
 
             let original_len = genotype_records1.records().len();
             genotype_records1.merge(genotype_records2);
 
             assert_eq!(genotype_records1.records().len(), original_len * 2);
-            assert_eq!(genotype_records1.sort_status, 0); // Should reset to unsorted
+            assert!(genotype_records1.is_unsorted()); // Should reset to unsorted
         }
 
         #[test]
         fn test_sort_by_position() -> Result<()> {
+            use GenotypeRecordSortStatus::*;
             let records = create_test_records();
-            let mut genotype_records = GenotypeRecords::new(records, 0);
+            let mut genotype_records = GenotypeRecords::new(records, Unsorted);
 
             // Initial state should be unsorted
-            assert!(!genotype_records.is_sorted_by_postion()?);
+            assert!(!genotype_records.is_sorted_by_postion_genome_allele());
 
             // Sort by position
-            genotype_records.sort_by_position()?;
-            assert!(genotype_records.is_sorted_by_postion()?);
-            assert!(!genotype_records.is_sorted_by_genome()?);
+            genotype_records.sort_by_position_genome_allele()?;
+            assert!(genotype_records.is_sorted_by_postion_genome_allele());
+            assert!(!genotype_records.is_sorted_by_genome_position_allele());
 
             // Verify sorting correctness
             let positions: Vec<u32> = genotype_records
@@ -534,13 +592,14 @@ mod tests {
 
         #[test]
         fn test_sort_by_genome() -> Result<()> {
+            use GenotypeRecordSortStatus::*;
             let records = create_test_records();
-            let mut genotype_records = GenotypeRecords::new(records, 0);
+            let mut genotype_records = GenotypeRecords::new(records, Unsorted);
 
             // Sort by genome
-            genotype_records.sort_by_genome()?;
-            assert!(genotype_records.is_sorted_by_genome()?);
-            assert!(!genotype_records.is_sorted_by_postion()?);
+            genotype_records.sort_by_genome_position_allele()?;
+            assert!(genotype_records.is_sorted_by_genome_position_allele());
+            assert!(!genotype_records.is_sorted_by_postion_genome_allele());
 
             // Verify sorting correctness
             let genomes: Vec<u32> = genotype_records
@@ -557,51 +616,21 @@ mod tests {
 
         #[test]
         fn test_sort_status_transitions() -> Result<()> {
+            use GenotypeRecordSortStatus::*;
             let records = create_test_records();
-            let mut genotype_records = GenotypeRecords::new(records, 0);
+            let mut genotype_records = GenotypeRecords::new(records, Unsorted);
 
             // Unsorted -> Position sorted
-            genotype_records.sort_by_position()?;
-            assert_eq!(genotype_records.sort_status, 1);
+            genotype_records.sort_by_position_genome_allele()?;
+            assert!(genotype_records.is_sorted_by_postion_genome_allele());
 
             // Position sorted -> Genome sorted
-            genotype_records.sort_by_genome()?;
-            assert_eq!(genotype_records.sort_status, 2);
+            genotype_records.sort_by_genome_position_allele()?;
+            assert!(genotype_records.is_sorted_by_genome_position_allele());
 
             // Genome sorted -> Position sorted
-            genotype_records.sort_by_position()?;
-            assert_eq!(genotype_records.sort_status, 1);
-
-            Ok(())
-        }
-
-        #[test]
-        fn test_invalid_sort_status_error() {
-            let records = create_test_records();
-            let mut genotype_records = GenotypeRecords::new(records, 99); // Invalid status
-
-            assert!(genotype_records.sort_by_position().is_err());
-            assert!(genotype_records.sort_by_genome().is_err());
-            assert!(genotype_records.is_sorted_by_postion().is_err());
-            assert!(genotype_records.is_sorted_by_genome().is_err());
-        }
-
-        #[test]
-        fn test_idempotent_sorting() -> Result<()> {
-            let records = create_test_records();
-            let mut genotype_records = GenotypeRecords::new(records, 0);
-
-            // Sort by position twice - should not change result
-            genotype_records.sort_by_position()?;
-            let first_sort = genotype_records.records().to_vec();
-
-            genotype_records.sort_by_position()?;
-            let second_sort = genotype_records.records().to_vec();
-
-            assert_eq!(first_sort.len(), second_sort.len());
-            for (a, b) in first_sort.iter().zip(second_sort.iter()) {
-                assert_eq!(a.get(), b.get());
-            }
+            genotype_records.sort_by_position_genome_allele()?;
+            assert!(genotype_records.is_sorted_by_postion_genome_allele());
 
             Ok(())
         }
@@ -645,8 +674,9 @@ mod tests {
                 r
             });
 
-            let mut genotype_records = GenotypeRecords::new(records, 0);
-            genotype_records.sort_by_genome()?;
+            let mut genotype_records =
+                GenotypeRecords::new(records, GenotypeRecordSortStatus::Unsorted);
+            genotype_records.sort_by_genome_position_allele()?;
 
             let pairs: Vec<_> = genotype_records.iter_genome_pair_genotypes(1, 2).collect();
 
@@ -663,16 +693,6 @@ mod tests {
             );
 
             Ok(())
-        }
-
-        #[test]
-        #[should_panic]
-        fn test_iter_genome_pair_requires_genome_sort() {
-            let records = create_test_records();
-            let genotype_records = GenotypeRecords::new(records, 1); // Position sorted, not genome sorted
-
-            // This should panic due to assertion
-            let _: Vec<_> = genotype_records.iter_genome_pair_genotypes(1, 2).collect();
         }
 
         #[test]
@@ -710,7 +730,8 @@ mod tests {
                 r
             });
 
-            let mut genotype_records = GenotypeRecords::new(records, 0);
+            let mut genotype_records =
+                GenotypeRecords::new(records, GenotypeRecordSortStatus::Unsorted);
             let original_count = genotype_records.records().len();
 
             genotype_records.filter_multi_allelic_site()?;
@@ -741,8 +762,9 @@ mod tests {
                 }
             }
 
-            let mut genotype_records = GenotypeRecords::new(records, 0);
-            genotype_records.sort_by_genome()?;
+            let mut genotype_records =
+                GenotypeRecords::new(records, GenotypeRecordSortStatus::Unsorted);
+            genotype_records.sort_by_genome_position_allele()?;
 
             // Subset to genomes [2, 5] (must be sorted)
             let subset_genomes = vec![2, 5];
@@ -761,8 +783,9 @@ mod tests {
         #[test]
         fn test_subset_by_genomes_requires_sorted_input() {
             let records = create_test_records();
-            let mut genotype_records = GenotypeRecords::new(records, 0);
-            genotype_records.sort_by_genome().unwrap();
+            let mut genotype_records =
+                GenotypeRecords::new(records, GenotypeRecordSortStatus::Unsorted);
+            genotype_records.sort_by_genome_position_allele().unwrap();
 
             // Unsorted genome list should fail
             let unsorted_genomes = vec![3, 1, 2];
@@ -774,7 +797,10 @@ mod tests {
         #[test]
         fn test_subset_by_genomes_requires_genome_sorted_records() {
             let records = create_test_records();
-            let genotype_records = GenotypeRecords::new(records, 1); // Position sorted, not genome sorted
+            let mut genotype_records =
+                GenotypeRecords::new(records, GenotypeRecordSortStatus::Unsorted); // Position sorted, not genome sorted
+
+            genotype_records.sort_by_position_genome_allele().unwrap();
 
             let sorted_genomes = vec![1, 2];
             assert!(genotype_records.subset_by_genomes(&sorted_genomes).is_err());
@@ -782,16 +808,16 @@ mod tests {
 
         #[test]
         fn test_empty_records() -> Result<()> {
-            let empty_records = GenotypeRecords::new(vec![], 0);
+            let empty_records = GenotypeRecords::new(vec![], GenotypeRecordSortStatus::Unsorted);
 
             assert_eq!(empty_records.records().len(), 0);
-            assert!(!empty_records.is_sorted_by_postion()?);
-            assert!(!empty_records.is_sorted_by_genome()?);
+            assert!(!empty_records.is_sorted_by_postion_genome_allele());
+            assert!(!empty_records.is_sorted_by_genome_position_allele());
 
             // Operations on empty records should work
             let pairs: Vec<_> = {
                 let mut temp = empty_records.clone();
-                temp.sort_by_genome()?;
+                temp.sort_by_genome_position_allele()?;
                 temp.iter_genome_pair_genotypes(1, 2).collect()
             };
             assert_eq!(pairs.len(), 0);
@@ -822,7 +848,10 @@ mod tests {
                 records.push(record);
             }
 
-            GenotypeRecords::new(records, 1) // Position sorted
+            GenotypeRecords::new(
+                records,
+                GenotypeRecordSortStatus::SortedByPositionGenomeAllele,
+            ) // Position sorted
         }
 
         #[test]
@@ -854,12 +883,19 @@ mod tests {
 
         #[test]
         fn test_parquet_preserves_sort_status() -> Result<()> {
-            for sort_status in [0, 1, 2] {
+            for sort_status in [
+                GenotypeRecordSortStatus::Unsorted,
+                GenotypeRecordSortStatus::SortedByPositionGenomeAllele,
+                GenotypeRecordSortStatus::SortedByGenomePositionAllele,
+                GenotypeRecordSortStatus::SortedByPositionAlleleGenome,
+            ] {
                 let mut records = create_test_data();
                 records.sort_status = sort_status;
 
                 let temp_dir = tempdir().unwrap();
-                let temp_path = temp_dir.path().join(format!("test_{sort_status}.parquet"));
+                let temp_path = temp_dir
+                    .path()
+                    .join(format!("test_{sort_status:?}.parquet"));
 
                 records.clone().into_parquet_file(&temp_path)?;
                 let loaded = GenotypeRecords::from_parquet_file(&temp_path)?;
@@ -872,7 +908,10 @@ mod tests {
 
         #[test]
         fn test_parquet_empty_data() -> Result<()> {
-            let empty_data = GenotypeRecords::new(vec![], 2);
+            let empty_data = GenotypeRecords::new(
+                vec![],
+                GenotypeRecordSortStatus::SortedByGenomePositionAllele,
+            );
             let temp_dir = tempdir().unwrap();
             let temp_path = temp_dir.path().join("empty.parquet");
 
@@ -880,7 +919,10 @@ mod tests {
             let loaded = GenotypeRecords::from_parquet_file(&temp_path)?;
 
             assert_eq!(loaded.records().len(), 0);
-            assert_eq!(loaded.sort_status, 2);
+            assert_eq!(
+                loaded.sort_status,
+                GenotypeRecordSortStatus::SortedByGenomePositionAllele
+            );
 
             Ok(())
         }
@@ -895,7 +937,7 @@ mod tests {
                 records.push(record);
             }
 
-            let original_data = GenotypeRecords::new(records, 0);
+            let original_data = GenotypeRecords::new(records, GenotypeRecordSortStatus::Unsorted);
             let temp_dir = tempdir().unwrap();
             let temp_path = temp_dir.path().join("large.parquet");
 
@@ -965,20 +1007,21 @@ mod tests {
             let mut record = record;
             record.set(12345, 678, 90);
 
-            let mut records = GenotypeRecords::new(vec![record], 0);
+            let mut records =
+                GenotypeRecords::new(vec![record], GenotypeRecordSortStatus::Unsorted);
 
             // All operations should work with single record
-            records.sort_by_position()?;
-            assert!(records.is_sorted_by_postion()?);
+            records.sort_by_position_genome_allele()?;
+            assert!(records.is_sorted_by_postion_genome_allele());
 
-            records.sort_by_genome()?;
-            assert!(records.is_sorted_by_genome()?);
+            records.sort_by_genome_position_allele()?;
+            assert!(records.is_sorted_by_genome_position_allele());
 
             records.filter_multi_allelic_site()?;
             assert_eq!(records.records().len(), 1);
 
             // Need to sort by genome again since filter_multi_allelic_site calls sort_by_position internally
-            records.sort_by_genome()?;
+            records.sort_by_genome_position_allele()?;
             let subset = records.subset_by_genomes(&[678])?;
             assert_eq!(subset.records().len(), 1);
 
@@ -996,8 +1039,9 @@ mod tests {
                 records.push(record);
             }
 
-            let mut genotype_records = GenotypeRecords::new(records, 0);
-            genotype_records.sort_by_position()?;
+            let mut genotype_records =
+                GenotypeRecords::new(records, GenotypeRecordSortStatus::Unsorted);
+            genotype_records.sort_by_position_genome_allele()?;
 
             // All should be at position 100
             for record in genotype_records.records() {
@@ -1043,8 +1087,9 @@ mod tests {
                 records.push(record);
             }
 
-            let mut genotype_records = GenotypeRecords::new(records, 0);
-            genotype_records.sort_by_genome()?;
+            let mut genotype_records =
+                GenotypeRecords::new(records, GenotypeRecordSortStatus::Unsorted);
+            genotype_records.sort_by_genome_position_allele()?;
 
             // Verify all genome IDs preserved correctly
             for (record, expected_genome) in genotype_records
@@ -1085,12 +1130,14 @@ mod tests {
                 records.push(record);
             }
 
-            let mut genotype_records1 = GenotypeRecords::new(records.clone(), 0);
-            let mut genotype_records2 = GenotypeRecords::new(records, 0);
+            let mut genotype_records1 =
+                GenotypeRecords::new(records.clone(), GenotypeRecordSortStatus::Unsorted);
+            let mut genotype_records2 =
+                GenotypeRecords::new(records, GenotypeRecordSortStatus::Unsorted);
 
             // Both should produce identical results despite parallel processing
-            genotype_records1.sort_by_position()?;
-            genotype_records2.sort_by_position()?;
+            genotype_records1.sort_by_position_genome_allele()?;
+            genotype_records2.sort_by_position_genome_allele()?;
 
             assert_eq!(
                 genotype_records1.records().len(),
@@ -1117,20 +1164,21 @@ mod tests {
                 records.push(record);
             }
 
-            let mut genotype_records = GenotypeRecords::new(records, 0);
+            let mut genotype_records =
+                GenotypeRecords::new(records, GenotypeRecordSortStatus::Unsorted);
 
             // Test all major operations work with large datasets
-            genotype_records.sort_by_position()?;
-            assert!(genotype_records.is_sorted_by_postion()?);
+            genotype_records.sort_by_position_genome_allele()?;
+            assert!(genotype_records.is_sorted_by_postion_genome_allele());
 
-            genotype_records.sort_by_genome()?;
-            assert!(genotype_records.is_sorted_by_genome()?);
+            genotype_records.sort_by_genome_position_allele()?;
+            assert!(genotype_records.is_sorted_by_genome_position_allele());
 
             // Filter multi-allelic sites needs position sorted data
             genotype_records.filter_multi_allelic_site()?;
 
             // After filtering, it should still be position sorted
-            assert!(genotype_records.is_sorted_by_postion()?);
+            assert!(genotype_records.is_sorted_by_postion_genome_allele());
 
             // Verify data integrity maintained
             assert!(!genotype_records.records().is_empty());
