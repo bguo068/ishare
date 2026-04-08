@@ -181,7 +181,7 @@ impl IBD {
         samples: Vec<String>,
     ) -> PyResult<Self> {
         // individuals
-        let inds = Individuals::from_iter(samples.iter().map(|s| s.as_str()));
+        let inds = Individuals::from_str_iter(samples.iter().map(|s| s.as_str()));
         let ginfo = ginfo.ginfo.clone();
         let gmap = gmap.gmap.clone();
 
