@@ -62,7 +62,7 @@ pub fn main_records(args: &Commands) -> Result<()> {
 
         choosen_genome.sort();
 
-        records
+        records = records
             .subset_by_genomes(choosen_genome.as_slice())
             .change_context(GtencodeError::Input)?;
 

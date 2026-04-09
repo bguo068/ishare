@@ -56,10 +56,12 @@ pub enum Commands {
         /// optional genome id, if not specified, show all genomes
         #[arg(short, long)]
         genome: Option<u32>,
-        /// optional genome-wide position, if not specified, show all positions
+        /// optional path to sample list (one sample name per line),
+        /// if not specified, show all samples
         #[arg(short, long)]
         samples: Option<String>,
 
+        /// optional genome-wide position, if not specified, show all positions
         #[arg(short, long)]
         pos: Option<u32>,
 
