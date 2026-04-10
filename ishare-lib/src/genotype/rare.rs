@@ -66,6 +66,10 @@ impl GenotypeRecord {
     pub fn get_genome(&self) -> u32 {
         self.data[32..56].load()
     }
+    /// Assume genome 2*i and genome 2*i+1 belong to an individual i
+    pub fn get_individual(&self) -> u32 {
+        self.get_genome() / 2
+    }
     pub fn set_allele(&mut self, value: u8) {
         //assert!((value >> 8) == 0);
         self.data[56..64].store(value);
@@ -84,6 +88,10 @@ impl GenotypeRecord {
     pub fn get_genome_pos(&self) -> (u32, u32) {
         (self.get_genome(), self.get_position())
     }
+    /// Assume genome 2*i and genome 2*i+1 belong to an individual i
+    pub fn get_individual_pos(&self) -> (u32, u32) {
+        (self.get_genome() / 2, self.get_position())
+    }
     pub fn get_pos_genome(&self) -> (u32, u32) {
         (self.get_position(), self.get_genome())
     }
@@ -98,6 +106,7 @@ pub enum GenotypeRecordSortStatus {
     SortedByPositionGenomeAllele,
     SortedByGenomePositionAllele,
     SortedByPositionAlleleGenome,
+    SortedByIndividualPositionAllele,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -151,6 +160,19 @@ impl GenotypeRecords {
         }
     }
 
+    /// useful for counting shared rare variants by individual paris along chromosomal positions
+    pub fn sort_by_individual_position_allele(&mut self) -> Result<()> {
+        match self.sort_status {
+            GenotypeRecordSortStatus::SortedByIndividualPositionAllele => Ok(()),
+            _ => {
+                self.data
+                    .par_sort_unstable_by_key(|x| (x.get_individual_pos(), x.get_allele()));
+                self.sort_status = GenotypeRecordSortStatus::SortedByIndividualPositionAllele;
+                Ok(())
+            }
+        }
+    }
+
     /// useful for count allele freuquency
     pub fn sort_by_position_allele_genome(&mut self) -> Result<()> {
         match self.sort_status {
@@ -177,6 +199,13 @@ impl GenotypeRecords {
         })
     }
 
+    pub fn is_sorted_by_individual_position_allele_slow(&self) -> bool {
+        let recs = self.records();
+        recs.iter().zip(recs.iter().skip(1)).all(|(a, b)| {
+            (a.get_individual_pos(), a.get_allele()) < (b.get_individual_pos(), b.get_allele())
+        })
+    }
+
     pub fn is_sorted_by_position_genome_allele_slow(&self) -> bool {
         let recs = self.records();
         recs.iter().zip(recs.iter().skip(1)).all(|(a, b)| {
@@ -199,6 +228,13 @@ impl GenotypeRecords {
         matches!(
             self.sort_status,
             GenotypeRecordSortStatus::SortedByPositionAlleleGenome
+        )
+    }
+
+    pub fn is_sorted_by_individual_position_allele(&self) -> bool {
+        matches!(
+            self.sort_status,
+            GenotypeRecordSortStatus::SortedByIndividualPositionAllele
         )
     }
 
@@ -255,7 +291,7 @@ impl GenotypeRecords {
         genome1: u32,
         genome2: u32,
     ) -> impl Iterator<Item = (u32, Option<u8>, Option<u8>)> + '_ {
-        assert!(self.is_sorted_by_genome_position_allele());
+        // assert!(self.is_sorted_by_genome_position_allele());
         let s1 = self.data.partition_point(|x| x.get_genome() < genome1);
         let e1 = self.data.partition_point(|x| x.get_genome() <= genome1);
         let s2 = self.data.partition_point(|x| x.get_genome() < genome2);
@@ -273,6 +309,36 @@ impl GenotypeRecords {
         mergejoinby
     }
 
+    pub fn iter_individual_pair_genotypes(
+        &self,
+        individual1: u32,
+        individual2: u32,
+    ) -> impl Iterator<Item = (u32, Option<u8>, Option<u8>)> + '_ {
+        // assert!(self.is_sorted_by_individual_position_allele());
+        let s1 = self
+            .data
+            .partition_point(|x| x.get_individual() < individual1);
+        let e1 = self
+            .data
+            .partition_point(|x| x.get_individual() <= individual1);
+        let s2 = self
+            .data
+            .partition_point(|x| x.get_individual() < individual2);
+        let e2 = self
+            .data
+            .partition_point(|x| x.get_individual() <= individual2);
+        let mergejoinby = self.data[s1..e1]
+            .iter()
+            .merge_join_by(self.data[s2..e2].iter(), |a, b| {
+                (*a).get_pos_allele().total_cmp(&(*b).get_pos_allele())
+            })
+            .map(|res| match res {
+                Both(a, b) => (a.get_position(), Some(a.get_allele()), Some(b.get_allele())),
+                Left(a) => (a.get_position(), Some(a.get_allele()), None),
+                Right(b) => (b.get_position(), None, Some(b.get_allele())),
+            });
+        mergejoinby
+    }
     pub fn records(&self) -> &[GenotypeRecord] {
         &self.data
     }

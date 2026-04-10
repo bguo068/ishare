@@ -109,9 +109,9 @@ where
         &mut self.data[idx]
     }
 
-    pub fn set_by_names(&mut self, row_genome: u32, col_genome: u32, v: T) {
-        let row_idx = self.row_names_map[&row_genome];
-        let col_idx = self.col_names_map[&col_genome];
+    pub fn set_by_names(&mut self, row_names: u32, col_names: u32, v: T) {
+        let row_idx = self.row_names_map[&row_names];
+        let col_idx = self.col_names_map[&col_names];
         let idx = (row_idx as usize) * self.col_names.len() + (col_idx as usize);
         self.data[idx] = v;
     }

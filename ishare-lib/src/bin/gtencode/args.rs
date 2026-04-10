@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -113,17 +113,30 @@ pub enum Commands {
 
     /// Calculate pairwise similarity via Jaccard index
     Jaccard {
-        /// Path to genotype record table (input)
-        rec: PathBuf,
-        /// optional subsets of genome, if not set, use all genomes
+        /// Path to genotype record file(s).
+        /// if multiple records files are provided, they will be concatenated
+        rec: Vec<PathBuf>,
+
+        /// optional genome or individual ids, if not set, use all genomes/individuals.
+        /// The option can be used repeatedly to include different ids for analysis.
         #[arg(short, long, group = "genome_selection")]
-        genomes: Option<Vec<u32>>,
-        /// optional paths to one or two genome lists (each row is a genome ids).
-        /// If one list is provided, calculate within-list sharing.
-        /// If two lists are provided, calculate inter-list sharing.
-        /// The program will refuse to run if two overlapping lists are provided.
-        #[arg(short = 'l', long, group = "genome_selection")]
-        lists: Vec<PathBuf>,
+        id: Option<Vec<u32>>,
+
+        /// optional path to a 2 column, tab-separated group information file
+        /// with 1st column being individual names, 2nd column being the group names
+        #[arg(short = 'G', long)]
+        groups: Option<PathBuf>,
+
+        /// whether calculate rare variant sharing at haplotype level or sample level,
+        /// true -> haplotype level, false -> sample level
+        #[arg(short = 'l', long)]
+        level: Level,
+
+        /// whether calculate rare variant sharing at haplotype level or sample level,
+        /// true -> haplotype level, false -> sample level
+        #[arg(short = 'T', long)]
+        sharing_type: SharingType,
+
         /// optional low threshold of jaccard value of a genome pair to be printed
         #[arg(short = 'j', long)]
         min_jaccard: Option<f64>,
@@ -133,9 +146,17 @@ pub enum Commands {
         /// optional low threshold of total number of sites where a genome pair shares a rare allele
         #[arg(short = 's', long)]
         min_shared: Option<u32>,
+
+        /// optional num of pairs of chunk for parallelization
+        #[arg(short = 'C', long, default_value = "50000")]
+        chunk_size: usize,
+
         /// path to output file '*.jac'. If specified, results will not be printed on the screen
         #[arg(short = 'o', long)]
         output: Option<PathBuf>,
+
+        #[arg(short = 'a', long)]
+        aggregate_only: bool,
     },
 
     /// Calculate pairwise similarity via Cosine
@@ -256,4 +277,17 @@ pub enum Commands {
         #[arg(long, default_value_t = false)]
         keep_sites_with_multi_common_alleles: bool,
     },
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum Level {
+    IndividualLevel,
+    HaplotypeLevel,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum SharingType {
+    WithinGroup,
+    BetweenGroup,
+    Both,
 }

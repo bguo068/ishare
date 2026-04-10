@@ -1,12 +1,17 @@
+use crate::args::Level;
+
 use super::{GtencodeError, Result};
 use error_stack::*;
 
 use ahash::AHashMap;
-use ishare::genotype::rare::GenotypeRecords;
+use ishare::{genotype::rare::GenotypeRecords, indiv::Individuals};
 use itertools::Itertools;
+use log::warn;
 use slice_group_by::GroupBy;
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    path::{Path, PathBuf},
+};
 
 pub fn file_to_u32_vec(p: impl AsRef<Path>) -> Result<Vec<u32>> {
     let mut s = String::new();
@@ -27,6 +32,39 @@ pub fn file_to_u32_vec(p: impl AsRef<Path>) -> Result<Vec<u32>> {
     assert!(!v.is_empty());
     v.sort();
     Ok(v)
+}
+
+pub fn prep_groups(
+    ids: &Option<Vec<u32>>,
+    group_file: &Option<PathBuf>,
+    level: &crate::args::Level,
+    inds: &Individuals,
+) -> Result<HashMap<String, Vec<u32>>> {
+    let group_map = if let Some(ids) = ids {
+        // get unique ids
+        let mut v = ids.to_vec();
+        v.sort_unstable();
+        v.dedup();
+        if v.len() < 2 {
+            bail!(GtencodeError::Input
+                .into_report()
+                .attach("--id is provide but the number of unique id is less than two"));
+        }
+        if group_file.is_some() {
+            warn!("when --id is provided, --groups is ignored")
+        }
+        let mut group_map = HashMap::with_capacity(1);
+        group_map.insert("idx".to_owned(), v);
+        group_map
+    } else {
+        // use --groups options
+        let group_file = group_file
+            .as_ref()
+            .ok_or(GtencodeError::Input)
+            .attach("neither --id nor --group are provided")?;
+        read_groups_file(group_file, inds, *level).attach("fail to read group file")?
+    };
+    Ok(group_map)
 }
 
 pub type PairInfo = (
@@ -194,4 +232,88 @@ pub fn calc_base_relationship(freq_map: &AHashMap<u32, f64>) -> f64 {
         .values()
         .map(|p| (2.0 - 2.0 * p) * (2.0 - 2.0 * p) / 2.0 / p / (1.0 - p))
         .sum()
+}
+
+pub fn read_groups_file(
+    p: impl AsRef<Path>,
+    inds: &Individuals,
+    level: Level,
+) -> Result<HashMap<String, Vec<u32>>> {
+    // parse group files
+    let mut ind_id = 0;
+    let mut grp_name = "";
+    let mut group_map = HashMap::<String, Vec<u32>>::new();
+    for line in std::fs::read_to_string(p.as_ref())
+        .change_context(GtencodeError::Input)
+        .attach("fail to read group files")?
+        .trim()
+        .split("\n")
+    {
+        ensure!(
+            line.split("\t").count() == 2,
+            GtencodeError::Input
+                .into_report()
+                .attach("number of columns is not two in groups file")
+        );
+        for (ifield, field) in line.split("\t").enumerate() {
+            match ifield {
+                0 => {
+                    ind_id = if let Level::IndividualLevel = level {
+                        field
+                            .parse()
+                            .change_context(GtencodeError::Input)
+                            .attach("error in parsing genome id")?
+                    } else {
+                        *inds
+                            .m()
+                            .get(field)
+                            .ok_or(GtencodeError::Input)
+                            .attach("invalid sample name in groups file")?
+                    };
+                }
+                1 => {
+                    grp_name = field;
+                }
+                _ => {}
+            }
+        }
+        if let Some(val) = group_map.get_mut(grp_name) {
+            val.push(ind_id as u32);
+        } else {
+            group_map.insert(grp_name.to_owned(), vec![ind_id as u32]);
+        }
+    }
+    Ok(group_map)
+}
+
+pub fn read_and_concat_rare_genotypes(
+    records_paths: &[PathBuf],
+) -> Result<(GenotypeRecords, Individuals)> {
+    if records_paths.is_empty() {
+        bail!(GtencodeError::Input
+            .into_report()
+            .attach("at least one record file should be specified"));
+    }
+    let mut records = GenotypeRecords::from_parquet_file(&records_paths[0])
+        .change_context(GtencodeError::Input)?;
+    let ind_file = records_paths[0].with_extension("ind");
+    let inds = Individuals::from_parquet_file(&ind_file)
+        .change_context(GtencodeError::Input)
+        .attach("fail to read individual file")?;
+    for rec_file in records_paths.iter().skip(1) {
+        let records_additional =
+            GenotypeRecords::from_parquet_file(rec_file).change_context(GtencodeError::Input)?;
+        let ind_file = rec_file.with_extension("ind");
+        let inds_additional = Individuals::from_parquet_file(&ind_file)
+            .change_context(GtencodeError::Input)
+            .attach("fail to read individual file")?;
+        ensure!(
+            inds.v() == inds_additional.v(),
+            GtencodeError::Input
+                .into_report()
+                .attach("individuals are not consistent across record files")
+        );
+        records.merge(records_additional);
+    }
+    Ok((records, inds))
 }
