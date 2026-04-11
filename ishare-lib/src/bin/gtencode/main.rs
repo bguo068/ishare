@@ -14,17 +14,14 @@ pub enum GtencodeError {
 }
 
 pub mod args;
-pub mod cosine;
 pub mod encode;
 pub mod export;
-pub mod grm;
-pub mod jaccard;
 pub mod matrix;
 pub mod records;
 pub mod rvibd;
+pub mod rvshare;
 pub mod samplediff;
 pub mod samples;
-pub mod share;
 pub mod sites;
 #[cfg(feature = "skato")]
 pub mod skato;
@@ -56,17 +53,12 @@ fn main_entry() -> Result<()> {
             args @ Commands::Samples { .. } => {
                 samples::main_samples(args).attach("gtencode samples")?
             }
-            args @ Commands::Share { .. } => share::main_share(args).attach("gtencode share")?,
-            args @ Commands::Jaccard { .. } => {
-                jaccard::main_jaccard(args).attach("gtencode jaccard")?
+            args @ Commands::RvShare { .. } => {
+                rvshare::main_rvshare(args).attach("gtencode rv-share")?
             }
             args @ Commands::SampleDiff { .. } => {
                 samplediff::main_samplediff(args).attach("gtencode sample-diff")?
             }
-            args @ Commands::Cosine { .. } => {
-                cosine::main_cosine(args).attach("gtencode cosine")?
-            }
-            args @ Commands::Grm { .. } => grm::main_grm(args).attach("gtencode grm")?,
             #[cfg(feature = "skato")]
             args @ Commands::Skato { .. } => skato::main_skato(args).attach("gtencode skato")?,
             args @ Commands::RvIBD { .. } => rvibd::main_rvibd(args).attach("gtencode rv-ibd")?,

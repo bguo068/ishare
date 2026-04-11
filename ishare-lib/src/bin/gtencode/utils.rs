@@ -183,32 +183,22 @@ pub fn prep_pairs(
 
 pub fn calc_allele_frequency(
     rec: &mut GenotypeRecords,
-    num_hap: usize,
-    num_sites: usize,
-) -> Result<AHashMap<u32, f64>> {
-    rec.sort_by_position_genome_allele()
+    num_genomes: usize,
+) -> Result<AHashMap<(u32, u8), f64>> {
+    rec.sort_by_position_allele_genome()
         .change_context(GtencodeError::Input)?;
-    let mut freq_map = AHashMap::<u32, f64>::with_capacity(num_sites);
-    let mut target_pos = u32::MAX;
-    let mut cnt = 0u32;
-    for r in rec.records() {
-        let front_poistion = r.get_position();
-        if front_poistion != target_pos {
-            if target_pos != u32::MAX {
-                // allele frequency
-                let af = (cnt as f64) / (num_hap as f64);
-                freq_map.insert(target_pos, af);
-            }
-            target_pos = front_poistion;
-            cnt = 1;
-        } else {
-            cnt += 1;
-        }
-        if target_pos != u32::MAX {
-            freq_map.insert(target_pos, (cnt as f64) / (num_hap as f64));
-        }
-    }
-    Ok(freq_map)
+    let posallele2freq = rec
+        .records()
+        .chunk_by(|a, b| a.get_pos_allele() < b.get_pos_allele())
+        .map(|chunks| {
+            (
+                chunks[0].get_pos_allele(),
+                chunks.len() as f64 / num_genomes as f64,
+            )
+        })
+        .collect();
+
+    Ok(posallele2freq)
 }
 
 pub fn calc_allele_count(rec: &mut GenotypeRecords) -> Result<AHashMap<u32, u32>> {

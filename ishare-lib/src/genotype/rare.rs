@@ -309,6 +309,29 @@ impl GenotypeRecords {
         mergejoinby
     }
 
+    pub fn iter_genome_pair_pos_allele_count(
+        &self,
+        genome1: u32,
+        genome2: u32,
+    ) -> impl Iterator<Item = ((u32, u8), usize, usize)> + '_ {
+        // assert!(self.is_sorted_by_genome_position_allele());
+        let s1 = self.data.partition_point(|x| x.get_genome() < genome1);
+        let e1 = self.data.partition_point(|x| x.get_genome() <= genome1);
+        let s2 = self.data.partition_point(|x| x.get_genome() < genome2);
+        let e2 = self.data.partition_point(|x| x.get_genome() <= genome2);
+        let chunk1 = self.data[s1..e1].chunk_by(|a, b| a.get_pos_allele() == b.get_pos_allele());
+        let chunk2 = self.data[s2..e2].chunk_by(|a, b| a.get_pos_allele() == b.get_pos_allele());
+        chunk1
+            .merge_join_by(chunk2, |a, b| {
+                a[0].get_pos_allele().total_cmp(&b[0].get_pos_allele())
+            })
+            .map(|res| match res {
+                Both(a, b) => (a[0].get_pos_allele(), a.len(), b.len()),
+                Left(a) => (a[0].get_pos_allele(), a.len(), 0),
+                Right(b) => (b[0].get_pos_allele(), 0, b.len()),
+            })
+    }
+
     pub fn iter_individual_pair_genotypes(
         &self,
         individual1: u32,
@@ -339,6 +362,30 @@ impl GenotypeRecords {
             });
         mergejoinby
     }
+
+    pub fn iter_individual_pair_pos_allele_count(
+        &self,
+        indiv1: u32,
+        indiv2: u32,
+    ) -> impl Iterator<Item = ((u32, u8), usize, usize)> + '_ {
+        // assert!(self.is_sorted_by_genome_position_allele());
+        let s1 = self.data.partition_point(|x| x.get_individual() < indiv1);
+        let e1 = self.data.partition_point(|x| x.get_individual() <= indiv1);
+        let s2 = self.data.partition_point(|x| x.get_individual() < indiv2);
+        let e2 = self.data.partition_point(|x| x.get_individual() <= indiv2);
+        let chunk1 = self.data[s1..e1].chunk_by(|a, b| a.get_pos_allele() == b.get_pos_allele());
+        let chunk2 = self.data[s2..e2].chunk_by(|a, b| a.get_pos_allele() == b.get_pos_allele());
+        chunk1
+            .merge_join_by(chunk2, |a, b| {
+                a[0].get_pos_allele().total_cmp(&b[0].get_pos_allele())
+            })
+            .map(|res| match res {
+                Both(a, b) => (a[0].get_pos_allele(), a.len(), b.len()),
+                Left(a) => (a[0].get_pos_allele(), a.len(), 0),
+                Right(b) => (b[0].get_pos_allele(), 0, b.len()),
+            })
+    }
+
     pub fn records(&self) -> &[GenotypeRecord] {
         &self.data
     }

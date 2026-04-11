@@ -1,7 +1,9 @@
+use ahash::AHashMap;
 use itertools::Itertools;
 use std::path::PathBuf;
 
 use crate::args::Level;
+use crate::args::SharingMetric;
 use crate::args::SharingType;
 use crate::utils::prep_groups;
 use crate::utils::read_and_concat_rare_genotypes;
@@ -18,11 +20,12 @@ use rayon::prelude::*;
 struct CliParameters {
     level: Level,
     sharing_type: SharingType,
-    min_jaccard: f64,
-    min_total: u32,
-    min_shared: u32,
+    min_sharing: f64,
+    min_denominator: f64,
+    min_numerator: f64,
     aggregate_only: bool,
     chunk_size: usize,
+    metric: SharingMetric,
 }
 
 struct ChunkResult {
@@ -31,34 +34,36 @@ struct ChunkResult {
     running_sum: f64,
 }
 
-pub fn main_jaccard(args: &Commands) -> Result<()> {
-    if let Commands::Jaccard {
+pub fn main_rvshare(args: &Commands) -> Result<()> {
+    if let Commands::RvShare {
         rec,
         id,
         groups,
         level,
         sharing_type,
-        min_jaccard,
-        min_total,
-        min_shared,
+        min_sharing,
+        min_denominator,
+        min_numerator,
         output,
         aggregate_only,
         chunk_size,
+        metric,
     } = args
     {
-        let min_jaccard = min_jaccard.unwrap_or(-1.0f64);
-        let min_total = min_total.unwrap_or(0u32);
-        let min_shared = min_shared.unwrap_or(0u32);
+        let min_jaccard = min_sharing.unwrap_or(-1.0f64);
+        let min_total = min_denominator.unwrap_or(0.0f64);
+        let min_shared = min_numerator.unwrap_or(0.0f64);
 
         // use this struct to avoid passing them individually in function calls
         let cli = CliParameters {
             level: *level,
             sharing_type: *sharing_type,
-            min_jaccard,
-            min_shared,
-            min_total,
+            min_sharing: min_jaccard,
+            min_numerator: min_shared,
+            min_denominator: min_total,
             aggregate_only: *aggregate_only,
             chunk_size: *chunk_size,
+            metric: *metric,
         };
 
         if groups.is_some() && !id.is_some() {
@@ -66,6 +71,13 @@ pub fn main_jaccard(args: &Commands) -> Result<()> {
         }
 
         let (mut records, inds) = read_and_concat_rare_genotypes(rec)?;
+
+        let freq_map = if matches!(cli.metric, SharingMetric::GRM) {
+            crate::utils::calc_allele_frequency(&mut records, inds.v().len() * 2)
+                .change_context(GtencodeError::Input)?
+        } else {
+            AHashMap::new()
+        };
 
         // sort_records according sharing level
         match &level {
@@ -120,16 +132,16 @@ pub fn main_jaccard(args: &Commands) -> Result<()> {
                 };
 
                 // process group pairs
-                let res = process_group_pair(&records, id_pairs.as_slice(), &cli)?;
+                let res = process_group_pair(&records, id_pairs.as_slice(), &cli, &freq_map)?;
 
                 // write result for a group pair
                 write_results_for_a_group_pair(
                     (grp1, grp2),
-                    ids1,
-                    ids2,
+                    (ids1, ids2),
                     res,
                     &mut aggfile,
                     cli.aggregate_only,
+                    cli.level,
                     output,
                 )?;
             }
@@ -142,6 +154,7 @@ fn process_group_pair(
     records: &GenotypeRecords,
     pairs: &[(u32, u32)],
     cli: &CliParameters,
+    freq_map: &AHashMap<(u32, u8), f64>,
 ) -> Result<Vec<ChunkResult>> {
     // run in parallel and collect row results
     let res: Vec<_> = pairs
@@ -153,49 +166,84 @@ fn process_group_pair(
 
             for &(id1, id2) in chunk {
                 npairs += 1;
-                let mut total: u32 = 0;
-                let mut shared: u32 = 0;
+                let mut denominator1 = 0.0f64;
+                let mut denominator2 = 0.0f64;
+                let mut numerator: f64 = 0.0f64;
 
-                match cli.level {
-                    Level::IndividualLevel => {
-                        for (_pos, allele1_opt, allele2_opt) in
-                            records.iter_individual_pair_genotypes(id1, id2)
-                        {
-                            match (allele1_opt, allele2_opt) {
-                                (Some(_), Some(_)) => {
-                                    shared += 1;
-                                    total += 1
+                match cli.metric {
+                    SharingMetric::Jaccard => match cli.level {
+                        Level::IndividualLevel => {
+                            for (_, n1, n2) in
+                                records.iter_individual_pair_pos_allele_count(id1, id2)
+                            {
+                                numerator += n1.min(n2) as f64;
+                                denominator1 += n1.max(n2) as f64;
+                            }
+                        }
+                        Level::HaplotypeLevel => {
+                            for (_, n1, n2) in records.iter_genome_pair_pos_allele_count(id1, id2) {
+                                numerator += n1.min(n2) as f64;
+                                denominator1 += n1.max(n2) as f64;
+                            }
+                        }
+                    },
+                    SharingMetric::Cosine => {
+                        match cli.level {
+                            Level::IndividualLevel => {
+                                for (_, n1, n2) in
+                                    records.iter_individual_pair_pos_allele_count(id1, id2)
+                                {
+                                    numerator += n1 as f64 * n2 as f64;
+                                    denominator1 += n1 as f64 * n1 as f64;
+                                    denominator2 += n1 as f64 * n1 as f64;
                                 }
-                                (None, None) => {}
-                                _ => {
-                                    total += 1;
+                            }
+                            Level::HaplotypeLevel => {
+                                for (_, n1, n2) in
+                                    records.iter_genome_pair_pos_allele_count(id1, id2)
+                                {
+                                    numerator += n1 as f64 * n2 as f64;
+                                    denominator1 += n1 as f64 * n1 as f64;
+                                    denominator2 += n1 as f64 * n1 as f64;
                                 }
                             }
                         }
+                        denominator2 = denominator2.sqrt();
+                        denominator1 = denominator1.sqrt();
                     }
-                    Level::HaplotypeLevel => {
-                        for (_pos, a, b) in records.iter_genome_pair_genotypes(id1, id2) {
-                            match (a, b) {
-                                (Some(a), Some(b)) if a == b => {
-                                    shared += 1;
-                                    total += 1
-                                }
-                                (None, None) => {}
-                                (_, _) => total += 1,
+                    SharingMetric::GRM => match cli.level {
+                        Level::IndividualLevel => {
+                            for (pos_allele, n1, n2) in
+                                records.iter_individual_pair_pos_allele_count(id1, id2)
+                            {
+                                let freq = freq_map[&pos_allele];
+                                numerator += (n1 as f64 - 2.0 * freq) * (n2 as f64 - 2.0 * freq);
+                                denominator1 += 2.0 * freq * (1.0 - freq);
                             }
                         }
-                    }
+                        Level::HaplotypeLevel => {
+                            for (pos_allele, n1, n2) in
+                                records.iter_genome_pair_pos_allele_count(id1, id2)
+                            {
+                                let freq = freq_map[&pos_allele];
+                                numerator += (n1 as f64 - 2.0 * freq) * (n2 as f64 - 2.0 * freq);
+                                denominator1 += 2.0 * freq * (1.0 - freq);
+                            }
+                        }
+                    },
                 }
 
-                let out = (id1, id2, shared as f64 / total as f64);
-                if (total < cli.min_total)
-                    || (shared < cli.min_shared)
-                    || ((shared as f64) / (total as f64) < cli.min_jaccard)
+                let denominator = denominator1 + denominator2;
+                let sharing = numerator / denominator;
+                let out = (id1, id2, sharing);
+                if (denominator1 < cli.min_denominator)
+                    || (numerator < cli.min_numerator)
+                    || (sharing < cli.min_sharing)
                 {
                     continue;
                 }
 
-                running_sum += (shared as f64) / (total as f64);
+                running_sum += sharing;
 
                 if !cli.aggregate_only {
                     local_vec.push(out);
@@ -213,14 +261,15 @@ fn process_group_pair(
 
 fn write_results_for_a_group_pair(
     groups: (&str, &str),
-    ids1: &[u32],
-    ids2: &[u32],
+    ids: (&[u32], &[u32]),
     res: Vec<ChunkResult>,
     aggrefile: &mut std::io::BufWriter<std::fs::File>,
     aggregate_only: bool,
+    level: Level,
     output: &Option<PathBuf>,
 ) -> Result<()> {
     let (grp1, grp2) = groups;
+    let (ids1, ids2) = ids;
     // for identicial sets, elements correponsing to lower matrix is not
     // calculated use this as an indicator to fill the the low part of
     // the matrix when updating the full jaccard matrix
@@ -233,14 +282,21 @@ fn write_results_for_a_group_pair(
     for chunk_res in res {
         grand_npairs += chunk_res.npairs;
         grand_running_sum += chunk_res.running_sum;
-        for (g1, g2, sharing) in chunk_res.paires_vec {
+        for (id1, id2, sharing) in chunk_res.paires_vec {
             if output.is_none() {
-                println!("g1={g1}, g2={g2}, sharing: {sharing:.6}",);
+                match level {
+                    Level::HaplotypeLevel => {
+                        println!("g1={id1}, g2={id2}, sharing: {sharing:.6}",);
+                    }
+                    Level::IndividualLevel => {
+                        println!("ind1={id1}, ind2={id2}, sharing: {sharing:.6}",);
+                    }
+                }
             }
             // update the matrix
-            resmat.set_by_names(g1, g2, sharing);
+            resmat.set_by_names(id1, id2, sharing);
             if identifical {
-                resmat.set_by_names(g2, g1, sharing);
+                resmat.set_by_names(id2, id1, sharing);
             }
         }
     }
@@ -252,7 +308,7 @@ fn write_results_for_a_group_pair(
         .attach("fail to write aggregate into file")?;
 
     if output.is_none() {
-        println!("grand_mean={grand_mean}");
+        println!("group1={grp1}, group2={grp2}, grand_mean={grand_mean}");
     }
 
     if !aggregate_only {

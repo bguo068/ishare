@@ -101,18 +101,8 @@ pub enum Commands {
         #[arg(short = 'i', long)]
         idx_genome: Option<usize>,
     },
-    /// View genotype sharing between two genome
-    Share {
-        /// Path to Genotype record table (input)
-        rec: PathBuf,
-        /// genome 1
-        a: u32,
-        /// genome 2
-        b: u32,
-    },
-
     /// Calculate pairwise similarity via Jaccard index
-    Jaccard {
+    RvShare {
         /// Path to genotype record file(s).
         /// if multiple records files are provided, they will be concatenated
         rec: Vec<PathBuf>,
@@ -128,28 +118,29 @@ pub enum Commands {
         groups: Option<PathBuf>,
 
         /// whether calculate rare variant sharing at haplotype level or sample level,
-        /// true -> haplotype level, false -> sample level
-        #[arg(short = 'l', long)]
+        #[arg(short = 'l', long, default_value = "individual-level")]
         level: Level,
 
-        /// whether calculate rare variant sharing at haplotype level or sample level,
-        /// true -> haplotype level, false -> sample level
-        #[arg(short = 'T', long)]
+        /// whether calculate rare variant sharing within-group,between-group, or both
+        #[arg(short = 'T', long, default_value = "both")]
         sharing_type: SharingType,
 
-        /// optional low threshold of jaccard value of a genome pair to be printed
+        /// optional low threshold of sharing value of a genome/individual pair
         #[arg(short = 'j', long)]
-        min_jaccard: Option<f64>,
-        /// optional low threshold of total number of sites with rare alleles for a genome pair
+        min_sharing: Option<f64>,
+        /// optional low threshold of denominator of the sharing
         #[arg(short = 't', long)]
-        min_total: Option<u32>,
-        /// optional low threshold of total number of sites where a genome pair shares a rare allele
+        min_denominator: Option<f64>,
+        /// optional low threshold of numerator of the sharing
         #[arg(short = 's', long)]
-        min_shared: Option<u32>,
+        min_numerator: Option<f64>,
 
         /// optional num of pairs of chunk for parallelization
         #[arg(short = 'C', long, default_value = "50000")]
         chunk_size: usize,
+
+        #[arg(short = 'm', long, default_value = "jaccard")]
+        metric: SharingMetric,
 
         /// path to output file '*.jac'. If specified, results will not be printed on the screen
         #[arg(short = 'o', long)]
@@ -157,55 +148,6 @@ pub enum Commands {
 
         #[arg(short = 'a', long)]
         aggregate_only: bool,
-    },
-
-    /// Calculate pairwise similarity via Cosine
-    // See definition in https://en.wikipedia.org/wiki/Cosine_similarity
-    Cosine {
-        /// Path to genotype record table (input)
-        rec: PathBuf,
-        /// optional subsets of genome, if not set, use all genomes
-        #[arg(short, long, group = "genome_selection")]
-        genomes: Option<Vec<u32>>,
-        /// optional paths to one or two genome lists (each row is a genome ids).
-        /// If one list is provided, calculate within-list sharing.
-        /// If two lists are provided, calculate inter-list sharing.
-        /// The program will refuse to run if two overlapping lists are provided.
-        #[arg(short = 'l', long, group = "genome_selection")]
-        lists: Vec<PathBuf>,
-        /// optional low threshold of consine similarity for a genome pair
-        #[arg(short = 'c', long)]
-        min_cosine: Option<f64>,
-        /// optional low threshold of magnitude (denominator) for a genome pair
-        #[arg(short = 'm', long)]
-        min_magnitude: Option<f64>,
-        /// optional low threshold of dot product (numerator) for a genome pair
-        #[arg(short = 'p', long)]
-        min_dot_prod: Option<i32>,
-        /// path to output file '*.jac'. If specified, results will not be printed on the screen
-        #[arg(short = 'o', long)]
-        output: Option<PathBuf>,
-    },
-    /// Calculate pairwise similarity via GRM (GCTA formula)
-    // See defintion in Eqn3 of GCTA paper: https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3014363/
-    Grm {
-        /// Path to genotype record table (input)
-        rec: PathBuf,
-        /// optional subsets of genome, if not set, use all genomes
-        #[arg(short, long, group = "genome_selection")]
-        genomes: Option<Vec<u32>>,
-        /// optional paths to one or two genome lists (each row is a genome ids).
-        /// If one list is provided, calculate within-list sharing.
-        /// If two lists are provided, calculate inter-list sharing.
-        /// The program will refuse to run if two overlapping lists are provided.
-        #[arg(short = 'l', long, group = "genome_selection")]
-        lists: Vec<PathBuf>,
-        /// optional low threshold of grm relationship for a genome pair
-        #[arg(short = 'r', long)]
-        min_grm_related: Option<f64>,
-        /// path to output file '*.jac'. If specified, results will not be printed on the screen
-        #[arg(short = 'o', long)]
-        output: Option<PathBuf>,
     },
     /// Run binary trait SKAT-O test
     /// see details in Lee et al 2012 AJHG: https://www.cell.com/ajhg/fulltext/S0002-9297(12)00316-3
@@ -290,4 +232,11 @@ pub enum SharingType {
     WithinGroup,
     BetweenGroup,
     Both,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum SharingMetric {
+    Cosine,
+    Jaccard,
+    GRM,
 }
