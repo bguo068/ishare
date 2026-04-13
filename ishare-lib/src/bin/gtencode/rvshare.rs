@@ -194,7 +194,7 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
             if grp1 < grp2 {
                 continue;
             }
-            eprintln!("process id pairs in each group pair- {grp1} and {grp2}");
+            eprintln!("process group pair- GROUP1={grp1} and GROUP2={grp2}");
             id_pairs.clear();
             if grp1 == grp2 && !matches!(cli.sharing_type, SharingType::BetweenGroup) {
                 id_pairs.extend(
@@ -386,12 +386,12 @@ fn write_results_for_a_group_pair(
     let grand_mean = grand_running_sum / (grand_npairs as f64);
     use std::io::Write;
 
-    writeln!(aggrefile, "{grp1}\t{grp2}\t{grand_mean}")
+    writeln!(aggrefile, "{grp1}\t{grp2}\t{grand_npairs}\t{grand_mean}")
         .change_context(GtencodeError::Output)
         .attach("fail to write aggregate into file")?;
 
     if output.is_none() {
-        println!("group1={grp1}, group2={grp2}, grand_mean={grand_mean}");
+        println!("group1={grp1}, group2={grp2}, npairs={grand_npairs}, grand_mean={grand_mean}");
     }
 
     if !aggregate_only {
