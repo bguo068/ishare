@@ -141,11 +141,11 @@ pub enum Commands {
 
         /// optional min frequency of rare variant to be considered
         #[arg(short = 'a', long)]
-        min_ac: u32,
+        min_ac: Option<u32>,
 
         /// optional max frequency of rare variant to be considered
         #[arg(short = 'A', long)]
-        max_ac: u32,
+        max_ac: Option<u32>,
 
         #[arg(short = 'm', long, default_value = "jaccard")]
         metric: SharingMetric,
@@ -154,6 +154,8 @@ pub enum Commands {
         #[arg(short = 'o', long)]
         output: Option<PathBuf>,
 
+        /// optional flag. if set will skip a few process steps and load the processed
+        /// file as input to accerlate computing and reduce memory footprint
         #[arg(long)]
         from_processed_records: bool,
 
@@ -164,8 +166,8 @@ pub enum Commands {
         #[arg(long)]
         to_processed_records: bool,
 
-        /// optional flag. if set will skip a few process steps and load the processed
-        /// file as input to accerlate computing and reduce memory footprint
+        /// optional flag. if set, skip tracking/writing the sharing matrix for each indivial or genome pairs
+        /// instead only the aggregates on group levels are tracked and written to disk
         #[arg(short = 'a', long)]
         aggregate_only: bool,
 
