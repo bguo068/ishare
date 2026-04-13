@@ -1,5 +1,7 @@
 use ahash::AHashMap;
 use itertools::Itertools;
+use slice_group_by::GroupBy;
+use slice_group_by::GroupByMut;
 use std::path::PathBuf;
 
 use crate::args::Level;
@@ -79,7 +81,7 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
             eprintln!("WARN: when --groups is set, --id options are ignored");
         }
 
-        let (records, inds, freq_map) = if *from_processed_records {
+        let (mut records, inds, freq_map) = if *from_processed_records {
             // read processed records
             let records =
                 GenotypeRecords::from_parquet_file(&rec[0]).change_context(GtencodeError::Input)?;
@@ -156,23 +158,6 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
             return Ok(());
         }
 
-        // ensure level and sort status are consistent
-        match &level {
-            Level::IndividualLevel => {
-                ensure!(
-                records.is_sorted_by_individual_position_allele(),
-                GtencodeError::Input.into_report().attach("requested individual level sharing analysis but genotype records is not sorted by individual/position/allele")
-                    
-                );
-            }
-            Level::HaplotypeLevel => {
-                ensure!(
-                records.is_sorted_by_genome_position_allele(),
-                GtencodeError::Input.into_report().attach("requested haplotype level sharing analysis but genotype records is not sorted by individual/position/allele")
-                    
-                );
-            }
-        }
 
         // create a file to write aggregate per group pairs
         let agg_file_path = output
@@ -189,6 +174,42 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
 
         let target_group_pairs =
             prep_target_group_pairs(&group_map, target_group_pairs, cli.sharing_type)?;
+
+        // ensure level and sort status are consistent and consolidate records for only target samples
+        eprintln!("consolidating records only for targeted individuals or genomes");
+        let mut target_ids: Vec<u32> = vec![];
+        for (_grp, ids )in group_map.iter(){
+            target_ids.extend(ids.iter());
+            target_ids.sort();
+        }
+        match &level {
+            Level::IndividualLevel => {
+                ensure!(
+                records.is_sorted_by_individual_position_allele(),
+                GtencodeError::Input.into_report().attach("requested individual level sharing analysis but genotype records is not sorted by individual/position/allele")
+                    
+                );
+                records.records_mut().linear_group_by_key_mut(|s| s.get_individual()).merge_join_by(target_ids.iter(), |a, b| a[0].get_individual() < **b).for_each(|e| if let itertools::Either::Left(to_exclude)= e{
+                    to_exclude.iter_mut().for_each(|rec| rec.set_sentinel());
+                    todo!()
+                    
+                });
+                records.records_mut().retain(|rec| !rec.is_sentinel());
+            }
+            Level::HaplotypeLevel => {
+                ensure!(
+                records.is_sorted_by_genome_position_allele(),
+                GtencodeError::Input.into_report().attach("requested haplotype level sharing analysis but genotype records is not sorted by individual/position/allele")
+                    
+                );
+                records.records_mut().linear_group_by_key_mut(|s| s.get_genome()).merge_join_by(target_ids.iter(), |a, b| a[0].get_genome() < **b).for_each(|e| if let itertools::Either::Left(to_exclude)= e{
+                    to_exclude.iter_mut().for_each(|rec| rec.set_sentinel());
+                    todo!()
+                    
+                });
+                records.records_mut().retain(|rec| !rec.is_sentinel());
+            }
+        }
 
         // process id pairs in each group pair
         let mut id_pairs = vec![];
@@ -215,6 +236,15 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
                     ids1.iter()
                         .copied()
                         .cartesian_product(ids2.iter().copied())
+                        // order them
+                        .map(|(a, b)|{
+                            if a < b {
+                                (b, a)
+                            }
+                            else{
+                                (a, b)
+                            }
+                        })
                         .collect_vec(),
                 );
             };
