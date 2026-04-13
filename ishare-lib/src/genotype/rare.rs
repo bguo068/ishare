@@ -457,6 +457,9 @@ impl GenotypeRecords {
             "SortedByPositionAlleleGenome" => {
                 GenotypeRecordSortStatus::SortedByPositionAlleleGenome
             }
+            "SortedByIndividualPositionAllele" => {
+                GenotypeRecordSortStatus::SortedByIndividualPositionAllele
+            }
             _ => GenotypeRecordSortStatus::Unsorted,
         };
         let mut reader = builder.build().change_context(IshareError::RareGenotype)?;
