@@ -151,6 +151,11 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
             (records, inds, freq_map)
         };
 
+        if *to_processed_records{
+            eprintln!("successfully processed genotype records");
+            return Ok(());
+        }
+
         // ensure level and sort status are consistent
         match &level {
             Level::IndividualLevel => {
