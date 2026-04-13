@@ -154,8 +154,26 @@ pub enum Commands {
         #[arg(short = 'o', long)]
         output: Option<PathBuf>,
 
+        #[arg(long)]
+        from_processed_records: bool,
+
+        /// optional flag. if set, the program will concat records file(s),
+        /// remove rare variants below min-ac and max-ac, write the processed
+        /// records to path specificed by output which is mainly designed for
+        /// quick loading for distributed computing.
+        #[arg(long)]
+        to_processed_records: bool,
+
+        /// optional flag. if set will skip a few process steps and load the processed
+        /// file as input to accerlate computing and reduce memory footprint
         #[arg(short = 'a', long)]
         aggregate_only: bool,
+
+        /// optional argument to specify a path which contains tab-separate two column table.
+        /// Each column is group name, each row is a group pairs.
+        /// If two group names are the same, it will calculate within-group sharing.
+        #[arg(long)]
+        target_group_pairs: Option<PathBuf>,
     },
     /// Run binary trait SKAT-O test
     /// see details in Lee et al 2012 AJHG: https://www.cell.com/ajhg/fulltext/S0002-9297(12)00316-3

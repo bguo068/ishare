@@ -52,6 +52,9 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
         metric,
         min_ac,
         max_ac,
+        from_processed_records,
+        to_processed_records,
+        target_group_pairs,
     } = args
     {
         let min_jaccard = min_sharing.unwrap_or(-1.0f64);
@@ -76,30 +79,93 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
             eprintln!("WARN: when --groups is set, --id options are ignored");
         }
 
-        eprintln!("read and concat rare genotype");
-        let (mut records, inds) = read_and_concat_rare_genotypes(rec, cli.min_ac, cli.max_ac)?;
+        let (records, inds, freq_map) = if *from_processed_records {
+            // read processed records
+            let records =
+                GenotypeRecords::from_parquet_file(&rec[0]).change_context(GtencodeError::Input)?;
+            let ind_file = rec[0].with_extension("ind");
+            let inds = ishare::indiv::Individuals::from_parquet_file(&ind_file)
+                .change_context(GtencodeError::Input)
+                .attach("fail to read individual file")?;
+            let freq_map = if matches!(cli.metric, SharingMetric::GRM) {
+                let mut records_for_freq =
+                    GenotypeRecords::from_parquet_file(rec[0].with_extension(".rec2"))
+                        .change_context(GtencodeError::Input)?;
+                crate::utils::calc_allele_frequency(&mut records_for_freq, inds.v().len() * 2)
+                    .change_context(GtencodeError::Input)?
+            } else {
+                AHashMap::new()
+            };
 
-        let freq_map = if matches!(cli.metric, SharingMetric::GRM) {
-            eprintln!("build allele frequency map");
-            crate::utils::calc_allele_frequency(&mut records, inds.v().len() * 2)
-                .change_context(GtencodeError::Input)?
+            (records, inds, freq_map)
         } else {
-            AHashMap::new()
+            eprintln!("read and concat rare genotype");
+            let (mut records, inds) = read_and_concat_rare_genotypes(rec, cli.min_ac, cli.max_ac)?;
+            let freq_map = if matches!(cli.metric, SharingMetric::GRM) {
+                eprintln!("build allele frequency map");
+                let freq_map =
+                    crate::utils::calc_allele_frequency(&mut records, inds.v().len() * 2)
+                        .change_context(GtencodeError::Input)?;
+                if *to_processed_records {
+                    records
+                        .clone()
+                        .into_parquet_file(rec[0].with_extension(".rec2"))
+                        .change_context(GtencodeError::Output)
+                        .attach("fail to write records file for allele frequency calculation")?;
+                }
+                freq_map
+            } else {
+                AHashMap::new()
+            };
+
+            eprintln!("sort_records according sharing level");
+            match &level {
+                Level::IndividualLevel => {
+                    records
+                        .sort_by_individual_position_allele()
+                        .change_context(GtencodeError::Library)
+                        .attach("fail to sort genotype records by individual/position/allele")?;
+                }
+                Level::HaplotypeLevel => {
+                    records
+                        .sort_by_genome_position_allele()
+                        .change_context(GtencodeError::Library)
+                        .attach("fail to sort genotype records by genome position allele")?;
+                }
+            }
+            if *to_processed_records {
+                let p = output
+                    .as_ref()
+                    .unwrap_or(&PathBuf::from("merged.rec"))
+                    .with_extension("rec");
+                records
+                    .clone()
+                    .into_parquet_file(&p)
+                    .change_context(GtencodeError::Output)
+                    .attach("fail to write merged records")?;
+                inds.clone()
+                    .into_parquet_file(p.with_extension("ind"))
+                    .change_context(GtencodeError::Output)
+                    .attach("fail to write ind file for merged records")?;
+            }
+            (records, inds, freq_map)
         };
 
-        eprintln!("sort_records according sharing level");
+        // ensure level and sort status are consistent
         match &level {
             Level::IndividualLevel => {
-                records
-                    .sort_by_individual_position_allele()
-                    .change_context(GtencodeError::Library)
-                    .attach("fail to sort genotype records by individual/position/allele")?;
+                ensure!(
+                records.is_sorted_by_individual_position_allele(),
+                GtencodeError::Input.into_report().attach("requested individual level sharing analysis but genotype records is not sorted by individual/position/allele")
+                    
+                );
             }
             Level::HaplotypeLevel => {
-                records
-                    .sort_by_genome_position_allele()
-                    .change_context(GtencodeError::Library)
-                    .attach("fail to sort genotype records by genome position allele")?;
+                ensure!(
+                records.is_sorted_by_genome_position_allele(),
+                GtencodeError::Input.into_report().attach("requested haplotype level sharing analysis but genotype records is not sorted by individual/position/allele")
+                    
+                );
             }
         }
 
@@ -116,48 +182,52 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
         eprintln!("prep groups mapping from group name to a vector of Ids in that group");
         let group_map = prep_groups(id, groups, level, &inds)?;
 
+        let target_group_pairs =
+            prep_target_group_pairs(&group_map, target_group_pairs, cli.sharing_type)?;
+
         // process id pairs in each group pair
         let mut id_pairs = vec![];
-        for (grp1, ids1) in group_map.iter() {
-            for (grp2, ids2) in group_map.iter() {
-                // avoid repeated calculation such as grp1-grp2 and then grp2- rp1
-                if grp1 < grp2 {
-                    continue;
-                }
-                eprintln!("process id pairs in each group pair- {grp1} and {grp2}");
-                id_pairs.clear();
-                if grp1 == grp2 && !matches!(cli.sharing_type, SharingType::BetweenGroup) {
-                    id_pairs.extend(
-                        ids1.iter()
-                            .copied()
-                            .cartesian_product(ids2.iter().copied())
-                            // filter to avoid duplicated calculation when a and b are in the same group
-                            .filter(|(a, b)| a > b),
-                    );
-                }
-                if grp1 != grp2 && !matches!(cli.sharing_type, SharingType::WithinGroup) {
-                    id_pairs.extend(
-                        ids1.iter()
-                            .copied()
-                            .cartesian_product(ids2.iter().copied())
-                            .collect_vec(),
-                    );
-                };
-
-                // process group pairs
-                let res = process_group_pair(&records, id_pairs.as_slice(), &cli, &freq_map)?;
-
-                // write result for a group pair
-                write_results_for_a_group_pair(
-                    (grp1, grp2),
-                    (ids1, ids2),
-                    res,
-                    &mut aggfile,
-                    cli.aggregate_only,
-                    cli.level,
-                    output,
-                )?;
+        for (grp1, grp2) in target_group_pairs.iter() {
+            let ids1 = &group_map[grp1];
+            let ids2 = &group_map[grp2];
+            // avoid repeated calculation such as grp1-grp2 and then grp2- rp1
+            if grp1 < grp2 {
+                continue;
             }
+            eprintln!("process id pairs in each group pair- {grp1} and {grp2}");
+            id_pairs.clear();
+            if grp1 == grp2 && !matches!(cli.sharing_type, SharingType::BetweenGroup) {
+                id_pairs.extend(
+                    ids1.iter()
+                        .copied()
+                        .cartesian_product(ids2.iter().copied())
+                        // filter to avoid duplicated calculation when a and b are in the same group
+                        .filter(|(a, b)| a > b),
+                );
+            }
+            if grp1 != grp2 && !matches!(cli.sharing_type, SharingType::WithinGroup) {
+                id_pairs.extend(
+                    ids1.iter()
+                        .copied()
+                        .cartesian_product(ids2.iter().copied())
+                        .collect_vec(),
+                );
+            };
+            id_pairs.par_sort_unstable();
+
+            // process group pairs
+            let res = process_group_pair(&records, id_pairs.as_slice(), &cli, &freq_map)?;
+
+            // write result for a group pair
+            write_results_for_a_group_pair(
+                (grp1, grp2),
+                (ids1, ids2),
+                res,
+                &mut aggfile,
+                cli.aggregate_only,
+                cli.level,
+                output,
+            )?;
         }
     }
     Ok(())
@@ -178,7 +248,6 @@ fn process_group_pair(
             let mut running_sum = 0.0f64;
 
             for &(id1, id2) in chunk {
-                npairs += 1;
                 let mut denominator1 = 0.0f64;
                 let mut denominator2 = 0.0f64;
                 let mut numerator: f64 = 0.0f64;
@@ -256,6 +325,7 @@ fn process_group_pair(
                     continue;
                 }
 
+                npairs += 1;
                 running_sum += sharing;
 
                 if !cli.aggregate_only {
@@ -340,4 +410,63 @@ fn write_results_for_a_group_pair(
         }
     }
     Ok(())
+}
+
+fn prep_target_group_pairs(
+    group_map: &std::collections::HashMap<String, Vec<u32>>,
+    target_group_pairs_file: &Option<PathBuf>,
+    sharing_type: SharingType,
+) -> Result<Vec<(String, String)>> {
+    let mut target_group_pair = vec![];
+
+    if let Some(p) = target_group_pairs_file.as_ref() {
+        for line in std::fs::read_to_string(p)
+            .change_context(GtencodeError::Input)
+            .attach("fail to read target group pair file")?
+            .trim()
+            .split("\n")
+        {
+            let mut fields = line.trim().split("\t");
+            let mut grp1 = fields
+                .next()
+                .ok_or(GtencodeError::Input)
+                .attach("fail to parse column 1 in target group file")?
+                .to_owned();
+            if !group_map.contains_key(&grp1) {
+                eprintln!("{grp1} is not a valid group name, related group paris are ignored");
+                continue;
+            }
+            let mut grp2 = fields
+                .next()
+                .ok_or(GtencodeError::Input)
+                .attach("fail to parse column 2 in target group file")?
+                .to_owned();
+            if !group_map.contains_key(&grp2) {
+                eprintln!("{grp2} is not a valid group name, related group paris are ignored");
+                continue;
+            }
+            if grp1 < grp2 {
+                std::mem::swap(&mut grp1, &mut grp2);
+            }
+            target_group_pair.push((grp1, grp2));
+        }
+    } else {
+        for (grp1, _ids1) in group_map.iter() {
+            for (grp2, _ids2) in group_map.iter() {
+                // avoid repeated calculation such as grp1-grp2 and then grp2- rp1
+                if grp1 < grp2 {
+                    continue;
+                }
+                if grp1 == grp2 && !matches!(sharing_type, SharingType::BetweenGroup) {
+                    target_group_pair.push((grp1.to_owned(), grp2.to_owned()))
+                }
+                if grp1 != grp2 && !matches!(sharing_type, SharingType::WithinGroup) {
+                    target_group_pair.push((grp1.to_owned(), grp2.to_owned()))
+                };
+            }
+        }
+    }
+    target_group_pair.sort();
+
+    Ok(target_group_pair)
 }
