@@ -1,6 +1,5 @@
 use ahash::AHashMap;
 use itertools::Itertools;
-use slice_group_by::GroupBy;
 use slice_group_by::GroupByMut;
 use std::path::PathBuf;
 
@@ -62,6 +61,8 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
         let min_jaccard = min_sharing.unwrap_or(-1.0f64);
         let min_total = min_denominator.unwrap_or(0.0f64);
         let min_shared = min_numerator.unwrap_or(0.0f64);
+        let min_ac = min_ac.as_ref().unwrap_or(&0);
+        let max_ac = max_ac.as_ref().unwrap_or(&u32::MAX);
 
         // use this struct to avoid passing them individually in function calls
         let cli = CliParameters {
