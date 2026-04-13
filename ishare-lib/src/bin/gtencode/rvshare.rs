@@ -120,6 +120,10 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
         let mut id_pairs = vec![];
         for (grp1, ids1) in group_map.iter() {
             for (grp2, ids2) in group_map.iter() {
+                // avoid repeated calculation such as grp1-grp2 and then grp2- rp1
+                if grp1 < grp2 {
+                    continue;
+                }
                 eprintln!("process id pairs in each group pair- {grp1} and {grp2}");
                 id_pairs.clear();
                 if grp1 == grp2 && !matches!(cli.sharing_type, SharingType::BetweenGroup) {
