@@ -7,7 +7,7 @@ use ahash::AHashMap;
 use ishare::{genotype::rare::GenotypeRecords, indiv::Individuals};
 use itertools::Itertools;
 use log::warn;
-use slice_group_by::GroupBy;
+use slice_group_by::{GroupBy, GroupByMut};
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
@@ -185,8 +185,10 @@ pub fn calc_allele_frequency(
     rec: &mut GenotypeRecords,
     num_genomes: usize,
 ) -> Result<AHashMap<(u32, u8), f64>> {
-    rec.sort_by_position_allele_genome()
-        .change_context(GtencodeError::Input)?;
+    if !rec.is_sorted_by_postion_allele_genome() {
+        rec.sort_by_position_allele_genome()
+            .change_context(GtencodeError::Input)?;
+    }
     let posallele2freq = rec
         .records()
         .chunk_by(|a, b| a.get_pos_allele() < b.get_pos_allele())
@@ -278,6 +280,8 @@ pub fn read_groups_file(
 
 pub fn read_and_concat_rare_genotypes(
     records_paths: &[PathBuf],
+    min_ac: u32,
+    max_ac: u32,
 ) -> Result<(GenotypeRecords, Individuals)> {
     if records_paths.is_empty() {
         bail!(GtencodeError::Input
@@ -286,13 +290,15 @@ pub fn read_and_concat_rare_genotypes(
     }
     let mut records = GenotypeRecords::from_parquet_file(&records_paths[0])
         .change_context(GtencodeError::Input)?;
+    filter_rv_by_frequency(&mut records, min_ac, max_ac)?;
     let ind_file = records_paths[0].with_extension("ind");
     let inds = Individuals::from_parquet_file(&ind_file)
         .change_context(GtencodeError::Input)
         .attach("fail to read individual file")?;
     for rec_file in records_paths.iter().skip(1) {
-        let records_additional =
+        let mut records_additional =
             GenotypeRecords::from_parquet_file(rec_file).change_context(GtencodeError::Input)?;
+        filter_rv_by_frequency(&mut records_additional, min_ac, max_ac)?;
         let ind_file = rec_file.with_extension("ind");
         let inds_additional = Individuals::from_parquet_file(&ind_file)
             .change_context(GtencodeError::Input)
@@ -306,4 +312,19 @@ pub fn read_and_concat_rare_genotypes(
         records.merge(records_additional);
     }
     Ok((records, inds))
+}
+
+pub fn filter_rv_by_frequency(recs: &mut GenotypeRecords, min_ac: u32, max_ac: u32) -> Result<()> {
+    if !recs.is_sorted_by_postion_allele_genome() {
+        recs.sort_by_position_allele_genome()
+            .change_context(GtencodeError::Library)
+            .attach("fail to sort rare genotype by position/allele/genome")?;
+    }
+    recs.records_mut()
+        .linear_group_by_key_mut(|rec| rec.get_pos_allele())
+        .filter(|blk| blk.len() < min_ac as usize || blk.len() > max_ac as usize)
+        .for_each(|blk| blk.iter_mut().for_each(|rec| rec.set_sentinel()));
+
+    recs.records_mut().retain(|rec| !rec.is_sentinel());
+    Ok(())
 }

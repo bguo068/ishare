@@ -26,6 +26,8 @@ struct CliParameters {
     aggregate_only: bool,
     chunk_size: usize,
     metric: SharingMetric,
+    min_ac: u32,
+    max_ac: u32,
 }
 
 struct ChunkResult {
@@ -48,6 +50,8 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
         aggregate_only,
         chunk_size,
         metric,
+        min_ac,
+        max_ac,
     } = args
     {
         let min_jaccard = min_sharing.unwrap_or(-1.0f64);
@@ -64,6 +68,8 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
             aggregate_only: *aggregate_only,
             chunk_size: *chunk_size,
             metric: *metric,
+            min_ac: *min_ac,
+            max_ac: *max_ac,
         };
 
         if groups.is_some() && !id.is_some() {
@@ -71,7 +77,7 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
         }
 
         eprintln!("read and concat rare genotype");
-        let (mut records, inds) = read_and_concat_rare_genotypes(rec)?;
+        let (mut records, inds) = read_and_concat_rare_genotypes(rec, cli.min_ac, cli.max_ac)?;
 
         let freq_map = if matches!(cli.metric, SharingMetric::GRM) {
             eprintln!("build allele frequency map");

@@ -101,7 +101,7 @@ pub enum Commands {
         #[arg(short = 'i', long)]
         idx_genome: Option<usize>,
     },
-    /// Calculate pairwise similarity via Jaccard index
+    /// Calculate pairwise sharing via different metrics
     RvShare {
         /// Path to genotype record file(s).
         /// if multiple records files are provided, they will be concatenated
@@ -138,6 +138,14 @@ pub enum Commands {
         /// optional num of pairs of chunk for parallelization
         #[arg(short = 'C', long, default_value = "50000")]
         chunk_size: usize,
+
+        /// optional min frequency of rare variant to be considered
+        #[arg(short = 'a', long)]
+        min_ac: u32,
+
+        /// optional max frequency of rare variant to be considered
+        #[arg(short = 'A', long)]
+        max_ac: u32,
 
         #[arg(short = 'm', long, default_value = "jaccard")]
         metric: SharingMetric,
