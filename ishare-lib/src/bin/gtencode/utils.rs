@@ -249,16 +249,16 @@ pub fn read_groups_file(
             match ifield {
                 0 => {
                     ind_id = if let Level::IndividualLevel = level {
-                        field
-                            .parse()
-                            .change_context(GtencodeError::Input)
-                            .attach("error in parsing genome id")?
-                    } else {
                         *inds
                             .m()
                             .get(field)
                             .ok_or(GtencodeError::Input)
                             .attach("invalid sample name in groups file")?
+                    } else {
+                        field
+                            .parse()
+                            .change_context(GtencodeError::Input)
+                            .attach("error in parsing genome id")?
                     };
                 }
                 1 => {

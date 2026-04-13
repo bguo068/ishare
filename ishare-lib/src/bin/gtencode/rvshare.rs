@@ -70,16 +70,18 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
             eprintln!("WARN: when --groups is set, --id options are ignored");
         }
 
+        eprintln!("read and concat rare genotype");
         let (mut records, inds) = read_and_concat_rare_genotypes(rec)?;
 
         let freq_map = if matches!(cli.metric, SharingMetric::GRM) {
+            eprintln!("build allele frequency map");
             crate::utils::calc_allele_frequency(&mut records, inds.v().len() * 2)
                 .change_context(GtencodeError::Input)?
         } else {
             AHashMap::new()
         };
 
-        // sort_records according sharing level
+        eprintln!("sort_records according sharing level");
         match &level {
             Level::IndividualLevel => {
                 records
