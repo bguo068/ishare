@@ -175,7 +175,7 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
             .unwrap_or(&PathBuf::from("gtencode_jaccard"))
             .with_extension("aggfile");
         let mut aggfile = std::fs::File::create(agg_file_path)
-            .map(std::io::BufWriter::new)
+            // .map(std::io::BufWriter::new)
             .change_context(GtencodeError::Output)
             .attach("fail to create output file to write aggregates")?;
 
@@ -346,7 +346,7 @@ fn write_results_for_a_group_pair(
     groups: (&str, &str),
     ids: (&[u32], &[u32]),
     res: Vec<ChunkResult>,
-    aggrefile: &mut std::io::BufWriter<std::fs::File>,
+    aggrefile: &mut std::fs::File,
     aggregate_only: bool,
     level: Level,
     output: &Option<PathBuf>,
