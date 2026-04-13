@@ -107,13 +107,14 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
             .change_context(GtencodeError::Output)
             .attach("fail to create output file to write aggregates")?;
 
-        // prep groups mapping from group name to a vector of Ids in that group
+        eprintln!("prep groups mapping from group name to a vector of Ids in that group");
         let group_map = prep_groups(id, groups, level, &inds)?;
 
         // process id pairs in each group pair
         let mut id_pairs = vec![];
         for (grp1, ids1) in group_map.iter() {
             for (grp2, ids2) in group_map.iter() {
+                eprintln!("process id pairs in each group pair- {grp1} and {grp2}");
                 id_pairs.clear();
                 if grp1 == grp2 && !matches!(cli.sharing_type, SharingType::BetweenGroup) {
                     id_pairs.extend(
