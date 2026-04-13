@@ -135,7 +135,11 @@ pub fn filter_peaks(peaks: &Intervals<u32>, xirs: &XirsResult) -> Intervals<u32>
         })
     }
 
-    pvalues.sort_by(|a, b| a.pval.partial_cmp(&b.pval).unwrap_or(std::cmp::Ordering::Equal));
+    pvalues.sort_by(|a, b| {
+        a.pval
+            .partial_cmp(&b.pval)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     pvalues.iter_mut().enumerate().for_each(|(i, x)| {
         x.rank = i;
