@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use crate::traits::TotalOrd;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct GenotypeRecord {
     data: BitArray<u64, Lsb0>,
     // pos: 32 bits, max value: 4,294,967,296 - 1 (4.2 billion)
@@ -137,7 +137,7 @@ impl GenotypeRecords {
     /// useful for write genotype to vcf or genotype matrix
     pub fn sort_by_position_genome_allele(&mut self) -> Result<()> {
         match self.sort_status {
-            GenotypeRecordSortStatus::SortedByGenomePositionAllele => Ok(()),
+            GenotypeRecordSortStatus::SortedByPositionGenomeAllele => Ok(()),
             _ => {
                 self.data
                     .par_sort_unstable_by_key(|x| (x.get_pos_genome(), x.get_allele()));
@@ -195,15 +195,22 @@ impl GenotypeRecords {
     pub fn is_sorted_by_genome_position_allele_slow(&self) -> bool {
         let recs = self.records();
         recs.iter().zip(recs.iter().skip(1)).all(|(a, b)| {
-            (a.get_genome_pos(), a.get_allele()) < (b.get_genome_pos(), b.get_allele())
+            (a.get_genome_pos(), a.get_allele()) <= (b.get_genome_pos(), b.get_allele())
         })
     }
 
     pub fn is_sorted_by_individual_position_allele_slow(&self) -> bool {
         let recs = self.records();
         recs.iter().zip(recs.iter().skip(1)).all(|(a, b)| {
-            (a.get_individual_pos(), a.get_allele()) < (b.get_individual_pos(), b.get_allele())
+            (a.get_individual_pos(), a.get_allele()) <= (b.get_individual_pos(), b.get_allele())
         })
+    }
+
+    pub fn is_sorted_by_position_genome_allele(&self) -> bool {
+        matches!(
+            self.sort_status,
+            GenotypeRecordSortStatus::SortedByPositionGenomeAllele
+        )
     }
 
     pub fn is_sorted_by_position_genome_allele_slow(&self) -> bool {
@@ -213,10 +220,16 @@ impl GenotypeRecords {
         })
     }
 
+    pub fn is_sorted_by_position_allele_genome(&self) -> bool {
+        matches!(
+            self.sort_status,
+            GenotypeRecordSortStatus::SortedByPositionAlleleGenome
+        )
+    }
     pub fn is_sorted_by_position_allele_genome_slow(&self) -> bool {
         let recs = self.records();
         recs.iter().zip(recs.iter().skip(1)).all(|(a, b)| {
-            (a.get_pos_allele(), a.get_genome()) < (b.get_pos_allele(), b.get_genome())
+            (a.get_pos_allele(), a.get_genome()) <= (b.get_pos_allele(), b.get_genome())
         })
     }
 
@@ -1267,6 +1280,78 @@ mod tests {
                 assert_eq!(r1.get(), r2.get());
             }
 
+            Ok(())
+        }
+
+        #[test]
+        fn test_genotype_records_parquet_read_write() -> Result<()> {
+            // simulate data
+            let mut v = vec![];
+            for position in (0..10000).step_by(100) {
+                for genome in 0..100 {
+                    for allele in 1..7 {
+                        let mut rec = GenotypeRecord::new(0);
+                        rec.set_allele(allele);
+                        rec.set_position(position);
+                        rec.set_genome(genome);
+                        assert_eq!(rec.get_allele(), allele);
+                        assert_eq!(rec.get_position(), position);
+                        assert_eq!(rec.get_genome(), genome);
+                        v.push(rec)
+                    }
+                }
+            }
+            let mut records = GenotypeRecords::new(v, GenotypeRecordSortStatus::Unsorted);
+
+            // read and write
+            records.clone().into_parquet_file("tmp.rec")?;
+            let records_read = GenotypeRecords::from_parquet_file("tmp.rec")?;
+            assert_eq!(records_read.sort_status, records.sort_status);
+            assert_eq!(records_read.records(), records.records());
+
+            // sort 1
+            records.sort_by_genome_position_allele()?;
+            assert!(records.is_sorted_by_genome_position_allele());
+            assert!(records.is_sorted_by_genome_position_allele_slow());
+            records.clone().into_parquet_file("tmp.rec")?;
+            let records_read = GenotypeRecords::from_parquet_file("tmp.rec")?;
+            assert!(records_read.is_sorted_by_genome_position_allele());
+            assert!(records_read.is_sorted_by_genome_position_allele_slow());
+            assert_eq!(records_read.sort_status, records.sort_status);
+            assert_eq!(records_read.records(), records.records());
+
+            // sort 2
+            records.sort_by_position_genome_allele()?;
+            assert!(records.is_sorted_by_postion_genome_allele());
+            assert!(records.is_sorted_by_position_genome_allele_slow());
+            records.clone().into_parquet_file("tmp.rec")?;
+            let records_read = GenotypeRecords::from_parquet_file("tmp.rec")?;
+            assert!(records_read.is_sorted_by_position_genome_allele());
+            assert!(records_read.is_sorted_by_position_genome_allele_slow());
+            assert_eq!(records_read.sort_status, records.sort_status);
+            assert_eq!(records_read.records(), records.records());
+
+            // sort 3
+            records.sort_by_position_allele_genome()?;
+            assert!(records.is_sorted_by_postion_allele_genome());
+            assert!(records.is_sorted_by_position_allele_genome_slow());
+            records.clone().into_parquet_file("tmp.rec")?;
+            let records_read = GenotypeRecords::from_parquet_file("tmp.rec")?;
+            assert!(records_read.is_sorted_by_position_allele_genome());
+            assert!(records_read.is_sorted_by_position_allele_genome_slow());
+            assert_eq!(records_read.sort_status, records.sort_status);
+            assert_eq!(records_read.records(), records.records());
+
+            // sort 4
+            records.sort_by_individual_position_allele()?;
+            records.clone().into_parquet_file("tmp.rec")?;
+            let records_read = GenotypeRecords::from_parquet_file("tmp.rec")?;
+            assert!(records.is_sorted_by_individual_position_allele());
+            assert!(records.is_sorted_by_individual_position_allele_slow());
+            assert!(records_read.is_sorted_by_individual_position_allele());
+            assert!(records_read.is_sorted_by_individual_position_allele_slow());
+            assert_eq!(records_read.sort_status, records.sort_status);
+            assert_eq!(records_read.records(), records.records());
             Ok(())
         }
 
