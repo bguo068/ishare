@@ -201,9 +201,9 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
                 records
                     .records_mut()
                     .linear_group_by_key_mut(|s| s.get_individual())
-                    .merge_join_by(target_ids.iter(), |a, b| a[0].get_individual() < **b)
+                    .merge_join_by(target_ids.iter(), |a, b| a[0].get_individual().cmp(*b))
                     .for_each(|e| {
-                        if let itertools::Either::Left(to_exclude) = e {
+                        if let itertools::EitherOrBoth::Left(to_exclude) = e {
                             to_exclude.iter_mut().for_each(|rec| rec.set_sentinel());
                         }
                     });
@@ -218,9 +218,9 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
                 records
                     .records_mut()
                     .linear_group_by_key_mut(|s| s.get_genome())
-                    .merge_join_by(target_ids.iter(), |a, b| a[0].get_genome() < **b)
+                    .merge_join_by(target_ids.iter(), |a, b| a[0].get_genome().cmp(*b))
                     .for_each(|e| {
-                        if let itertools::Either::Left(to_exclude) = e {
+                        if let itertools::EitherOrBoth::Left(to_exclude) = e {
                             to_exclude.iter_mut().for_each(|rec| rec.set_sentinel());
                         }
                     });
