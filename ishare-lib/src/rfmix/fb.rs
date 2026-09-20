@@ -853,7 +853,7 @@ chr1\t101\t0.1\t0\t1.0\t0.0\t0.0\t1.0\n";
             // Should error due to no valid columns for known individuals
             assert!(result.is_err());
             if let Err(e) = result {
-                let error_msg = format!("{e}");
+                let error_msg = format!("{e:?}");
                 // Should be an error about no ancestry populations or empty data
                 assert!(
                     error_msg.contains("NoAncestryPopulations")
