@@ -1,5 +1,7 @@
 use ahash::AHashMap;
 use itertools::Itertools;
+use log::info;
+use log::warn;
 use slice_group_by::GroupByMut;
 use std::path::PathBuf;
 
@@ -78,11 +80,12 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
             max_ac: *max_ac,
         };
 
-        if groups.is_some() && !id.is_some() {
-            eprintln!("WARN: when --groups is set, --id options are ignored");
+        if groups.is_some() && !id.is_some() && !id.as_ref().unwrap_or(&vec![]).is_empty() {
+            warn!("WARN: when --groups is set, --id options are ignored");
         }
 
         let (mut records, inds, freq_map) = if *from_processed_records {
+            info!("read input genotype records from processed records");
             // read processed records
             let records =
                 GenotypeRecords::from_parquet_file(&rec[0]).change_context(GtencodeError::Input)?;
@@ -94,6 +97,7 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
                 let mut records_for_freq =
                     GenotypeRecords::from_parquet_file(rec[0].with_extension(".rec2"))
                         .change_context(GtencodeError::Input)?;
+                info!("build allele frequency map");
                 crate::utils::calc_allele_frequency(&mut records_for_freq, inds.v().len() * 2)
                     .change_context(GtencodeError::Input)?
             } else {
@@ -102,10 +106,10 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
 
             (records, inds, freq_map)
         } else {
-            eprintln!("read and concat rare genotype");
+            info!("read and concat genotype records");
             let (mut records, inds) = read_and_concat_rare_genotypes(rec, cli.min_ac, cli.max_ac)?;
             let freq_map = if matches!(cli.metric, SharingMetric::GRM) {
-                eprintln!("build allele frequency map");
+                info!("build allele frequency map");
                 let freq_map =
                     crate::utils::calc_allele_frequency(&mut records, inds.v().len() * 2)
                         .change_context(GtencodeError::Input)?;
@@ -121,7 +125,7 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
                 AHashMap::new()
             };
 
-            eprintln!("sort_records according sharing level");
+            info!("sort records according sharing level");
             match &level {
                 Level::IndividualLevel => {
                     records
@@ -137,6 +141,7 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
                 }
             }
             if *to_processed_records {
+                info!("write processed genotype records to file");
                 let p = output
                     .as_ref()
                     .unwrap_or(&PathBuf::from("merged.rec"))
@@ -155,7 +160,7 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
         };
 
         if *to_processed_records {
-            eprintln!("successfully processed genotype records");
+            info!("successfully processed genotype records. Exit");
             return Ok(());
         }
 
@@ -169,62 +174,66 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
             .change_context(GtencodeError::Output)
             .attach("fail to create output file to write aggregates")?;
 
-        eprintln!("prep groups mapping from group name to a vector of Ids in that group");
+        info!("prep groups mapping from group name to a vector of Ids in that group");
         let group_map = prep_groups(id, groups, level, &inds)?;
 
         let target_group_pairs =
             prep_target_group_pairs(&group_map, target_group_pairs, cli.sharing_type)?;
 
         // ensure level and sort status are consistent and consolidate records for only target samples
-        eprintln!("consolidating records only for targeted individuals or genomes");
-        let mut target_ids: Vec<u32> = vec![];
+        // FIXME: need to allow filtering while reading records from parquet, instead of slurp in everything
+        // before filtering
+        info!("consolidate genotype records only for targeted individuals or genomes");
         {
-            let mut tgrp = ahash::AHashSet::new();
-            target_group_pairs.iter().for_each(|(grp1, grp2)| {
-                tgrp.insert(grp1);
-                tgrp.insert(grp2);
-            });
-            for grp in tgrp.iter() {
-                target_ids.extend(group_map[*grp].iter());
+            let mut target_ids: Vec<u32> = vec![];
+            {
+                let mut tgrp = ahash::AHashSet::new();
+                target_group_pairs.iter().for_each(|(grp1, grp2)| {
+                    tgrp.insert(grp1);
+                    tgrp.insert(grp2);
+                });
+                for grp in tgrp.iter() {
+                    target_ids.extend(group_map[*grp].iter());
+                }
+                target_ids.sort();
+                eprintln!("target_ids counts: {}", target_ids.len());
             }
-            target_ids.sort();
-            eprintln!("target_ids counts: {}", target_ids.len());
-        }
 
-        match &level {
-            Level::IndividualLevel => {
-                ensure!(
+            match &level {
+                Level::IndividualLevel => {
+                    ensure!(
                 records.is_sorted_by_individual_position_allele(),
                 GtencodeError::Input.into_report().attach("requested individual level sharing analysis but genotype records is not sorted by individual/position/allele")
                 );
 
-                records
-                    .records_mut()
-                    .linear_group_by_key_mut(|s| s.get_individual())
-                    .merge_join_by(target_ids.iter(), |a, b| a[0].get_individual().cmp(*b))
-                    .for_each(|e| {
-                        if let itertools::EitherOrBoth::Left(to_exclude) = e {
-                            to_exclude.iter_mut().for_each(|rec| rec.set_sentinel());
-                        }
-                    });
-                records.records_mut().retain(|rec| !rec.is_sentinel());
-                eprintln!("record counts: {}", records.records().len());
-            }
-            Level::HaplotypeLevel => {
-                ensure!(
+                    records
+                        .records_mut()
+                        .linear_group_by_key_mut(|s| s.get_individual())
+                        .merge_join_by(target_ids.iter(), |a, b| a[0].get_individual().cmp(*b))
+                        .for_each(|e| {
+                            if let itertools::EitherOrBoth::Left(to_exclude) = e {
+                                to_exclude.iter_mut().for_each(|rec| rec.set_sentinel());
+                            }
+                        });
+                    records.records_mut().retain(|rec| !rec.is_sentinel());
+                    eprintln!("record counts: {}", records.records().len());
+                }
+                Level::HaplotypeLevel => {
+                    ensure!(
                 records.is_sorted_by_genome_position_allele(),
                 GtencodeError::Input.into_report().attach("requested haplotype level sharing analysis but genotype records is not sorted by individual/position/allele")
                 );
-                records
-                    .records_mut()
-                    .linear_group_by_key_mut(|s| s.get_genome())
-                    .merge_join_by(target_ids.iter(), |a, b| a[0].get_genome().cmp(*b))
-                    .for_each(|e| {
-                        if let itertools::EitherOrBoth::Left(to_exclude) = e {
-                            to_exclude.iter_mut().for_each(|rec| rec.set_sentinel());
-                        }
-                    });
-                records.records_mut().retain(|rec| !rec.is_sentinel());
+                    records
+                        .records_mut()
+                        .linear_group_by_key_mut(|s| s.get_genome())
+                        .merge_join_by(target_ids.iter(), |a, b| a[0].get_genome().cmp(*b))
+                        .for_each(|e| {
+                            if let itertools::EitherOrBoth::Left(to_exclude) = e {
+                                to_exclude.iter_mut().for_each(|rec| rec.set_sentinel());
+                            }
+                        });
+                    records.records_mut().retain(|rec| !rec.is_sentinel());
+                }
             }
         }
 
@@ -237,7 +246,6 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
             if grp1 < grp2 {
                 continue;
             }
-            eprintln!("process group pair- GROUP1={grp1} and GROUP2={grp2}");
             id_pairs.clear();
             if grp1 == grp2 && !matches!(cli.sharing_type, SharingType::BetweenGroup) {
                 id_pairs.extend(
@@ -259,6 +267,11 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
                 );
             };
             id_pairs.par_sort_unstable();
+
+            info!(
+                "process group pair of '{grp1}' and '{grp2}' with {} pairs of genomes/individuals",
+                id_pairs.len()
+            );
 
             // process group pairs
             let res = process_group_pair(&records, id_pairs.as_slice(), &cli, &freq_map)?;

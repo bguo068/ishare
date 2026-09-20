@@ -38,6 +38,11 @@ pub fn main() -> Result<()> {
 fn main_entry() -> Result<()> {
     let cli = Cli::parse();
 
+    env_logger::Builder::new()
+        .filter(None, log::LevelFilter::Info)
+        .format_module_path(false)
+        .init();
+
     match &cli.command {
         Some(c) => match c {
             args @ Commands::Encode { .. } => {
