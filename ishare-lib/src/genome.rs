@@ -428,21 +428,20 @@ pub const PF3D7CHRLENS: &[u32] = &[
 
 #[test]
 fn test_genome_io() {
-    let mut genome = Genome::new_from_name(BuiltinGenome::Pf3d7Const15k).unwrap();
-    genome.set_gmap_path("tmp_genome.toml", "tmp_gmap");
+    let tmp = tempfile::tempdir().unwrap();
+    let toml_path = tmp.path().join("tmp_genome.toml");
+    let toml_path = toml_path.to_str().unwrap();
+    let bincode_path = tmp.path().join("tmp.bincode");
 
-    genome.save_to_bincode_file("tmp.bincode").unwrap();
-    let genome2 = Genome::load_from_bincode_file("tmp.bincode").unwrap();
+    let mut genome = Genome::new_from_name(BuiltinGenome::Pf3d7Const15k).unwrap();
+    genome.set_gmap_path(toml_path, "tmp_gmap");
+
+    genome.save_to_bincode_file(&bincode_path).unwrap();
+    let genome2 = Genome::load_from_bincode_file(&bincode_path).unwrap();
     assert_eq!(&genome, &genome2);
 
-    genome
-        .save_to_text_files("tmp_genome.toml", "tmp_gmap")
-        .unwrap();
-    let genome3 = Genome::load_from_text_file("tmp_genome.toml").unwrap();
-
-    std::fs::remove_file("tmp_genome.toml").unwrap();
-    std::fs::remove_file("tmp.bincode").unwrap();
-    std::fs::remove_dir_all("tmp_gmap").unwrap();
+    genome.save_to_text_files(toml_path, "tmp_gmap").unwrap();
+    let genome3 = Genome::load_from_text_file(toml_path).unwrap();
 
     assert_eq!(&genome, &genome3);
 }

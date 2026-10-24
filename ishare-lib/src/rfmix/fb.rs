@@ -524,27 +524,25 @@ chr1\t501\t0.5\t20\t0.0\t0.0\t1.0\t0.0\t0.0\t1.0\t0.0\t0.0\t0.0\t1.0\t0.0\t0.0\t
         format!("{header}{columns}{data}")
     }
 
-    fn create_temp_fb_file() -> std::io::Result<std::path::PathBuf> {
-        use std::process;
-        use std::time::{SystemTime, UNIX_EPOCH};
+    /// Each call gets its own uniquely named file (removed on drop), so tests
+    /// can run concurrently, including across overlapping `cargo test` processes.
+    fn write_temp_file(content: &str) -> tempfile::NamedTempFile {
+        let mut file = tempfile::Builder::new()
+            .suffix(".tsv")
+            .tempfile()
+            .expect("Failed to create temp file");
+        file.write_all(content.as_bytes())
+            .expect("Failed to write temp file");
+        file
+    }
 
-        let temp_dir = std::env::temp_dir();
-        // Create unique filename using timestamp and process ID to avoid race conditions
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        let pid = process::id();
-        let temp_file = temp_dir.join(format!("test_fb_{timestamp}_{pid}.tsv"));
-
-        let mut file = std::fs::File::create(&temp_file)?;
-        file.write_all(create_test_fb_data().as_bytes())?;
-        Ok(temp_file)
+    fn create_temp_fb_file() -> tempfile::NamedTempFile {
+        write_temp_file(&create_test_fb_data())
     }
 
     #[test]
     fn test_fbmatrix_creation_basic() {
-        let temp_file = create_temp_fb_file().expect("Failed to create temp file");
+        let temp_file = create_temp_fb_file();
         let ginfo = create_test_genome();
         let inds = create_test_individuals();
         let pos = vec![100, 200, 300, 400, 500]; // 0-based positions
@@ -564,14 +562,11 @@ chr1\t501\t0.5\t20\t0.0\t0.0\t1.0\t0.0\t0.0\t1.0\t0.0\t0.0\t0.0\t1.0\t0.0\t0.0\t
 
         assert_eq!(fb_matrix.samples.len(), 2); // sample1, sample2
         assert_eq!(fb_matrix.windows.len(), 5); // 5 positions = 5 windows
-
-        // Cleanup
-        std::fs::remove_file(temp_file).ok();
     }
 
     #[test]
     fn test_fbmatrix_ancestry_assignment() {
-        let temp_file = create_temp_fb_file().expect("Failed to create temp file");
+        let temp_file = create_temp_fb_file();
         let ginfo = create_test_genome();
         let inds = create_test_individuals();
         let pos = vec![100, 200, 300, 400, 500];
@@ -590,13 +585,11 @@ chr1\t501\t0.5\t20\t0.0\t0.0\t1.0\t0.0\t0.0\t1.0\t0.0\t0.0\t0.0\t1.0\t0.0\t0.0\t
 
         assert_eq!(row0[0], 0); // AFR at position 0
         assert_eq!(row1[0], 2); // EUR at position 0
-
-        std::fs::remove_file(temp_file).ok();
     }
 
     #[test]
     fn test_fbmatrix_min_prob_threshold() {
-        let temp_file = create_temp_fb_file().expect("Failed to create temp file");
+        let temp_file = create_temp_fb_file();
         let ginfo = create_test_genome();
         let inds = create_test_individuals();
         let pos = vec![100, 200, 300, 400, 500];
@@ -627,13 +620,11 @@ chr1\t501\t0.5\t20\t0.0\t0.0\t1.0\t0.0\t0.0\t1.0\t0.0\t0.0\t0.0\t1.0\t0.0\t0.0\t
 
         // High threshold should have more or equal unknown assignments
         assert!(high_unknown >= low_unknown);
-
-        std::fs::remove_file(temp_file).ok();
     }
 
     #[test]
     fn test_fbmatrix_get_ancestries() {
-        let temp_file = create_temp_fb_file().expect("Failed to create temp file");
+        let temp_file = create_temp_fb_file();
         let ginfo = create_test_genome();
         let inds = create_test_individuals();
         let pos = vec![100, 200, 300, 400, 500];
@@ -647,13 +638,11 @@ chr1\t501\t0.5\t20\t0.0\t0.0\t1.0\t0.0\t0.0\t1.0\t0.0\t0.0\t0.0\t1.0\t0.0\t0.0\t
         assert_eq!(ancestries[2], "EUR");
         assert_eq!(ancestries[3], "NAT");
         assert_eq!(ancestries[4], "Unkown");
-
-        std::fs::remove_file(temp_file).ok();
     }
 
     #[test]
     fn test_laset_from_fbmat() {
-        let temp_file = create_temp_fb_file().expect("Failed to create temp file");
+        let temp_file = create_temp_fb_file();
         let ginfo = create_test_genome();
         let inds = create_test_individuals();
         let pos = vec![100, 200, 300, 400, 500];
@@ -670,13 +659,11 @@ chr1\t501\t0.5\t20\t0.0\t0.0\t1.0\t0.0\t0.0\t1.0\t0.0\t0.0\t0.0\t1.0\t0.0\t0.0\t
             let segs = la_set.get_lasegs(hap_idx as u32).unwrap();
             assert!(!segs.is_empty(), "Haplotype {hap_idx} should have segments",);
         }
-
-        std::fs::remove_file(temp_file).ok();
     }
 
     #[test]
     fn test_laset_get_lasegs() {
-        let temp_file = create_temp_fb_file().expect("Failed to create temp file");
+        let temp_file = create_temp_fb_file();
         let ginfo = create_test_genome();
         let inds = create_test_individuals();
         let pos = vec![100, 200, 300, 400, 500];
@@ -701,13 +688,11 @@ chr1\t501\t0.5\t20\t0.0\t0.0\t1.0\t0.0\t0.0\t1.0\t0.0\t0.0\t0.0\t1.0\t0.0\t0.0\t
             .get_lasegs(la_set.hap_start_idx.len() as u32 - 1)
             .unwrap();
         assert!(!segs_last.is_empty());
-
-        std::fs::remove_file(temp_file).ok();
     }
 
     #[test]
     fn test_laset_hap_pair_la_segs() {
-        let temp_file = create_temp_fb_file().expect("Failed to create temp file");
+        let temp_file = create_temp_fb_file();
         let ginfo = create_test_genome();
         let inds = create_test_individuals();
         let pos = vec![100, 200, 300, 400, 500];
@@ -729,13 +714,11 @@ chr1\t501\t0.5\t20\t0.0\t0.0\t1.0\t0.0\t0.0\t1.0\t0.0\t0.0\t0.0\t1.0\t0.0\t0.0\t
         // Test query on the tree
         let query_results: Vec<_> = tree.query(150..250).collect();
         assert!(!query_results.is_empty());
-
-        std::fs::remove_file(temp_file).ok();
     }
 
     #[test]
     fn test_laset_hap_pair_la_segs2() {
-        let temp_file = create_temp_fb_file().expect("Failed to create temp file");
+        let temp_file = create_temp_fb_file();
         let ginfo = create_test_genome();
         let inds = create_test_individuals();
         let pos = vec![100, 200, 300, 400, 500];
@@ -760,26 +743,14 @@ chr1\t501\t0.5\t20\t0.0\t0.0\t1.0\t0.0\t0.0\t1.0\t0.0\t0.0\t0.0\t1.0\t0.0\t0.0\t
 
         assert!(!query1.is_empty());
         assert!(!query2.is_empty());
-
-        std::fs::remove_file(temp_file).ok();
     }
 
     mod edge_cases {
         use super::*;
-        use std::time::{SystemTime, UNIX_EPOCH};
 
         #[test]
         fn test_empty_fb_file() {
-            let temp_dir = std::env::temp_dir();
-            let temp_file = temp_dir.join(format!(
-                "empty_fb_{}_{}.tsv",
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos(),
-                std::process::id()
-            ));
-            std::fs::write(&temp_file, "").unwrap();
+            let temp_file = write_temp_file("");
 
             let ginfo = create_test_genome();
             let inds = create_test_individuals();
@@ -788,24 +759,12 @@ chr1\t501\t0.5\t20\t0.0\t0.0\t1.0\t0.0\t0.0\t1.0\t0.0\t0.0\t0.0\t1.0\t0.0\t0.0\t
             let result = FbMatrix::from_fb_csv(&temp_file, &pos, &ginfo, &inds, 0.5, 1);
 
             assert!(result.is_err()); // Should fail on empty file
-
-            std::fs::remove_file(temp_file).ok();
         }
 
         #[test]
         fn test_malformated_header() {
-            let temp_dir = std::env::temp_dir();
-            let temp_file = temp_dir.join(format!(
-                "malformed_fb_{}_{}.tsv",
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos(),
-                std::process::id()
-            ));
-
             let malformed_data = "invalid_header\nmore_invalid_data\n";
-            std::fs::write(&temp_file, malformed_data).unwrap();
+            let temp_file = write_temp_file(malformed_data);
 
             let ginfo = create_test_genome();
             let inds = create_test_individuals();
@@ -821,28 +780,16 @@ chr1\t501\t0.5\t20\t0.0\t0.0\t1.0\t0.0\t0.0\t1.0\t0.0\t0.0\t0.0\t1.0\t0.0\t0.0\t
                     // todo!()
                 } // Or fail with appropriate error
             }
-
-            std::fs::remove_file(temp_file).ok();
         }
 
         #[test]
         fn test_missing_samples() {
-            let temp_dir = std::env::temp_dir();
-            let temp_file = temp_dir.join(format!(
-                "missing_samples_fb_{}_{}.tsv",
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos(),
-                std::process::id()
-            ));
-
             // Create data with samples not in individuals list
             let data = "#reference_panel_population:\tAFR\tEUR\n\
 chromosome\tphysical_position\tgenetic_position\tgenetic_marker_index\tmissing_sample:::hap1:::AFR\tmissing_sample:::hap1:::EUR\tmissing_sample:::hap2:::AFR\tmissing_sample:::hap2:::EUR\n\
 chr1\t101\t0.1\t0\t1.0\t0.0\t0.0\t1.0\n";
 
-            std::fs::write(&temp_file, data).unwrap();
+            let temp_file = write_temp_file(data);
 
             let ginfo = create_test_genome();
             let inds = create_test_individuals(); // Contains sample1, sample2
@@ -861,28 +808,16 @@ chr1\t101\t0.1\t0\t1.0\t0.0\t0.0\t1.0\n";
                         || error_msg.contains("valid")
                 );
             }
-
-            std::fs::remove_file(temp_file).ok();
         }
 
         #[test]
         fn test_single_position() {
-            let temp_dir = std::env::temp_dir();
-            let temp_file = temp_dir.join(format!(
-                "single_pos_fb_{}_{}.tsv",
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos(),
-                std::process::id()
-            ));
-
             // Include all samples to match expected column count (3 samples * 2 haplotypes * 2 ancestries = 12 columns)
             let data = "#reference_panel_population:\tAFR\tEUR\n\
 chromosome\tphysical_position\tgenetic_position\tgenetic_marker_index\tsample1:::hap1:::AFR\tsample1:::hap1:::EUR\tsample1:::hap2:::AFR\tsample1:::hap2:::EUR\tsample2:::hap1:::AFR\tsample2:::hap1:::EUR\tsample2:::hap2:::AFR\tsample2:::hap2:::EUR\tsample3:::hap1:::AFR\tsample3:::hap1:::EUR\tsample3:::hap2:::AFR\tsample3:::hap2:::EUR\n\
 chr1\t101\t0.1\t0\t1.0\t0.0\t0.0\t1.0\t0.0\t1.0\t1.0\t0.0\t1.0\t0.0\t0.0\t1.0\n";
 
-            std::fs::write(&temp_file, data).unwrap();
+            let temp_file = write_temp_file(data);
 
             let ginfo = create_test_genome();
             let inds = create_test_individuals();
@@ -893,8 +828,6 @@ chr1\t101\t0.1\t0\t1.0\t0.0\t0.0\t1.0\t0.0\t1.0\t1.0\t0.0\t1.0\t0.0\t0.0\t1.0\n"
             assert!(result.is_ok());
             let fb_matrix = result.unwrap();
             assert_eq!(fb_matrix.windows.len(), 1);
-
-            std::fs::remove_file(temp_file).ok();
         }
 
         #[test]
@@ -916,25 +849,14 @@ chr1\t101\t0.1\t0\t1.0\t0.0\t0.0\t1.0\t0.0\t1.0\t1.0\t0.0\t1.0\t0.0\t0.0\t1.0\n"
 
     mod error_handling {
         use super::*;
-        use std::time::{SystemTime, UNIX_EPOCH};
 
         #[test]
         fn test_invalid_probability_values() {
-            let temp_dir = std::env::temp_dir();
-            let temp_file = temp_dir.join(format!(
-                "invalid_prob_fb_{}_{}.tsv",
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos(),
-                std::process::id()
-            ));
-
             let data = "#reference_panel_population:\tAFR\tEUR\n\
 chromosome\tphysical_position\tgenetic_position\tgenetic_marker_index\tsample1:::hap1:::AFR\tsample1:::hap1:::EUR\tsample1:::hap2:::AFR\tsample1:::hap2:::EUR\n\
 chr1\t101\t0.1\t0\tinvalid\t0.0\t0.0\t1.0\n";
 
-            std::fs::write(&temp_file, data).unwrap();
+            let temp_file = write_temp_file(data);
 
             let ginfo = create_test_genome();
             let inds = create_test_individuals();
@@ -943,27 +865,15 @@ chr1\t101\t0.1\t0\tinvalid\t0.0\t0.0\t1.0\n";
             let result = FbMatrix::from_fb_csv(&temp_file, &pos, &ginfo, &inds, 0.5, 1);
 
             assert!(result.is_err());
-
-            std::fs::remove_file(temp_file).ok();
         }
 
         #[test]
         fn test_invalid_position_format() {
-            let temp_dir = std::env::temp_dir();
-            let temp_file = temp_dir.join(format!(
-                "invalid_pos_fb_{}_{}.tsv",
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos(),
-                std::process::id()
-            ));
-
             let data = "#reference_panel_population:\tAFR\tEUR\n\
 chromosome\tphysical_position\tgenetic_position\tgenetic_marker_index\tsample1:::hap1:::AFR\tsample1:::hap1:::EUR\tsample1:::hap2:::AFR\tsample1:::hap2:::EUR\n\
 chr1\tinvalid_pos\t0.1\t0\t1.0\t0.0\t0.0\t1.0\n";
 
-            std::fs::write(&temp_file, data).unwrap();
+            let temp_file = write_temp_file(data);
 
             let ginfo = create_test_genome();
             let inds = create_test_individuals();
@@ -972,13 +882,11 @@ chr1\tinvalid_pos\t0.1\t0\t1.0\t0.0\t0.0\t1.0\n";
             let result = FbMatrix::from_fb_csv(&temp_file, &pos, &ginfo, &inds, 0.5, 1);
 
             assert!(result.is_err());
-
-            std::fs::remove_file(temp_file).ok();
         }
 
         #[test]
         fn test_position_not_in_pos_array() {
-            let temp_file = create_temp_fb_file().expect("Failed to create temp file");
+            let temp_file = create_temp_fb_file();
             let ginfo = create_test_genome();
             let inds = create_test_individuals();
             let pos = vec![50, 150, 250]; // Positions don't match FB file positions
@@ -986,8 +894,6 @@ chr1\tinvalid_pos\t0.1\t0\t1.0\t0.0\t0.0\t1.0\n";
             let result = FbMatrix::from_fb_csv(&temp_file, &pos, &ginfo, &inds, 0.5, 1);
 
             assert!(result.is_err());
-
-            std::fs::remove_file(temp_file).ok();
         }
 
         #[test]
@@ -1010,20 +916,10 @@ chr1\tinvalid_pos\t0.1\t0\t1.0\t0.0\t0.0\t1.0\n";
 
     mod performance {
         use super::*;
-        use std::time::{SystemTime, UNIX_EPOCH};
 
         #[test]
         fn test_large_dataset_handling() {
             // Create a larger synthetic dataset
-            let temp_dir = std::env::temp_dir();
-            let temp_file = temp_dir.join(format!(
-                "large_fb_{}_{}.tsv",
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos(),
-                std::process::id()
-            ));
 
             let mut data = String::from("#reference_panel_population:\tAFR\tEUR\n");
             data.push_str("chromosome\tphysical_position\tgenetic_position\tgenetic_marker_index\tsample1:::hap1:::AFR\tsample1:::hap1:::EUR\tsample1:::hap2:::AFR\tsample1:::hap2:::EUR\tsample2:::hap1:::AFR\tsample2:::hap1:::EUR\tsample2:::hap2:::AFR\tsample2:::hap2:::EUR\n");
@@ -1041,7 +937,7 @@ chr1\tinvalid_pos\t0.1\t0\t1.0\t0.0\t0.0\t1.0\n";
                 ));
             }
 
-            std::fs::write(&temp_file, data).unwrap();
+            let temp_file = write_temp_file(&data);
 
             let ginfo = create_test_genome();
             let inds = create_test_individuals();
@@ -1058,13 +954,11 @@ chr1\tinvalid_pos\t0.1\t0\t1.0\t0.0\t0.0\t1.0\n";
 
             let fb_matrix = result.unwrap();
             assert_eq!(fb_matrix.windows.len(), 100);
-
-            std::fs::remove_file(temp_file).ok();
         }
 
         #[test]
         fn test_memory_efficiency() {
-            let temp_file = create_temp_fb_file().expect("Failed to create temp file");
+            let temp_file = create_temp_fb_file();
             let ginfo = create_test_genome();
             let inds = create_test_individuals();
             let pos = vec![100, 200, 300, 400, 500];
@@ -1082,8 +976,6 @@ chr1\tinvalid_pos\t0.1\t0\t1.0\t0.0\t0.0\t1.0\n";
 
             assert_eq!(fb_small.windows.len(), fb_large.windows.len());
             assert_eq!(fb_small.mat.shape(), fb_large.mat.shape());
-
-            std::fs::remove_file(temp_file).ok();
         }
     }
 }

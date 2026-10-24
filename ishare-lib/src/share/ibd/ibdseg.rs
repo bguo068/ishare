@@ -515,7 +515,6 @@ mod tests {
     #[cfg(test)]
     mod file_io_tests {
         use super::*;
-        use std::fs;
 
         fn create_test_segments() -> Vec<IbdSeg> {
             vec![
@@ -528,17 +527,15 @@ mod tests {
 
         #[test]
         fn test_write_read_roundtrip() {
-            let test_file = "test_ibdseg_roundtrip.bin";
+            let tmp = tempfile::tempdir().unwrap();
+            let test_file = tmp.path().join("test_ibdseg_roundtrip.bin");
             let original_segments = create_test_segments();
 
             // Write segments
-            write_ibdseg_vec(&original_segments, test_file).unwrap();
+            write_ibdseg_vec(&original_segments, &test_file).unwrap();
 
             // Read segments back
-            let read_segments = read_ibdseg_vec(test_file).unwrap();
-
-            // Clean up
-            fs::remove_file(test_file).ok();
+            let read_segments = read_ibdseg_vec(&test_file).unwrap();
 
             // Verify they match
             assert_eq!(original_segments.len(), read_segments.len());
@@ -552,31 +549,27 @@ mod tests {
 
         #[test]
         fn test_write_read_empty_vector() {
-            let test_file = "test_ibdseg_empty.bin";
+            let tmp = tempfile::tempdir().unwrap();
+            let test_file = tmp.path().join("test_ibdseg_empty.bin");
             let empty_segments: Vec<IbdSeg> = vec![];
 
             // Write empty vector
-            write_ibdseg_vec(&empty_segments, test_file).unwrap();
+            write_ibdseg_vec(&empty_segments, &test_file).unwrap();
 
             // Read back
-            let read_segments = read_ibdseg_vec(test_file).unwrap();
-
-            // Clean up
-            fs::remove_file(test_file).ok();
+            let read_segments = read_ibdseg_vec(&test_file).unwrap();
 
             assert_eq!(read_segments.len(), 0);
         }
 
         #[test]
         fn test_write_read_single_segment() {
-            let test_file = "test_ibdseg_single.bin";
+            let tmp = tempfile::tempdir().unwrap();
+            let test_file = tmp.path().join("test_ibdseg_single.bin");
             let single_segment = vec![IbdSeg::new(10, 1, 20, 0, 50000, 60000, 1000000)];
 
-            write_ibdseg_vec(&single_segment, test_file).unwrap();
-            let read_segments = read_ibdseg_vec(test_file).unwrap();
-
-            // Clean up
-            fs::remove_file(test_file).ok();
+            write_ibdseg_vec(&single_segment, &test_file).unwrap();
+            let read_segments = read_ibdseg_vec(&test_file).unwrap();
 
             assert_eq!(read_segments.len(), 1);
             let read_seg = &read_segments[0];
@@ -587,7 +580,8 @@ mod tests {
 
         #[test]
         fn test_write_read_large_segments() {
-            let test_file = "test_ibdseg_large.bin";
+            let tmp = tempfile::tempdir().unwrap();
+            let test_file = tmp.path().join("test_ibdseg_large.bin");
             let mut large_segments = Vec::new();
 
             // Create many segments with different patterns
@@ -604,11 +598,8 @@ mod tests {
                 large_segments.push(seg);
             }
 
-            write_ibdseg_vec(&large_segments, test_file).unwrap();
-            let read_segments = read_ibdseg_vec(test_file).unwrap();
-
-            // Clean up
-            fs::remove_file(test_file).ok();
+            write_ibdseg_vec(&large_segments, &test_file).unwrap();
+            let read_segments = read_ibdseg_vec(&test_file).unwrap();
 
             assert_eq!(large_segments.len(), read_segments.len());
             assert_eq!(large_segments.len(), 1000);
@@ -711,25 +702,26 @@ mod tests {
 
         #[test]
         fn test_corrupted_file_handling() {
-            let test_file = "test_corrupted.bin";
+            let tmp = tempfile::tempdir().unwrap();
+            let test_file = tmp.path().join("test_corrupted.bin");
 
             // Create a file with invalid content
-            let mut file = fs::File::create(test_file).unwrap();
+            let mut file = fs::File::create(&test_file).unwrap();
             file.write_all(&[1, 2, 3, 4]).unwrap(); // Invalid file structure
             drop(file);
 
-            let result = read_ibdseg_vec(test_file);
-            fs::remove_file(test_file).ok();
+            let result = read_ibdseg_vec(&test_file);
 
             assert!(result.is_err());
         }
 
         #[test]
         fn test_file_with_wrong_segment_count() {
-            let test_file = "test_wrong_count.bin";
+            let tmp = tempfile::tempdir().unwrap();
+            let test_file = tmp.path().join("test_wrong_count.bin");
 
             // Create file claiming to have more segments than actually present
-            let mut file = fs::File::create(test_file).unwrap();
+            let mut file = fs::File::create(&test_file).unwrap();
             let fake_count: u64 = 10; // Claim 10 segments
             file.write_all(&fake_count.to_le_bytes()).unwrap();
             // But only write one segment worth of data
@@ -739,8 +731,7 @@ mod tests {
             file.write_all(&2000u32.to_le_bytes()).unwrap();
             drop(file);
 
-            let result = read_ibdseg_vec(test_file);
-            fs::remove_file(test_file).ok();
+            let result = read_ibdseg_vec(&test_file);
 
             assert!(result.is_err()); // Should fail trying to read more data
         }

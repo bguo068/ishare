@@ -1304,8 +1304,10 @@ mod tests {
             let mut records = GenotypeRecords::new(v, GenotypeRecordSortStatus::Unsorted);
 
             // read and write
-            records.clone().into_parquet_file("tmp.rec")?;
-            let records_read = GenotypeRecords::from_parquet_file("tmp.rec")?;
+            let tmp = tempdir().unwrap();
+            let tmp_rec = tmp.path().join("tmp.rec");
+            records.clone().into_parquet_file(&tmp_rec)?;
+            let records_read = GenotypeRecords::from_parquet_file(&tmp_rec)?;
             assert_eq!(records_read.sort_status, records.sort_status);
             assert_eq!(records_read.records(), records.records());
 
@@ -1313,8 +1315,8 @@ mod tests {
             records.sort_by_genome_position_allele()?;
             assert!(records.is_sorted_by_genome_position_allele());
             assert!(records.is_sorted_by_genome_position_allele_slow());
-            records.clone().into_parquet_file("tmp.rec")?;
-            let records_read = GenotypeRecords::from_parquet_file("tmp.rec")?;
+            records.clone().into_parquet_file(&tmp_rec)?;
+            let records_read = GenotypeRecords::from_parquet_file(&tmp_rec)?;
             assert!(records_read.is_sorted_by_genome_position_allele());
             assert!(records_read.is_sorted_by_genome_position_allele_slow());
             assert_eq!(records_read.sort_status, records.sort_status);
@@ -1324,8 +1326,8 @@ mod tests {
             records.sort_by_position_genome_allele()?;
             assert!(records.is_sorted_by_postion_genome_allele());
             assert!(records.is_sorted_by_position_genome_allele_slow());
-            records.clone().into_parquet_file("tmp.rec")?;
-            let records_read = GenotypeRecords::from_parquet_file("tmp.rec")?;
+            records.clone().into_parquet_file(&tmp_rec)?;
+            let records_read = GenotypeRecords::from_parquet_file(&tmp_rec)?;
             assert!(records_read.is_sorted_by_position_genome_allele());
             assert!(records_read.is_sorted_by_position_genome_allele_slow());
             assert_eq!(records_read.sort_status, records.sort_status);
@@ -1335,8 +1337,8 @@ mod tests {
             records.sort_by_position_allele_genome()?;
             assert!(records.is_sorted_by_postion_allele_genome());
             assert!(records.is_sorted_by_position_allele_genome_slow());
-            records.clone().into_parquet_file("tmp.rec")?;
-            let records_read = GenotypeRecords::from_parquet_file("tmp.rec")?;
+            records.clone().into_parquet_file(&tmp_rec)?;
+            let records_read = GenotypeRecords::from_parquet_file(&tmp_rec)?;
             assert!(records_read.is_sorted_by_position_allele_genome());
             assert!(records_read.is_sorted_by_position_allele_genome_slow());
             assert_eq!(records_read.sort_status, records.sort_status);
@@ -1344,8 +1346,8 @@ mod tests {
 
             // sort 4
             records.sort_by_individual_position_allele()?;
-            records.clone().into_parquet_file("tmp.rec")?;
-            let records_read = GenotypeRecords::from_parquet_file("tmp.rec")?;
+            records.clone().into_parquet_file(&tmp_rec)?;
+            let records_read = GenotypeRecords::from_parquet_file(&tmp_rec)?;
             assert!(records.is_sorted_by_individual_position_allele());
             assert!(records.is_sorted_by_individual_position_allele_slow());
             assert!(records_read.is_sorted_by_individual_position_allele());

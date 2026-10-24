@@ -90,7 +90,6 @@ fn calc_xirs() {
         .finish()
         .unwrap();
 
-    xirs.into_parquet("tmp.xirs.pq").unwrap();
-
-    std::fs::remove_file("tmp.xirs.pq").unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    xirs.into_parquet(tmp.path().join("tmp.xirs.pq")).unwrap();
 }
