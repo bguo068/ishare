@@ -237,8 +237,10 @@ impl Individuals {
     pub fn get_ploidy_converter(&self) -> (Individuals, PloidyConverter) {
         let v: Vec<String> = self
             .v()
-            .chunks_exact(2)
-            .map(|s| format!("{}|{}", &s[0], &s[1]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|s| format!("{}|{}", s[0], s[1]))
             .collect();
         let m = v.iter().enumerate().map(|(i, s)| (s.clone(), i)).collect();
         let inds = Individuals { vec: v, map: m };

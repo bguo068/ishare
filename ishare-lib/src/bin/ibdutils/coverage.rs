@@ -40,7 +40,7 @@ pub fn main_coverage(args: &Commands) -> Result<()> {
             .iter_mut()
             .zip([fmt])
             .zip([ibd_dir])
-            .zip(vec![inds1_opt].into_iter())
+            .zip(vec![inds1_opt])
         {
             if fmt.as_str() == "hapibd" {
                 ibd.read_hapibd_dir(dir)

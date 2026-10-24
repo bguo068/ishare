@@ -149,7 +149,7 @@ impl GenomeInfo {
     }
 
     pub fn split_chromosomes_by_regions(&self, regions: &Intervals<u32>) -> Self {
-        let name = format!("{}_rmpeaks", &self.name);
+        let name = format!("{}_rmpeaks", self.name);
         let mut chromsize = vec![];
         let mut idx = HashMap::new();
         let mut gwstarts = vec![];

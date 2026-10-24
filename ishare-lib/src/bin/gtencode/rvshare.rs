@@ -509,8 +509,8 @@ fn prep_target_group_pairs(
             target_group_pair.push((grp1, grp2));
         }
     } else {
-        for (grp1, _ids1) in group_map.iter() {
-            for (grp2, _ids2) in group_map.iter() {
+        for grp1 in group_map.keys() {
+            for grp2 in group_map.keys() {
                 // avoid repeated calculation such as grp1-grp2 and then grp2- rp1
                 if grp1 < grp2 {
                     continue;

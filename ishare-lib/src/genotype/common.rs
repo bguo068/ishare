@@ -37,13 +37,11 @@ impl GenotypeMatrix {
     }
 
     pub fn nrows(&self) -> usize {
-        if self.ncols == 0 {
-            0
-        } else {
-            let nrow = self.bv.len() / self.ncols;
-            assert_eq!(self.ncols * nrow, self.bv.len());
-            nrow
-        }
+        let Some(nrow) = self.bv.len().checked_div(self.ncols) else {
+            return 0;
+        };
+        assert_eq!(self.ncols * nrow, self.bv.len());
+        nrow
     }
 
     pub fn ncols(&self) -> usize {

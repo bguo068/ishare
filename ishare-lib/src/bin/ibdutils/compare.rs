@@ -57,7 +57,7 @@ pub fn main_compare(args: &Commands) -> Result<()> {
             .iter_mut()
             .zip([fmt1, fmt2])
             .zip([ibd1_dir, ibd2_dir])
-            .zip(vec![inds1_opt, inds2_opt].into_iter())
+            .zip(vec![inds1_opt, inds2_opt])
         {
             if fmt.as_str() == "hapibd" {
                 ibd.read_hapibd_dir(dir)
