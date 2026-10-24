@@ -30,36 +30,36 @@ pub struct TParams {
     tau: Vec<f64>,
 }
 
-pub struct SkatOCalculator {
+pub struct SkatOCalculator<'a> {
     // covariable with additional columns for intercepts
-    pub x1: Array2<f64>,
+    pub x1: &'a Array2<f64>,
     // genotype data
     pub z: Array2<f64>,
     // weights on SNPs
-    pub w: Array1<f64>,
+    pub w: &'a Array1<f64>,
     // response with 0.0 and 1.1
-    pub y: Array1<f64>,
+    pub y: &'a Array1<f64>,
     // predicted probability
-    pub mu: Array1<f64>,
+    pub mu: &'a Array1<f64>,
     // inverse of the variance of y_i
-    pub pi: Array1<f64>,
+    pub pi: &'a Array1<f64>,
     // q_burden
     q_burden: f64,
     // q_stat
     q_skat: f64,
-    rho_vec: Vec<f64>,
+    rho_vec: &'a Vec<f64>,
     q_rho_vec: Vec<f64>,
 }
 
-impl SkatOCalculator {
+impl<'a> SkatOCalculator<'a> {
     pub fn new(
-        x1: Array2<f64>,
+        x1: &'a Array2<f64>,
         z: Array2<f64>,
-        w: Array1<f64>,
-        y: Array1<f64>,
-        mu: Array1<f64>,
-        pi: Array1<f64>,
-        rho_vec: Vec<f64>,
+        w: &'a Array1<f64>,
+        y: &'a Array1<f64>,
+        mu: &'a Array1<f64>,
+        pi: &'a Array1<f64>,
+        rho_vec: &'a Vec<f64>,
     ) -> Self {
         // instance with tempory q values
         let mut cal = Self {
@@ -96,6 +96,8 @@ impl SkatOCalculator {
         cal
     }
     /// see https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3415556/ (equation 4)
+    ///
+    /// No allocation
     fn _get_q_burden(&self) -> f64 {
         let base = self
             .y
@@ -117,6 +119,8 @@ impl SkatOCalculator {
     }
 
     /// see https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3415556/ (equation 6)
+    ///
+    /// No allocation
     fn _get_q_skat(&self) -> f64 {
         self.w
             .iter()
@@ -135,6 +139,7 @@ impl SkatOCalculator {
             .sum::<f64>()
     }
 
+    /// no allocation
     pub fn multiply_weight_to_z(&mut self) {
         self.z
             .columns_mut()
@@ -182,6 +187,8 @@ impl SkatOCalculator {
     ///   K1 <- t(Z2) %*% Z2
     ///   # eigenvalues
     ///   lambda.all[[i]] <- Get_Lambda(K1)
+    ///
+    /// allocate
     pub fn multiply_p_to_z(&mut self) {
         use ndarray_linalg::solve::Inverse;
         // column vector
@@ -198,29 +205,31 @@ impl SkatOCalculator {
         // (t(X1) %*% (Z * pi_1))
         // d
 
-        let mut a = z.to_owned();
-        a.axis_iter_mut(Axis(0))
+        let mut z_a = z.to_owned(); // allocate
+        z_a.axis_iter_mut(Axis(0))
             .zip(pi.iter())
             .for_each(|(mut z_i, pi_i)| z_i *= pi_i.sqrt());
-        let mut b = x1.to_owned();
-        b.axis_iter_mut(Axis(0))
+        let mut x1_b = x1.to_owned(); // allocate
+        x1_b.axis_iter_mut(Axis(0))
             .zip(pi.iter())
             .for_each(|(mut x_i, pi_i)| x_i *= pi_i.sqrt());
-        let mut c = x1.to_owned();
-        c.axis_iter_mut(Axis(0))
+        let mut x1_c = x1.to_owned(); // allocate
+        x1_c.axis_iter_mut(Axis(0))
             .zip(pi.iter())
             .for_each(|(mut x_i, pi_i)| x_i *= *pi_i);
-        let c = x1.t().dot(&c).inv().expect("fail to invert");
-        let mut d = z.to_owned();
-        d.axis_iter_mut(Axis(0))
+        let x1x1_c = x1.t().dot(&x1_c).inv().expect("fail to invert"); // allocate
+        let mut z_d = z.to_owned(); // allocate
+        z_d.axis_iter_mut(Axis(0))
             .zip(pi.iter())
             .for_each(|(mut z_i, pi_i)| z_i *= *pi_i);
-        let d = x1.t().dot(&d);
-        self.z = a - b.dot(&c).dot(&d);
+        let x1x1_d = x1.t().dot(&z_d); // allocate
+        self.z = z_a - x1_b.dot(&x1x1_c).dot(&x1x1_d); // allocate
     }
 
     // calculate z1 without changing self.z. i.e. z1 is calculated on the fly
     // for each rho
+    //
+    // allocate
     pub fn multiply_l_to_z(&self, rho: f64) -> Array2<f64> {
         // prepare r_rho matrix
         let nsnp = self.w.len();
@@ -228,10 +237,11 @@ impl SkatOCalculator {
         r_rho.diag_mut().fill(1.0);
         // skat-o R code L is upper triangular matrix and then use tranpose
         // here we direct get the lower triangular matrix
-        let l = r_rho.cholesky(ndarray_linalg::UPLO::Lower).unwrap();
-        self.z.dot(&l).mapv_into(|x| x / 2.0f64.sqrt())
+        let l = r_rho.cholesky(ndarray_linalg::UPLO::Lower).unwrap(); //allocate
+        self.z.dot(&l).mapv_into(|x| x / 2.0f64.sqrt()) // allocate
     }
 
+    // allocate
     pub fn _get_sorted_nonneg_lambdas(mat: &Array2<f64>) -> Array1<f64> {
         //  out.s <- eigen(K, symmetric = TRUE, only.values = TRUE)
         //  lambda1 <- out.s$values
@@ -239,19 +249,20 @@ impl SkatOCalculator {
         //  # eigenvalue bigger than sum(eigenvalues)/1000
         //  IDX2 <- which(lambda1 > mean(lambda1[IDX1]) / 1e+05)
         //  lambda <- lambda1[IDX2]
-        let (eigvals, _eigvec) = mat.eigh(ndarray_linalg::UPLO::Lower).unwrap();
-        let mut eigvals: Vec<_> = eigvals.into_iter().filter(|x| *x >= 0.0).collect();
+        let (eigvals, _eigvec) = mat.eigh(ndarray_linalg::UPLO::Lower).unwrap(); // allocate
+        let mut eigvals: Vec<_> = eigvals.into_iter().filter(|x| *x >= 0.0).collect(); //allocate
         let thres = eigvals.iter().sum::<f64>() / eigvals.len() as f64 / 1e+5;
         eigvals.retain(|x| *x > thres);
         eigvals.sort_by(|a, b| a.partial_cmp(b).unwrap().reverse());
         eigvals.into()
     }
 
+    /// call function that allocate
     pub fn _get_q_rho_params(&self, rho: f64) -> (f64, f64, f64) {
         // calculate z1 and lambdas for each q_skat
-        let z1 = self.multiply_l_to_z(rho);
+        let z1 = self.multiply_l_to_z(rho); // allocate
 
-        let lambda = Self::_get_sorted_nonneg_lambdas(&z1.t().dot(&z1));
+        let lambda = Self::_get_sorted_nonneg_lambdas(&z1.t().dot(&z1)); // allocate
         let c1: f64 = lambda.sum();
         let c2: f64 = lambda.map(|x| *x * *x).sum();
         let c3: f64 = lambda.map(|x| *x * *x * *x).sum();
@@ -276,14 +287,15 @@ impl SkatOCalculator {
         (mu_q, sigma_q, df)
     }
 
+    // allocate
     pub fn get_pmin_and_quantiles(&self) -> (f64, Vec<f64>) {
-        let mut params = Vec::<(f64, f64, f64)>::with_capacity(self.q_rho_vec.len());
-        let mut quantiles = Vec::<f64>::with_capacity(self.q_rho_vec.len());
+        let mut params = Vec::<(f64, f64, f64)>::with_capacity(self.q_rho_vec.len()); // allocate
+        let mut quantiles = Vec::<f64>::with_capacity(self.q_rho_vec.len()); // allocate
         let mut pval_min = 1.0;
         //assert!(false);
         // calculate params and pval for each q_skat and get the min
         for (q_rho, rho) in self.q_rho_vec.iter().zip(self.rho_vec.iter()) {
-            let (mu_q, sigma_q, df) = self._get_q_rho_params(*rho);
+            let (mu_q, sigma_q, df) = self._get_q_rho_params(*rho); // allocate
             params.push((mu_q, sigma_q, df));
             // Lee2012AJHG, equation 11
             let q_norm = (q_rho - mu_q) * (2.0 * df).sqrt() / sigma_q + df;
@@ -310,6 +322,8 @@ impl SkatOCalculator {
     // - var_remain
     // - df
     // - tau: dim=(5,)
+    ///
+    /// call function that allocates
     pub fn get_t_params(&self) -> TParams {
         let z1 = self.z.mapv(|zij| zij / 2.0f64.sqrt());
         use ndarray::prelude::*;
@@ -336,7 +350,7 @@ impl SkatOCalculator {
 
         let item2 = &z1 - &item1;
 
-        let lambda_arr = Self::_get_sorted_nonneg_lambdas(&item2.t().dot(&item2));
+        let lambda_arr = Self::_get_sorted_nonneg_lambdas(&item2.t().dot(&item2)); // allocate
         let var_remain = (item1.t().dot(&item1) * (&item2.t().dot(&item2))).sum() * 4.0;
 
         let mu_q: f64 = lambda_arr.iter().sum();
@@ -369,11 +383,15 @@ impl SkatOCalculator {
     }
 
     /// see SKAT R package function `SKAT_Optimal_Integrate_Func_Davies`
+    ///
+    /// allocates
     pub fn _t_stat_pdf_davies(
         x: f64,
         quantiles: ArrayView1<f64>,
         rho_arr: ArrayView1<f64>,
         t_params: &TParams,
+        buffer1: &[f64],
+        buffer2: &[i32],
     ) -> f64 {
         let temp1 = &aview1(t_params.tau.as_slice()) * x;
         // TODO: need to improve
@@ -400,16 +418,18 @@ impl SkatOCalculator {
             let mut res = 0.0f64;
             cffi::qfc(
                 t_params.lambda_arr.as_slice().unwrap(), // lb1
-                &vec![0.0; nlambda],                     // nc1
-                &vec![1i32; nlambda],                    // n1
-                &(nlambda as i32),                       // r1
-                &0.0f64,                                 // sigma,
-                &min1_st,                                // c1
-                &10000i32,                               // lim1
-                &(1e-4),                                 // acc
-                &mut trace_arr,                          // trace_arr
-                &mut idx_fault,                          // idx_fault
-                &mut res,                                // result
+                // &vec![0.0; nlambda],                     // nc1 // allocate
+                buffer1,
+                // &vec![1i32; nlambda],                    // n1 // allocate
+                buffer2,
+                &(nlambda as i32), // r1
+                &0.0f64,           // sigma,
+                &min1_st,          // c1
+                &10000i32,         // lim1
+                &(1e-4),           // acc
+                &mut trace_arr,    // trace_arr
+                &mut idx_fault,    // idx_fault
+                &mut res,          // result
             )
             .unwrap();
             assert_eq!(idx_fault, 0);
@@ -449,9 +469,12 @@ impl SkatOCalculator {
         use peroxide::numerical::integral::{integrate, Integral};
         let rho_arr = aview1(self.rho_vec.as_slice());
         let quantiles = aview1(quantiles.as_slice());
+        let nlambda = t_params.lambda_arr.len();
+        let buffer1 = vec![0.0f64; nlambda];
+        let buffer2 = vec![1i32; nlambda];
         let re = integrate(
             // |x| Self::_t_stat_pdf_liu(x, quantiles, rho_arr, t_params),
-            |x| Self::_t_stat_pdf_davies(x, quantiles, rho_arr, t_params),
+            |x| Self::_t_stat_pdf_davies(x, quantiles, rho_arr, t_params, &buffer1, &buffer2),
             (0.0, 40.0),
             Integral::G7K15(1e-8, 30),
         );
@@ -482,10 +505,10 @@ fn test_skato_example() {
     // build calculator instance
     let x1 = make_mat_x1(&mat_x);
     let z = mat_z;
-    let w = weights.into();
+    let w: Array1<f64> = weights.into();
     let pi: Array1<f64> = mu.map(|mu_i| mu_i * (1.0 - mu_i));
     let rho_vec = vec![0.1, 0.3, 0.5, 0.7, 0.9];
-    let mut calculator = SkatOCalculator::new(x1, z, w, y, mu, pi, rho_vec);
+    let mut calculator = SkatOCalculator::new(&x1, z, &w, &y, &mu, &pi, &rho_vec);
     calculator.multiply_weight_to_z();
     calculator.multiply_p_to_z();
     // do this step before z multiply l (which is called in get_pmin_and_quantiles)
