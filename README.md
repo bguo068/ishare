@@ -46,7 +46,18 @@ ancestry-specific IBD. Refer to the binary `asibd` for this feature.
 
 1. **Operating Systems:** Supported on Linux and MacOS. Windows is currently not
 supported due to compatibility issues with the `rust-htslib` dependency.
-2. **C Compiler:** This crate relies on bindings to C libraries.
+2. **C Compiler and libclang:** This crate relies on bindings to C libraries.
+`rust-htslib` builds htslib from source and runs `bindgen`, which needs
+`libclang`. Without it the build fails with `Unable to find libclang ... set the
+LIBCLANG_PATH environment variable`.
+    - Ubuntu/Debian: `sudo apt install build-essential clang libclang-dev`
+    - macOS: `xcode-select --install`
+    - Without root access (e.g. on Linux clusters), install them with conda or
+      pixi and point `LIBCLANG_PATH` at the environment:
+      ```sh
+      conda install -c conda-forge clang libclang   # or: pixi add clang libclang
+      export LIBCLANG_PATH=$CONDA_PREFIX/lib
+      ```
 3. **Rust:** Ensure `cargo` and the necessary toolchain are installed to compile
 this crate and its associated binary executables.
 

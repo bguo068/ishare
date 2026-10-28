@@ -33,7 +33,11 @@ rustup component add clippy
 rustup component add rustfmt
 ```
 
-3. Install a C Compiler (Required for `rust-htslib`)
+3. Install a C Compiler and libclang (Required for `rust-htslib`)
+
+`rust-htslib` builds htslib from source and runs `bindgen`, which needs
+`libclang`. Without it the build fails with `Unable to find libclang ... set the
+LIBCLANG_PATH environment variable`.
 
 - macOS
 
@@ -45,7 +49,14 @@ xcode-select --install
 
 ```sh
 sudo apt update
-sudo apt install -y build-essential pkg-config git clang
+sudo apt install -y build-essential pkg-config git clang libclang-dev
+```
+
+- Without root access (e.g. Linux clusters): use conda or pixi
+
+```sh
+conda install -c conda-forge clang libclang   # or: pixi add clang libclang
+export LIBCLANG_PATH=$CONDA_PREFIX/lib
 ```
 
 ## 🧑‍💻 Setting Up VSCode (Recommended)
