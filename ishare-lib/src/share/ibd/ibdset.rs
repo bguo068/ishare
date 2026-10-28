@@ -636,26 +636,21 @@ impl IbdSet {
             .into_iter()
             .try_for_each(|(_pair, mut grp)| -> Result<()> {
                 let mut ibd1 = grp.next().ok_or(IshareError::EmptyOption)?;
-                for (i, x) in grp.enumerate() {
-                    if i == 0 {
-                        ibd1 = x;
-                    } else {
-                        let ibd2 = x;
-                        let (_s1, e1) = (ibd1.s, ibd1.e);
-                        let (s2, e2) = (ibd2.s, ibd2.e);
-                        // assert!(s1<=s2);
+                for ibd2 in grp {
+                    let (_s1, e1) = (ibd1.s, ibd1.e);
+                    let (s2, e2) = (ibd2.s, ibd2.e);
+                    // assert!(s1<=s2);
 
-                        if e1 >= s2 {
-                            // overlapping
-                            if e2 > e1 {
-                                ibd1.e = e2;
-                            }
-                            ibd2.i = 0;
-                            ibd2.j = 0;
-                        } else {
-                            // nochange if eveything else
-                            ibd1 = ibd2; // point to next record
+                    if e1 >= s2 {
+                        // overlapping
+                        if e2 > e1 {
+                            ibd1.e = e2;
                         }
+                        ibd2.i = 0;
+                        ibd2.j = 0;
+                    } else {
+                        // nochange if eveything else
+                        ibd1 = ibd2; // point to next record
                     }
                 }
                 Ok(())
@@ -1849,6 +1844,40 @@ mod comprehensive_tests {
             let result = ibdset.merge();
             assert!(result.is_ok());
             assert_eq!(ibdset.get_ploidy_status(), DiploidMerged);
+            assert_eq!(ibdset.ibd.len(), 1);
+            assert_eq!((ibdset.ibd[0].s, ibdset.ibd[0].e), (1000, 4000));
+        }
+
+        #[test]
+        fn test_merge_overlaps_per_pair() {
+            let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
+            // pair (0, 1): two overlapping groups separated by a gap
+            ibdset.add(IbdSeg::new(0, 0, 1, 0, 1000, 3000, 0));
+            ibdset.add(IbdSeg::new(0, 1, 1, 1, 2000, 4000, 0));
+            ibdset.add(IbdSeg::new(0, 0, 1, 1, 5000, 6000, 0));
+            ibdset.add(IbdSeg::new(0, 1, 1, 0, 5500, 7000, 0));
+            // pair (0, 2): a single segment
+            ibdset.add(IbdSeg::new(0, 0, 2, 0, 100, 200, 0));
+            ibdset.update_parts(ibdset.ibd.clone(), Diploid, Unsorted);
+
+            ibdset.merge().unwrap();
+
+            let mut got = ibdset
+                .ibd
+                .iter()
+                .map(|x| (x.individual_pair(), x.s, x.e))
+                .collect::<Vec<_>>();
+            got.sort();
+            let p01 = IbdSeg::new(0, 0, 1, 0, 0, 1, 0).individual_pair();
+            let p02 = IbdSeg::new(0, 0, 2, 0, 0, 1, 0).individual_pair();
+            let mut expected = vec![(p01, 1000, 4000), (p01, 5000, 7000), (p02, 100, 200)];
+            expected.sort();
+            assert_eq!(got, expected);
         }
 
         #[test]
