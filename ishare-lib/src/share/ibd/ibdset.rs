@@ -592,10 +592,16 @@ impl IbdSet {
         &mut self,
         haploid_inds: Arc<Individuals>,
         ploidy_converter: &PloidyConverter,
-    ) {
-        // check ploidy
-        let is_diploid = matches!(self.ploidy_status, Diploid | DiploidMerged);
-        assert!(is_diploid);
+    ) -> Result<()> {
+        // check ploidy: merged segments no longer belong to a haplotype
+        if !matches!(self.ploidy_status, Diploid) {
+            return Err(IshareError::RuntimeCheck).attach_with(|| {
+                format!(
+                    "convert to haploid requires unmerged Diploid IBD, got {:?}",
+                    self.ploidy_status
+                )
+            });
+        }
 
         self.inds = haploid_inds;
         self.ibd.iter_mut().for_each(|seg| {
@@ -611,6 +617,7 @@ impl IbdSet {
 
         self.ploidy_status = Haploid;
         self.sort_status = Unsorted;
+        Ok(())
     }
 
     /// Merge overlapping segments of each sample pair and sort by samples
@@ -657,6 +664,9 @@ impl IbdSet {
             })?;
         // clean up unused record
         self.ibd.retain(|seg| !((seg.i == 0) && (seg.j == 0)));
+        if ploidy_after_merge == DiploidMerged {
+            self.ibd.iter_mut().for_each(|seg| seg.mark_as_merged());
+        }
         self.ploidy_status = ploidy_after_merge;
         Ok(())
     }
@@ -733,6 +743,7 @@ impl IbdSet {
             })?;
         // clean up unused record
         self.ibd.retain(|seg| !((seg.i == 0) && (seg.j == 0)));
+        self.ibd.iter_mut().for_each(|seg| seg.mark_as_merged());
         self.ploidy_status = DiploidMerged;
         Ok(())
     }
@@ -1881,6 +1892,48 @@ mod comprehensive_tests {
         }
 
         #[test]
+        fn test_merge_marks_diploid_segments_as_merged() {
+            let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
+            ibdset.add(IbdSeg::new(0, 0, 1, 0, 1000, 3000, 0));
+            ibdset.add(IbdSeg::new(0, 1, 1, 1, 2000, 4000, 0));
+            ibdset.add(IbdSeg::new(0, 1, 2, 0, 5000, 6000, 0));
+            ibdset.infer_ploidy();
+            assert_eq!(ibdset.get_ploidy_status(), Diploid);
+
+            ibdset.merge().unwrap();
+            assert!(ibdset.iter().all(|x| x.is_from_merge()));
+
+            // segments and status agree, so re-inferring keeps DiploidMerged
+            ibdset.infer_ploidy();
+            assert_eq!(ibdset.get_ploidy_status(), DiploidMerged);
+        }
+
+        #[test]
+        fn test_convert_merged_to_haploid_is_error() {
+            let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = create_test_individuals();
+            let (_, converter) = inds.get_ploidy_converter();
+            let (hap_inds, _) = inds.get_ploidy_converter();
+            let mut ibdset = IbdSet::new(gmap, ginfo, Arc::new(inds));
+
+            ibdset.add(IbdSeg::new(0, 0, 1, 0, 1000, 3000, 0));
+            ibdset.update_parts(ibdset.ibd.clone(), Diploid, Unsorted);
+            ibdset.merge().unwrap();
+
+            assert!(ibdset
+                .covert_to_haploid(Arc::new(hap_inds), &converter)
+                .is_err());
+            assert_eq!(ibdset.get_ploidy_status(), DiploidMerged);
+        }
+
+        #[test]
         fn test_merge_haploid_keeps_haploid_status() {
             let genome = create_test_genome();
             let gmap = Arc::new(genome.gmap().clone());
@@ -1894,6 +1947,7 @@ mod comprehensive_tests {
 
             assert!(ibdset.merge().is_ok());
             assert_eq!(ibdset.get_ploidy_status(), Haploid);
+            assert!(ibdset.is_valid_haploid_ibd());
             assert_eq!(ibdset.ibd.len(), 2);
             assert!(ibdset.is_sorted_by_samples());
         }

@@ -167,7 +167,8 @@ fn read_ibd(
                     .into_report()
                     .attach("IBD data in hapibd format can only convert to haploid")
             );
-            ibd.covert_to_haploid(Arc::new(haploid_inds), &converter);
+            ibd.covert_to_haploid(Arc::new(haploid_inds), &converter)
+                .change_context(IbdUtilsError::Library)?;
         }
     } else if fmt.as_str() == "tskibd" {
         ibd.read_tskibd_dir(ibd_dir)

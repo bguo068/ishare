@@ -72,7 +72,8 @@ pub fn main_coverage(args: &Commands) -> Result<()> {
 
             match inds_opt {
                 Some((converter, ind_, PloidConvertDirection::Diploid2Haploid)) => {
-                    ibd.covert_to_haploid(Arc::new(ind_), &converter);
+                    ibd.covert_to_haploid(Arc::new(ind_), &converter)
+                        .change_context(IbdUtilsError::Library)?;
                 }
                 Some((converter, ind_, PloidConvertDirection::Haploid2Diploid)) => {
                     ibd.covert_to_het_diploid(Arc::new(ind_), &converter)

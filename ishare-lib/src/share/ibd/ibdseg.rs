@@ -110,6 +110,12 @@ impl IbdSeg {
     pub fn is_from_merge(&self) -> bool {
         ((self.i & 0x3) == 2) && ((self.j & 0x3) == 2)
     }
+
+    /// mark a diploid IBD segment as resulting from merging (haplotype code 2 for both samples)
+    pub fn mark_as_merged(&mut self) {
+        self.i = (self.i & !0x3) | 2;
+        self.j = (self.j & !0x3) | 2;
+    }
     /// check validity of IBD segments
     /// - the combinaton of hap1 and hap2 values are valid
     /// - start position is smaller then end position
