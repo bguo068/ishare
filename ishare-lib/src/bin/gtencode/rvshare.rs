@@ -95,7 +95,7 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
                 .attach("fail to read individual file")?;
             let freq_map = if matches!(cli.metric, SharingMetric::GRM) {
                 let mut records_for_freq =
-                    GenotypeRecords::from_parquet_file(rec[0].with_extension(".rec2"))
+                    GenotypeRecords::from_parquet_file(rec[0].with_extension("rec2"))
                         .change_context(GtencodeError::Input)?;
                 info!("build allele frequency map");
                 crate::utils::calc_allele_frequency(&mut records_for_freq, inds.v().len() * 2)
@@ -116,7 +116,7 @@ pub fn main_rvshare(args: &Commands) -> Result<()> {
                 if *to_processed_records {
                     records
                         .clone()
-                        .into_parquet_file(rec[0].with_extension(".rec2"))
+                        .into_parquet_file(rec[0].with_extension("rec2"))
                         .change_context(GtencodeError::Output)
                         .attach("fail to write records file for allele frequency calculation")?;
                 }

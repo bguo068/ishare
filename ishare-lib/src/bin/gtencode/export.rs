@@ -29,7 +29,7 @@ pub fn main_export(args: &Commands) -> Result<()> {
         )
         .change_context(GtencodeError::Input)?;
         let sites = Sites::from_parquet_file(
-            from_prefix(rec, ".sit").change_context(GtencodeError::Input)?,
+            from_prefix(rec, "sit").change_context(GtencodeError::Input)?,
         )
         .change_context(GtencodeError::Input)?;
         let inds = Individuals::from_parquet_file(
@@ -109,7 +109,8 @@ pub fn main_export(args: &Commands) -> Result<()> {
             .try_for_each(|mrg|-> Result<()> {
                 match mrg {
                     Left(_) => panic!("unreachable"),
-                    Right(_) => panic!("unreachable"),
+                    // site without any rare allele records: nothing to export
+                    Right(_) => {}
                     Both(recs, (ipos, _)) => {
                         let gw_pos = recs[0].get_position();
                         let (_chrid, chrname, pos) = ginfo.to_chr_pos(gw_pos);
@@ -120,13 +121,14 @@ pub fn main_export(args: &Commands) -> Result<()> {
                         is_rare.clear();
 
                         let allele_bytes = sites.get_alleles_by_idx(ipos);
-                        for a in allele_bytes.split(|byte| *byte != b' ') {
+                        for a in allele_bytes.split(|byte| *byte == b' ') {
                             allele.push(a);
                         }
 
                         is_rare.resize(allele.len(), false);
+                        // record alleles are 1-based indices into the site's allele list
                         recs.iter().for_each(|r| {
-                            let i = r.get_allele() as usize;
+                            let i = r.get_allele() as usize - 1;
                             if !is_rare[i] {
                                 is_rare[i] = true;
                             }
@@ -141,7 +143,7 @@ pub fn main_export(args: &Commands) -> Result<()> {
                                     if common_allele == u8::MAX {
                                         common_allele = i as u8;
                                     }
-                                    i
+                                    1
                                 }
                                 true => 0,
                             })
@@ -170,8 +172,8 @@ pub fn main_export(args: &Commands) -> Result<()> {
                                         false => GenotypeAllele::Phased(common_allele as i32),
                                     },
                                     Both(r, ignome) => match ignome % 2 == 0 {
-                                        true => GenotypeAllele::Unphased(r.get_allele() as i32),
-                                        false => GenotypeAllele::Phased(r.get_allele() as i32),
+                                        true => GenotypeAllele::Unphased(r.get_allele() as i32 - 1),
+                                        false => GenotypeAllele::Phased(r.get_allele() as i32 - 1),
                                     },
                                 };
                                 gt.push(gta);
