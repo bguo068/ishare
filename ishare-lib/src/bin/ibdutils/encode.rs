@@ -71,6 +71,23 @@ pub fn main_encode(args: &Commands) -> Result<()> {
         //   calculate low snp regions
         let (low_snp_regions, bounds, cnts) =
             get_low_snp_regions(&ginfo, &gmap, positions, min_snp)?;
+        let low_snp_bp: u64 = low_snp_regions
+            .iter()
+            .map(|x| (x.end - x.start) as u64)
+            .sum();
+        let low_snp_frac = low_snp_bp as f64 / ginfo.get_total_len_bp() as f64;
+        if low_snp_frac > 0.5 {
+            let source = match position_lst {
+                Some(_) => "the --position-lst file",
+                None => "IBD segment ends (no --position-lst given)",
+            };
+            warn!(
+                "1-cM windows with fewer than {min_snp} SNPs cover {:.1}% of the genome \
+                 and will be removed; SNP positions come from {source}. \
+                 Pass --position-lst or lower --min-snp (0 disables this filter)",
+                low_snp_frac * 100.0
+            );
+        }
 
         // get coverage
         let step_cm = 0.25;
@@ -111,6 +128,20 @@ pub fn main_encode(args: &Commands) -> Result<()> {
         // write snp density
         write_snp_counts(&bounds, &cnts, out_prefix, &ginfo)
             .change_context(IbdUtilsError::Output)?;
+
+        // fail instead of silently writing an empty IBD set
+        ensure!(
+            ibd.as_slice().is_empty() || !v.is_empty(),
+            IbdUtilsError::Output.into_report().attach(format!(
+                "all {} IBD segments were removed by filtering ({:.1}% of the genome is in \
+                 low-SNP windows); see {}_rm_regions.tsv and {}_snp_counts.tsv. \
+                 Pass --position-lst or lower --min-snp (0 disables the low-SNP filter)",
+                ibd.as_slice().len(),
+                low_snp_frac * 100.0,
+                out_prefix.to_string_lossy(),
+                out_prefix.to_string_lossy(),
+            ))
+        );
     }
     Ok(())
 }

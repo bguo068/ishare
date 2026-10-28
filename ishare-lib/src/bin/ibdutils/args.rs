@@ -29,15 +29,17 @@ pub enum Commands {
         /// than `outlier_upper` * std above 3% trimmed mean will be removed
         #[arg(long, default_value_t = 10.0)]
         outlier_upper: f64,
-        /// position list to calcualte snp density. If None,
-        /// the position list will be generated from IBD segments
+        /// position list to calcualte snp density. If None, the start and end
+        /// positions of IBD segments are used as SNP positions, which is often
+        /// too sparse for --min-snp; pass a position list or use --min-snp 0
         #[arg(long)]
         position_lst: Option<PathBuf>,
         /// 1 cM windows with less than min_snp SNPs will be excluded
+        /// (set to 0 to disable this filter)
         #[arg(long, default_value_t = 15)]
         min_snp: u32,
-        /// threshold: sample pairs with flattend IBD > genome size * threshold
-        /// are treated as highly related.
+        /// IBD segments shorter than min_cm (after removing excluded regions)
+        /// are dropped
         #[arg(long, default_value_t = 2.0)]
         min_cm: f32,
         /// Path to output file (prefix)
