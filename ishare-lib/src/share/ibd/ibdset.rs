@@ -613,9 +613,21 @@ impl IbdSet {
         self.sort_status = Unsorted;
     }
 
+    /// Merge overlapping segments of each sample pair and sort by samples
+    ///
+    /// For a diploid (unmerged) set, segments from different haplotype pairs
+    /// are flattened and the set becomes `DiploidMerged`. A haploid set has
+    /// one haplotype pair per sample pair, so it stays `Haploid`.
     pub fn merge(&mut self) -> Result<()> {
-        let is_diploid_unmerged = matches!(self.ploidy_status, Diploid);
-        assert!(is_diploid_unmerged);
+        let ploidy_after_merge = match self.ploidy_status {
+            Diploid => DiploidMerged,
+            Haploid => Haploid,
+            status => {
+                return Err(IshareError::RuntimeCheck).attach_with(|| {
+                    format!("merge requires Diploid or Haploid IBD, got {status:?}")
+                });
+            }
+        };
 
         self.sort_by_samples();
         self.ibd
@@ -650,7 +662,7 @@ impl IbdSet {
             })?;
         // clean up unused record
         self.ibd.retain(|seg| !((seg.i == 0) && (seg.j == 0)));
-        self.ploidy_status = DiploidMerged;
+        self.ploidy_status = ploidy_after_merge;
         Ok(())
     }
 
@@ -1840,25 +1852,36 @@ mod comprehensive_tests {
         }
 
         #[test]
-        fn test_merge_requires_diploid_status() {
+        fn test_merge_haploid_keeps_haploid_status() {
             let genome = create_test_genome();
             let gmap = Arc::new(genome.gmap().clone());
             let ginfo = Arc::new(genome.ginfo().clone());
             let inds = Arc::new(create_test_individuals());
             let mut ibdset = IbdSet::new(gmap, ginfo, inds);
 
+            ibdset.add(IbdSeg::new(1, 3, 2, 3, 5000, 6000, 0));
             ibdset.add(IbdSeg::new(0, 3, 1, 3, 1000, 3000, 0));
             ibdset.update_parts(ibdset.ibd.clone(), Haploid, Unsorted);
 
-            // The merge function requires Diploid status - it will panic with Haploid
-            // This is expected behavior for the assert! in the merge function
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _ = ibdset.merge();
-            }));
-            assert!(
-                result.is_err(),
-                "merge() should panic when ploidy is not Diploid"
-            );
+            assert!(ibdset.merge().is_ok());
+            assert_eq!(ibdset.get_ploidy_status(), Haploid);
+            assert_eq!(ibdset.ibd.len(), 2);
+            assert!(ibdset.is_sorted_by_samples());
+        }
+
+        #[test]
+        fn test_merge_rejects_merged_or_unknown_ploidy() {
+            let genome = create_test_genome();
+            let gmap = Arc::new(genome.gmap().clone());
+            let ginfo = Arc::new(genome.ginfo().clone());
+            let inds = Arc::new(create_test_individuals());
+            let mut ibdset = IbdSet::new(gmap, ginfo, inds);
+
+            ibdset.add(IbdSeg::new(0, 2, 1, 2, 1000, 3000, 0));
+            for status in [DiploidMerged, UnknownPloidy] {
+                ibdset.update_parts(ibdset.ibd.clone(), status, Unsorted);
+                assert!(ibdset.merge().is_err());
+            }
         }
 
         #[test]
