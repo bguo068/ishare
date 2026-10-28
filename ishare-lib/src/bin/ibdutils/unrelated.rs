@@ -21,7 +21,7 @@ pub fn main_unrelated(args: &Commands) -> Result<()> {
         sample_lst,
         fmt,
         ibd_dir,
-        theshold,
+        threshold,
         out,
     } = args
     {
@@ -47,7 +47,7 @@ pub fn main_unrelated(args: &Commands) -> Result<()> {
         let ibd = read_ibd(ginfo.clone(), gmap.clone(), inds.clone(), ibd_dir, fmt)?;
         info!("total IBD segment counts: {}", ibd.as_slice().len());
 
-        let related_paris = get_related_pairs(&ibd, *theshold)?;
+        let related_paris = get_related_pairs(&ibd, *threshold)?;
         let samples_to_rm = get_samples_to_remove(related_paris);
         info!(
             "remove {} samples out of {}",
@@ -94,7 +94,7 @@ fn get_related_pairs(ibd: &IbdSet, threshold: f64) -> Result<Vec<(u32, u32)>> {
         .get_size_cm()
         .change_context(crate::IbdUtilsError::Library)?;
     let min_totibd_related = gsize * threshold as f32;
-    info!("related pair total ibd theshold in cM: {min_totibd_related:.3}",);
+    info!("related pair total ibd threshold in cM: {min_totibd_related:.3}",);
 
     let mut v = vec![];
     for blk in IbdSetBlockIter::new(ibd, true) {

@@ -150,7 +150,7 @@ pub enum Commands {
         /// threshold: sample pairs with flattend IBD > genome size * threshold
         /// are treated as highly related.
         #[arg(short = 'T', long, default_value_t = 0.5)]
-        theshold: f64,
+        threshold: f64,
         /// Path to output file (prefix)
         #[arg(short = 'o', long, default_value = "unrelated.txt")]
         out: PathBuf,
