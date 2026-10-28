@@ -585,6 +585,7 @@ impl IbdSet {
             Ok(())
         })?;
         self.ploidy_status = Diploid;
+        self.sort_status = Unsorted;
         Ok(())
     }
     pub fn covert_to_haploid(
@@ -609,6 +610,7 @@ impl IbdSet {
         });
 
         self.ploidy_status = Haploid;
+        self.sort_status = Unsorted;
     }
 
     pub fn merge(&mut self) -> Result<()> {

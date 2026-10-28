@@ -62,20 +62,14 @@ pub fn main_compare(args: &Commands) -> Result<()> {
             if fmt.as_str() == "hapibd" {
                 ibd.read_hapibd_dir(dir)
                     .change_context(IbdUtilsError::Input)?;
-                match *use_hap_overlap {
-                    true => ibd.sort_by_haplotypes(),
-                    false => ibd.sort_by_samples(),
-                }
                 ibd.infer_ploidy();
             } else if fmt.as_str() == "tskibd" {
                 ibd.read_tskibd_dir(dir)
                     .change_context(IbdUtilsError::Input)?;
-                ibd.sort_by_haplotypes();
                 ibd.infer_ploidy();
             } else if fmt.as_str() == "hmmibd" {
                 ibd.read_hmmibd_dir(dir)
                     .change_context(IbdUtilsError::Input)?;
-                ibd.sort_by_haplotypes();
                 ibd.infer_ploidy();
             } else {
                 panic!("format {fmt} is not supported.");
@@ -97,6 +91,13 @@ pub fn main_compare(args: &Commands) -> Result<()> {
                         .change_context(IbdUtilsError::Library)?;
                 }
                 None => {}
+            }
+
+            // sort after ploidy conversion (which changes sample/haplotype indices)
+            // to match what the overlap analyzer expects
+            match *use_hap_overlap {
+                true => ibd.sort_by_haplotypes(),
+                false => ibd.sort_by_samples(),
             }
         }
 
