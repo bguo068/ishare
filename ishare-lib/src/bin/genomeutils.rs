@@ -164,7 +164,7 @@ fn main_entry() -> Result<()> {
             to_toml,
             to_map_prefix,
         } => {
-            let p = to_toml.unwrap_or(from_bin.with_extension("bin"));
+            let p = to_toml.unwrap_or(from_bin.with_extension("toml"));
             let mut genome =
                 Genome::load_from_bincode_file(&from_bin).change_context(GenomeUtilError::Input)?;
             genome

@@ -81,10 +81,8 @@ impl GenomeInfo {
             name: self.name.clone(),
             chromnames: self.chromnames.clone(),
             chromsize: self.chromsize.clone(),
-            map_root: p
-                .as_ref()
-                .parent()
-                .map(|p| p.to_string_lossy().into_owned()),
+            // not written: `from_toml_file` always resolves gmaps relative to the toml's folder
+            map_root: None,
             gmaps: self.gmaps.clone(),
             idx: self.idx.clone(),
         };
@@ -372,8 +370,8 @@ impl Genome {
         if let Some(parent) = Path::new(toml_path).parent() {
             std::fs::create_dir_all(parent).change_context(IshareError::Genome)?;
         }
-        self.ginfo.to_toml_file(toml_path)?;
         self.set_gmap_path(toml_path, gmap_path);
+        self.ginfo.to_toml_file(toml_path)?;
         self.gmap
             .to_plink_map_files(&self.ginfo)
             .change_context(IshareError::Gmap)?;
@@ -394,6 +392,7 @@ impl Genome {
         &self.gmap
     }
 
+    /// Set gmap paths as `<gmap_path>/<chrom>.map`, relative to the toml's folder (`map_root`)
     pub fn set_gmap_path(&mut self, toml_path: impl AsRef<Path>, gmap_path: &str) {
         let dir = &toml_path.as_ref().parent().unwrap_or(Path::new("."));
         self.ginfo.map_root = Some(dir.to_string_lossy().into_owned());
@@ -402,7 +401,7 @@ impl Genome {
             .chromnames
             .iter()
             .map(|chrname| {
-                dir.join(gmap_path)
+                Path::new(gmap_path)
                     .join(format!("{chrname}.map"))
                     .to_string_lossy()
                     .into_owned()
