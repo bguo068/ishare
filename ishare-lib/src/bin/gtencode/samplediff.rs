@@ -4,7 +4,7 @@ use error_stack::*;
 use super::Commands;
 use arrow_array::{ArrayRef, RecordBatch, UInt32Array};
 use ishare::indiv::Individuals;
-use ishare::{genotype::rare::GenotypeRecords, utils::path::from_prefix};
+use ishare::{genotype::rare::GenotypeRecords, utils::path::output_from_prefix};
 use itertools::{EitherOrBoth, Itertools};
 use parquet::arrow::ArrowWriter;
 use parquet::basic::Compression;
@@ -191,7 +191,7 @@ fn output(out: &Option<String>, res_vec: &[(u32, u32, u32)], inds: &Individuals)
     match out.as_ref() {
         Some(output) => {
             println!("WARN: output option is specified, results are not printed on the screen");
-            let out_path = from_prefix(output, "pq")
+            let out_path = output_from_prefix(output, "pq")
                 .change_context(GtencodeError::Output)
                 .attach("fail to create output path")?;
             let sample1 = UInt32Array::from(res_vec.iter().map(|item| item.0).collect_vec());

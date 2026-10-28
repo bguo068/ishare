@@ -2,7 +2,7 @@ use super::{GtencodeError, Result};
 use error_stack::*;
 
 use super::Commands;
-use ishare::{genotype::rare::GenotypeRecords, indiv::Individuals, utils::path::from_prefix};
+use ishare::{genotype::rare::GenotypeRecords, indiv::Individuals, utils::path::{from_prefix, output_from_prefix}};
 
 pub fn main_records(args: &Commands) -> Result<()> {
     if let Commands::Records {
@@ -75,7 +75,7 @@ pub fn main_records(args: &Commands) -> Result<()> {
                 println!("output records counts: {}", records.records().len());
                 records
                     .into_parquet_file(
-                        from_prefix(out, "rec").change_context(GtencodeError::Output)?,
+                        output_from_prefix(out, "rec").change_context(GtencodeError::Output)?,
                     )
                     .change_context(GtencodeError::Output)?;
             }

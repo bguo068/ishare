@@ -381,10 +381,10 @@ impl RVar {
 
     fn to_files(&self, prefix: String) -> PyResult<()> {
         // construct output file names
-        use ishare::utils::path::from_prefix;
-        let gt_file = from_prefix(&prefix, "rec").unwrap();
-        let sites_file = from_prefix(&prefix, "sit").unwrap();
-        let ind_file = from_prefix(&prefix, "ind").unwrap();
+        use ishare::utils::path::output_from_prefix;
+        let gt_file = output_from_prefix(&prefix, "rec").map_err(convert_err)?;
+        let sites_file = output_from_prefix(&prefix, "sit").map_err(convert_err)?;
+        let ind_file = output_from_prefix(&prefix, "ind").map_err(convert_err)?;
 
         if let Some(records) = self.records.as_ref() {
             records

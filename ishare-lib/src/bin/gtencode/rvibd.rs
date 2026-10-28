@@ -13,7 +13,7 @@ use ishare::container::intervaltree::IntervalTree;
 use ishare::genotype::rare::GenotypeRecords;
 use ishare::gmap::GeneticMap;
 use ishare::indiv::Individuals;
-use ishare::utils::path::from_prefix;
+use ishare::utils::path::output_from_prefix;
 use ishare::{genome::GenomeInfo, share::ibd::ibdseg::*};
 use itertools::Itertools;
 use log::info;
@@ -186,7 +186,7 @@ fn position_scan(
 
     let rwlock_file = {
         let out =
-            from_prefix(out_prefix.as_ref(), "rvibd.pos").change_context(GtencodeError::Output)?;
+            output_from_prefix(out_prefix.as_ref(), "rvibd.pos").change_context(GtencodeError::Output)?;
         // let out = format!("{}_rvibd.pos", out_prefix.as_ref().to_str().unwrap());
         File::create(&out)
             .map(BufWriter::new)

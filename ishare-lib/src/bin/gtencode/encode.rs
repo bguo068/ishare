@@ -8,7 +8,7 @@ use ishare::{
     genotype::{common::GenotypeMatrix, rare::GenotypeRecords},
     indiv::Individuals,
     site::Sites,
-    utils::path::from_prefix,
+    utils::path::output_from_prefix,
     vcf::{read_vcf, read_vcf_for_genotype_matrix},
 };
 use rayon::prelude::*;
@@ -102,12 +102,12 @@ pub fn main_encode(args: &Commands) -> Result<()> {
 
     // construct output file names
     let gt_file = if *matrix {
-        from_prefix(out, "mat").change_context(GtencodeError::Input)?
+        output_from_prefix(out, "mat").change_context(GtencodeError::Output)?
     } else {
-        from_prefix(out, "rec").change_context(GtencodeError::Input)?
+        output_from_prefix(out, "rec").change_context(GtencodeError::Output)?
     };
-    let sites_file = from_prefix(out, "sit").change_context(GtencodeError::Input)?;
-    let ind_file = from_prefix(out, "ind").change_context(GtencodeError::Input)?;
+    let sites_file = output_from_prefix(out, "sit").change_context(GtencodeError::Output)?;
+    let ind_file = output_from_prefix(out, "ind").change_context(GtencodeError::Output)?;
 
     if *matrix {
         // parallel running

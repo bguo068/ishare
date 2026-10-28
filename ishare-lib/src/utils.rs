@@ -4,18 +4,12 @@ pub mod path {
 
     use std::path::*;
 
-    /// create path to a filefrom path prefix and an exension name
+    /// create path to a file from path prefix and an exension name
     ///
-    /// This function will create all folders as needed and remove all
-    /// extensions from the prefix filename and then add the the given extension
-    /// name.
+    /// This function will remove all extensions from the prefix filename and
+    /// then add the the given extension name. It does not touch the file
+    /// system; use `output_from_prefix` for output files.
     pub fn from_prefix(prefix: impl AsRef<Path>, suffix: &str) -> Result<PathBuf> {
-        // if parental path does not exist, then try to create all folders needed
-        if let Some(parent) = prefix.as_ref().parent() {
-            if parent == Path::new("") {
-                std::fs::create_dir_all(parent).change_context(IshareError::Utils)?;
-            }
-        }
         // remove all extensions from path
         let mut o = prefix.as_ref().to_path_buf();
         while o.extension().is_some() {
@@ -24,6 +18,20 @@ pub mod path {
 
         // add suffix to the path name
         o.set_extension(suffix);
+        Ok(o)
+    }
+
+    /// same as `from_prefix`, but also create the parent folders of the
+    /// returned path if they do not exist
+    pub fn output_from_prefix(prefix: impl AsRef<Path>, suffix: &str) -> Result<PathBuf> {
+        let o = from_prefix(prefix, suffix)?;
+        if let Some(parent) = o.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)
+                    .change_context(IshareError::Utils)
+                    .attach_with(|| format!("cannot create folder {}", parent.display()))?;
+            }
+        }
         Ok(o)
     }
 
@@ -41,6 +49,23 @@ pub mod path {
             Path::new("/tmp/1/2/x.abc"),
             from_prefix("/tmp/1/2/x", "abc").unwrap()
         );
+    }
+
+    #[test]
+    fn test_output_from_prefix_creates_parent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prefix = tmp.path().join("a/b/x.cdf");
+        let p = output_from_prefix(&prefix, "abc").unwrap();
+        assert_eq!(p, tmp.path().join("a/b/x.abc"));
+        assert!(tmp.path().join("a/b").is_dir());
+
+        // from_prefix itself does not create folders
+        let p2 = from_prefix(tmp.path().join("c/d/y"), "abc").unwrap();
+        assert_eq!(p2, tmp.path().join("c/d/y.abc"));
+        assert!(!tmp.path().join("c").exists());
+
+        // a bare file name has no parent folder to create
+        assert_eq!(output_from_prefix("z.cdf", "abc").unwrap(), Path::new("z.abc"));
     }
 }
 
