@@ -138,16 +138,14 @@ fn calc_degrees(related_paris: &[(u32, u32)], degree: &mut HashMap<u32, u32>) {
     }
 }
 
+/// Ties are broken by the smallest sample index so results do not depend on
+/// hash map iteration order
 fn get_sample_with_largest_degree(degree: &HashMap<u32, u32>) -> u32 {
-    let mut sample = 0;
-    let mut max_deg = 0;
-    for (k, v) in degree {
-        if *v > max_deg {
-            max_deg = *v;
-            sample = *k;
-        }
-    }
-    sample
+    degree
+        .iter()
+        .max_by_key(|(k, v)| (**v, std::cmp::Reverse(**k)))
+        .map(|(k, _)| *k)
+        .unwrap_or(0)
 }
 
 fn remove_pairs_with_sample(related_paris: &mut Vec<(u32, u32)>, target_sample: u32) {
@@ -177,4 +175,32 @@ fn write_sample_to_keep(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_largest_degree_tie_breaks_by_smallest_index() {
+        let entries = [(7u32, 3u32), (2, 3), (5, 1), (9, 3)];
+        for rot in 0..entries.len() {
+            let mut degree = HashMap::new();
+            for (k, v) in entries.iter().cycle().skip(rot).take(entries.len()) {
+                degree.insert(*k, *v);
+            }
+            assert_eq!(get_sample_with_largest_degree(&degree), 2);
+        }
+    }
+
+    #[test]
+    fn test_samples_to_remove_is_deterministic() {
+        // a chain 0-1-2-3: samples 1 and 2 tie at degree 2
+        let pairs = vec![(0u32, 1u32), (1, 2), (2, 3)];
+        let expected = get_samples_to_remove(pairs.clone());
+        for _ in 0..20 {
+            assert_eq!(get_samples_to_remove(pairs.clone()), expected);
+        }
+        assert_eq!(expected, HashSet::from_iter([1, 2]));
+    }
 }
