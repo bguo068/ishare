@@ -16,7 +16,7 @@ use ishare::indiv::Individuals;
 use ishare::utils::path::from_prefix;
 use ishare::{genome::GenomeInfo, share::ibd::ibdseg::*};
 use itertools::Itertools;
-use log::{info, LevelFilter};
+use log::info;
 use rayon::prelude::*;
 use slice_group_by::*;
 use std::fs::File;
@@ -51,10 +51,6 @@ pub fn main_rvibd(args: &Commands) -> Result<()> {
             eprintln!("please specify the correct which!");
             std::process::exit(-1);
         }
-        env_logger::Builder::new()
-            .filter_level(LevelFilter::Info)
-            .init();
-
         info!("read genome info"); // (for ibd) to compare with that from rare variants
         let (ginfo, gmap) = if genome_info
             .extension()
