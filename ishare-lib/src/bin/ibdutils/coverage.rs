@@ -21,7 +21,7 @@ pub fn main_coverage(args: &Commands) -> Result<()> {
         min_cm,
         start_cm,
         step_cm,
-        prevent_flatten,
+        flatten,
         out,
     } = args
     {
@@ -45,10 +45,10 @@ pub fn main_coverage(args: &Commands) -> Result<()> {
             if fmt.as_str() == "hapibd" {
                 ibd.read_hapibd_dir(dir)
                     .change_context(IbdUtilsError::Input)?;
-                if (*prevent_flatten) && (ibd.get_ploidy_status() == IbdSetPloidyStatus::Diploid) {
+                ibd.infer_ploidy();
+                if *flatten && (ibd.get_ploidy_status() == IbdSetPloidyStatus::Diploid) {
                     ibd.merge().change_context(IbdUtilsError::Input)?;
                 }
-                ibd.infer_ploidy();
             } else if fmt.as_str() == "tskibd" {
                 ibd.read_tskibd_dir(dir)
                     .change_context(IbdUtilsError::Input)?;

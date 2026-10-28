@@ -182,10 +182,11 @@ pub enum Commands {
         /// step size between adjacent sampling points
         #[arg(long, default_value_t = 0.01)]
         step_cm: f64,
-        /// Use (Do not Ignore) haplotype information (i.e. not flattening
-        /// before coverage analysis) if true
+        /// Flatten diploid IBD (merge overlapping segments of each sample pair)
+        /// before coverage analysis, so coverage counts sample pairs; by default
+        /// coverage counts haplotype pairs. Only affects diploid (hapibd) IBD
         #[arg(long, default_value_t = false)]
-        prevent_flatten: bool,
+        flatten: bool,
         /// Path to output file in CSV format
         #[arg(short = 'o', long, default_value = "ibdcov_res.csv")]
         out: PathBuf,
