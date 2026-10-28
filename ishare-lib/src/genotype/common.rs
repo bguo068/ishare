@@ -179,14 +179,19 @@ impl GenotypeMatrix {
         } else {
             match allele {
                 b"REF" => (s..e).all(|pos_idx| !self.get_at(pos_idx, gid as usize)),
-                _ => (s..e).any(|pos_idx| {
-                    let stored_alleles = sites.get_alleles_by_idx(pos_idx);
-                    // Check if the target allele exists in the space-separated alleles
-                    let has_target_allele = stored_alleles
-                        .split(|&x| x == b' ')
-                        .any(|stored_allele| stored_allele == allele);
-                    has_target_allele && self.get_at(pos_idx, gid as usize)
-                }),
+                _ => {
+                    // each row stores "<REF> <ALT>" and its bit means the genome carries ALT
+                    let ref_allele = sites.get_alleles_by_idx(s).split(|&x| x == b' ').next();
+                    if ref_allele == Some(allele) {
+                        (s..e).all(|pos_idx| !self.get_at(pos_idx, gid as usize))
+                    } else {
+                        (s..e).any(|pos_idx| {
+                            let alt_allele =
+                                sites.get_alleles_by_idx(pos_idx).split(|&x| x == b' ').nth(1);
+                            alt_allele == Some(allele) && self.get_at(pos_idx, gid as usize)
+                        })
+                    }
+                }
             }
         }
     }
@@ -738,6 +743,24 @@ mod test {
             let sites = create_test_sites();
 
             assert!(m.has_allele(100, 0, b"T", &sites));
+        }
+
+        #[test]
+        fn test_has_allele_distinguishes_ref_and_alt() {
+            // site at 100 is "A T"; genome 0 carries T, genome 1 carries A
+            let mut sites = Sites::default();
+            let mut ab = AlleleBuffer::new();
+            ab.push(b"A");
+            ab.push(b"T");
+            sites.add_site(100, &ab).unwrap();
+            let mut m = GenotypeMatrix::new(2);
+            m.extend_gt_calls([true, false].into_iter());
+
+            assert!(m.has_allele(100, 0, b"T", &sites));
+            assert!(!m.has_allele(100, 0, b"A", &sites));
+            assert!(!m.has_allele(100, 1, b"T", &sites));
+            assert!(m.has_allele(100, 1, b"A", &sites));
+            assert!(!m.has_allele(100, 0, b"G", &sites));
         }
     }
 

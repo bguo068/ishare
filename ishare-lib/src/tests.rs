@@ -16,8 +16,11 @@ fn compare_table_matrix_enc() {
     let ginfo = GenomeInfo::from_toml_file(genome_info).unwrap();
     let vcf_path = "../testdata/dir001/bcf/sel_chr1.bcf";
 
-    let max_maf = 0.001f64;
+    // alleles are rare if ac < floor(nsam * max_maf * 2); with 500 samples this
+    // must be well above 0.001 (threshold 1, i.e. no carriers) to get any records
+    let max_maf = 0.05f64;
     let (sit, _ind, rec) = read_vcf(&AHashSet::new(), &ginfo, vcf_path, max_maf, None).unwrap();
+    assert!(!rec.records().is_empty(), "no rare variant records to compare");
 
     // here use a very low min_maf to encode rare variants and common varints in matrix,
     // so that it can use be to very the accuracy of table encoding of rare variants
@@ -35,10 +38,11 @@ fn compare_table_matrix_enc() {
             "alleles=|{}|, aid={aid}, pos={pos}, gid={gid}, ",
             alleles.as_bstr(),
         );
+        // record alleles are 1-based indices into the site's allele list
         let allele = alleles
             .as_bstr()
             .split(|x| *x == b' ')
-            .nth(aid as usize)
+            .nth(aid as usize - 1)
             .unwrap();
         println!("allele=|{}|", allele.as_bstr());
 
