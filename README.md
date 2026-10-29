@@ -42,6 +42,17 @@ We've introduced a command line tool that integrates local ancestry information
 from [`rfmix` v2](https://github.com/slowkoni/rfmix) with IBD segments to derive
 ancestry-specific IBD. Refer to the binary `asibd` for this feature.
 
+## BCF/VCF Toolkit
+
+A small set of BCF/VCF utilities (ported from
+[`bcftk`](https://github.com/bguo068/bcftk)) for preparing genotype data:
+
+- `filtmiss`: iteratively filter sites and samples by genotype non-missing rates
+- `calcfws`: calculate the within-host diversity statistic Fws from FMT/AD
+- `dropindel`: drop non-SNP alleles and recode FMT/GT and FMT/AD accordingly
+
+- **Command Line Tool:** `bcftk`
+
 ## Requirements
 
 1. **Operating Systems:** Supported on Linux and MacOS. Windows is currently not
@@ -69,6 +80,7 @@ cd ishare-lib
 cargo build --release --bin gtencode
 cargo build --release --bin ibdutils
 cargo build --release --bin asibd
+cargo build --release --bin bcftk
 # the compiled binaries can be found at
 ls ../target/release/
 cd ..
